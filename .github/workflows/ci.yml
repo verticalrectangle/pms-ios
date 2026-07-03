@@ -1,0 +1,64 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ── Shader pipeline: regenerate MSL from the engine's GLSL and diff ────────
+  # Runs on Linux (cheap, fast). Guards the single-source-of-truth rule:
+  # committed Shaders/msl must match a fresh transpile of the engine repo.
+  shaders:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: verticalrectangle/pop-maker-studio
+          path: engine
+      - name: toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y glslang-tools spirv-cross
+      - name: transpile + diff
+        run: |
+          python3 tools/transpile_shaders.py \
+            --out-dir /tmp/msl --manifest /tmp/msl/params_manifest.json \
+            engine/shaders/*.glsl
+          diff -r Shaders/msl /tmp/msl && echo "MSL in sync with engine GLSL"
+      - name: levers doc freshness
+        run: |
+          PMS_DESKTOP=$PWD/engine python3 tools/gen_levers.py
+          git diff --exit-code docs/LEVERS.md && echo "LEVERS.md in sync"
+
+  # ── macOS: Swift shell builds against the mocked engine ────────────────────
+  # Free on public repos. Becomes the Phase 2 gate: once the engine's macOS
+  # headless build lands, add the CMake step + engine-smoke here (see
+  # docs/AGENT_PLAYBOOK.md P2.2) and drop `-skipPackagePluginValidation`
+  # niceties as needed. The simulator .app is uploaded as an artifact.
+  app:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: xcodegen
+        run: brew install xcodegen
+      - name: generate project
+        run: xcodegen generate
+      - name: build (simulator)
+        run: |
+          xcodebuild -project PopMakerStudio.xcodeproj \
+            -scheme PopMakerStudio \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO build | tail -20
+      - name: locate artifact
+        run: |
+          APP=$(find ~/Library/Developer/Xcode/DerivedData -name "PopMakerStudio.app" -path "*iphonesimulator*" | head -1)
+          echo "APP=$APP" >> $GITHUB_ENV
+          ditto -c -k --keepParent "$APP" PopMakerStudio-sim.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PopMakerStudio-simulator
+          path: PopMakerStudio-sim.zip
+          retention-days: 14
