@@ -66,6 +66,34 @@ Xcode + CMake for most phases; Phase 8 partially runs on Linux.*
 **Goal:** the standalone lib compiles for macOS (first) and iOS + simulator,
 packaged as an xcframework this repo links.
 
+> **STATUS 2026-07-03: P2.1 + P2.2 DONE — engine builds and passes on macOS.**
+> `pms-engine` + `engine-smoke` build with Apple clang/libc++ against the
+> iOS-26 SDK toolchain and PASS headless (add_track/add_clip/save_project/
+> get_project) on an **Intel** 2020 MacBook (Sequoia 15.7, Xcode 26.3).
+> Reproducible via `scripts/build_mac.sh --run` in the engine repo (needs
+> `brew install pkg-config ffmpeg fftw aubio freetype jpeg-turbo onnxruntime
+> whisper-cpp`). PMS_ENGINE_ONLY skips the desktop app + GLFW/vterm/PipeWire.
+>
+> Portability fixes it took (all in engine `dev`, one commit each — useful
+> reference for the iOS slice, which hits the same libc++/BSD surface):
+> BSD mktemp (no suffix after Xs); explicit `signal.h`/`unistd.h` (kill/
+> mkdtemp were transitively included via now-gated linux headers);
+> `std::complex<float>` instead of `vector<fftwf_complex>` (libc++ rejects
+> vector-of-C-array); `linux/videodev2.h` + V4L2 enum gated `__linux__`
+> (empty device list until the AVFoundation CaptureBackend); `gl_compat.h`
+> (Apple ships OpenGL 4.1 core — desktop GL renderer compiles as-is, no stub
+> needed for macOS; iOS still gets Metal); Homebrew keg paths — ORT header
+> nesting (include/onnxruntime/), fftw pkg-config include, `link_directories`
+> for keg `-L`, and ORT link-dir must be **PUBLIC** so static-lib consumers
+> inherit it (Linux masked all keg-path bugs — libs sit in /usr/lib). audio_
+> pw.cpp (PipeWire) excluded on Apple; engine-consumed embedded assets
+> (portrait/fx_motion/fx_face/inter_font) now depend from pms-engine directly.
+>
+> **Next: P2.3 (iOS + simulator slices → xcframework).** Harder: ORT/whisper/
+> ggml need iOS-arch builds, not the macOS Homebrew dylibs; ffmpeg has no
+> iOS build (→ the MediaBackend stub gates it out for the iOS slice). See
+> the P2.3 scouting output.
+
 2.1 **macOS build first.** In the engine repo, drive the existing CMake with
     the Xcode/clang toolchain. Expected friction, in order:
     - `GL_GLEXT_PROTOTYPES` / `<GL/gl.h>`: macOS headers differ
