@@ -114,10 +114,83 @@ packaged as an xcframework this repo links.
     - V4L2 in `video_recorder.cpp` capture: gate `PMS_CAPTURE_V4L2`.
 2.2 **Proof:** `engine-smoke` builds and PASSES on macOS with the headless
     renderer/media stubs. This is the gate for everything else.
-2.3 **iOS + simulator slices** via CMake toolchain (SDK `iphoneos` /
-    `iphonesimulator`, `-DCMAKE_SYSTEM_NAME=iOS`), then
-    `xcodebuild -create-xcframework` → `Engine/build/pms_engine.xcframework`.
-    Add a `tools/build_xcframework.sh` here that does the whole dance.
+2.3 **iOS slice → xcframework.** Detailed & grounded 2026-07-03 (whisper
+    scout + empirical link check on the Intel Mac). Execution order:
+
+    **(a) Establish the gating flags — DO THIS FIRST, it's the real blocker.**
+    Empirical fact: `nm -u build-mac/engine-smoke` shows the core path
+    references `avcodec_*`, `swscale`, `FT_*`, and OpenGL symbols — so for iOS
+    the media + GL code must be STUBBED AT SOURCE (function bodies compiled
+    out), NOT merely library-omitted. Two flags, defaulting to the current
+    desktop behavior:
+      - `PMS_MEDIA_STUB` (iOS): the ~27 media-surface files' ffmpeg/popen
+        entry points return empty/error. Real AVFoundation impl = Phase 4.
+        Wholesale-exclude the pure-media TUs (proxy, conform, scene_detect,
+        blender_export, separate, beat_detect audio decode, video,
+        video_recorder, vc_*, waveform, av_measure, bg_remove, noise_reduce);
+        per-function-stub the ones with core logic + incidental media calls
+        (audio, transcribe audio-decode, hf_api, pipeline_core, render export).
+      - `PMS_RENDERER_NONE` (iOS): the 7 GL files stub their public surface
+        (fx_apply/scene_*/face_beauty_apply/face_makeup_apply/render_tick_gl/
+        runtime_fx_poll) to no-ops returning 0. Real Metal = Phase 3. NOTE
+        `engine_tick(gl_ready=false)` already avoids GL calls — verify no
+        core path (add_clip/save/get_project) hits a stubbed symbol at RUN
+        time. Wholesale-gate fx_shader, body_fx; stub the GL portions of
+        face_filters, render, video, runtime_fx behind the flag.
+      Verify on Linux/macOS that BOTH flags OFF = unchanged (current builds),
+      and a macOS build with both flags ON still links engine-smoke and
+      passes — that proves the stubs are self-consistent BEFORE touching iOS.
+
+    **(b) iOS-arch dependencies.**
+      - whisper.cpp + ggml: vendor whisper.cpp >=1.7.x (submodule), cross-
+        build STATIC per slice with the leetal/ios-cmake toolchain (keeps
+        Ninja): `-DPLATFORM=OS64` (device arm64). Flags (all REQUIRED):
+        `-DBUILD_SHARED_LIBS=OFF -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON
+        -DGGML_OPENMP=OFF -DWHISPER_BUILD_{EXAMPLES,TESTS,SERVER}=OFF
+        -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0`. EMBED_LIBRARY=ON is mandatory —
+        it bakes the Metal shaders into the .a (ggml_metallib_start/_end) so
+        no default.metallib bundle is needed. `cmake --install` to a per-slice
+        prefix → yields lib/cmake/whisper + lib/cmake/ggml configs; then reuse
+        our EXISTING `find_package(whisper CONFIG)` line unchanged, just point
+        `-Dwhisper_DIR` at the iOS prefix. Link set: libwhisper + libggml-base
+        + libggml + libggml-cpu + libggml-metal + libggml-blas.
+      - ONNX Runtime: use the OFFICIAL prebuilt iOS package (do NOT build from
+        source). The `onnxruntime-c` CocoaPod or the `onnxruntime.xcframework`
+        GitHub release asset. arm64 device slice is what matters. CoreML EP is
+        available via `AppendExecutionProvider("CoreML", ...)` — defer wiring
+        to Phase 6; CPU EP links fine. Point our `-DONNXRUNTIME_ROOT` at the
+        xcframework's ios-arm64 slice (headers + libonnxruntime.a).
+      - ffmpeg: NO iOS build exists and none is wanted — `PMS_MEDIA_STUB`
+        removes all libav references (that's why (a) is the gate).
+      - fftw/aubio: fftw builds trivially for iOS (`--host=arm-apple-darwin`
+        or the cmake toolchain); aubio only used by beat_detect which is a
+        media-stub TU — likely excluded on iOS, confirm.
+
+    **(c) CMake iOS build + xcframework.** `tools/build_xcframework.sh`:
+      configure a device slice — `cmake -B build-ios -G Ninja
+      -DCMAKE_TOOLCHAIN_FILE=ios.toolchain.cmake -DPLATFORM=OS64
+      -DPMS_ENGINE_ONLY=ON -DPMS_MEDIA_STUB=ON -DPMS_RENDERER_NONE=ON
+      -DONNXRUNTIME_ROOT=<ios-arm64> -Dwhisper_DIR=<ios prefix>` → build
+      libpms-engine.a → `xcodebuild -create-xcframework -library
+      build-ios/libpms-engine.a -headers src/pms_engine.h -output
+      Engine/build/pms_engine.xcframework`.
+
+    **(d) INTEL-MAC REALITY (this machine).** The host is an Intel Mac, so
+    its simulator is x86_64. Recent ORT iOS packages often ship ONLY arm64
+    simulator slices → the x86_64 simulator path is likely dead on THIS
+    machine. Do NOT block on the simulator: build the **arm64 device slice**
+    and prove P2.3 on Alexis's real iPhone (iOS 26.5) via Xcode. The device
+    slice is a normal arm64-from-x86_64 cross-compile — the Intel host is
+    fine for BUILDING it, just not for running the sim.
+
+    **(e) Proof for P2.3.** engine-smoke is a CLI (can't run on-device without
+    an app wrapper). Prove the device slice by: (1) the .a links clean for
+    ios-arm64 with all deps resolved (`ld -r` dry link or a trivial
+    ios-arm64 test exe); (2) the xcframework validates
+    (`xcodebuild -create-xcframework` succeeds, no arch collision); (3) the
+    pms-ios app links it (step 2.5 below) and `pms_command("get_project")`
+    returns JSON in the running app on-device. That on-device JSON round-trip
+    IS the P2.3 proof.
 4.  **Header sync:** replace the hand-copied `Engine/include/pms_engine.h`
     with the engine repo's `src/pms_engine.h` at build time (the script
     copies it; a CI check diffs them). One source of truth: the engine repo.
