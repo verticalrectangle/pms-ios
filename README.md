@@ -40,6 +40,8 @@ the engine's RenderSurface seam.
                                   (std140 offsets = the uniform ABI)
     docs/LEVERS.md                generated command contract (do not edit)
     docs/PLAN.md                  phased port plan
+    docs/AGENT_PLAYBOOK.md        execution plan for agents (Phases 2-8:
+                                  tasks, proofs, gotchas, lane assignment)
     tools/                        transpile + levers generators
 
 ## Building
