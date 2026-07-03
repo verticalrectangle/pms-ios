@@ -5,6 +5,7 @@
 import Foundation
 import Metal
 import Combine
+import QuartzCore   // CADisplayLink
 
 // ENGINE_MOCK (set in project.yml until pms_engine.xcframework exists):
 // screens develop against a stub engine — same observable surface, canned
