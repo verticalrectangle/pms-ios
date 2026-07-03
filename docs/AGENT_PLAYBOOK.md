@@ -142,7 +142,16 @@ packaged as an xcframework this repo links.
       passes — that proves the stubs are self-consistent BEFORE touching iOS.
 
     **(b) iOS-arch dependencies.**
-      - whisper.cpp + ggml: vendor whisper.cpp >=1.7.x (submodule), cross-
+      - whisper.cpp + ggml: **VALIDATED 2026-07-03 on the Intel Mac** —
+        cross-built clean for ios-arm64 (ggml-org/whisper.cpp @6fc7c33) with
+        `cmake -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos
+        -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0
+        -DBUILD_SHARED_LIBS=OFF -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON
+        -DGGML_OPENMP=OFF -DWHISPER_BUILD_{EXAMPLES,TESTS,SERVER}=OFF`.
+        Produced arm64 libwhisper.a + libggml{,-base,-cpu,-metal,-blas}.a;
+        `nm libggml-metal.a | grep metallib` = 4 symbols (Metal embedded, no
+        bundle). Ninja works for iOS (no Xcode generator needed). Vendor
+        whisper.cpp >=1.7.x (submodule); cross-
         build STATIC per slice with the leetal/ios-cmake toolchain (keeps
         Ninja): `-DPLATFORM=OS64` (device arm64). Flags (all REQUIRED):
         `-DBUILD_SHARED_LIBS=OFF -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON
@@ -154,9 +163,13 @@ packaged as an xcframework this repo links.
         our EXISTING `find_package(whisper CONFIG)` line unchanged, just point
         `-Dwhisper_DIR` at the iOS prefix. Link set: libwhisper + libggml-base
         + libggml + libggml-cpu + libggml-metal + libggml-blas.
-      - ONNX Runtime: use the OFFICIAL prebuilt iOS package (do NOT build from
-        source). The `onnxruntime-c` CocoaPod or the `onnxruntime.xcframework`
-        GitHub release asset. arm64 device slice is what matters. CoreML EP is
+      - ONNX Runtime: use the OFFICIAL prebuilt iOS package (do NOT build
+        from source). CONFIRMED 2026-07-03: ORT does NOT ship iOS assets on
+        its GitHub releases (latest v1.27.0 has none) — iOS comes via the
+        `onnxruntime-c` (C/C++) CocoaPod, which vends an onnxruntime.xcframework.
+        So the pms-ios app pulls ORT via CocoaPods/SPM and the engine's iOS
+        CMake build points -DONNXRUNTIME_ROOT at the pod's extracted
+        xcframework ios-arm64 slice (headers + libonnxruntime.a). arm64 device slice is what matters. CoreML EP is
         available via `AppendExecutionProvider("CoreML", ...)` — defer wiring
         to Phase 6; CPU EP links fine. Point our `-DONNXRUNTIME_ROOT` at the
         xcframework's ios-arm64 slice (headers + libonnxruntime.a).
