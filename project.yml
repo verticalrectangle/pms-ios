@@ -14,6 +14,10 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "5.10"
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.epsilver.popmakerstudio
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
         # Screens develop against the mock until pms_engine.xcframework
         # exists; remove this flag when the engine links (Playbook P2.5).
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: ENGINE_MOCK
