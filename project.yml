@@ -1,0 +1,27 @@
+# XcodeGen spec — run `xcodegen generate` on macOS to produce the Xcode
+# project reproducibly (the .xcodeproj is never committed).
+name: PopMakerStudio
+options:
+  bundleIdPrefix: xyz.epsilver
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  PopMakerStudio:
+    type: application
+    platform: iOS
+    sources:
+      - App/Sources
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"
+        HEADER_SEARCH_PATHS: Engine/include
+        INFOPLIST_KEY_NSCameraUsageDescription: "Record video takes with live filters."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Record audio takes."
+    dependencies:
+      # pms-engine.xcframework is produced by the engine build (desktop repo
+      # Phase 0/2, built for iOS + simulator via CMake toolchain). Until it
+      # exists, stub the three pms_* symbols to develop screens against
+      # mocked state.
+      - framework: Engine/build/pms_engine.xcframework
+        embed: false
+        optional: true
