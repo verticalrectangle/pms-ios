@@ -6,8 +6,23 @@ import Foundation
 import Metal
 import Combine
 
+// ENGINE_MOCK (set in project.yml until pms_engine.xcframework exists):
+// screens develop against a stub engine — same observable surface, canned
+// replies. Flipping the flag swaps in the real C ABI with zero screen churn.
+#if ENGINE_MOCK
+typealias PMSEngineHandle = Int
+private func mock_reply(_ req: String) -> String {
+    if req.contains("get_project") {
+        return #"{"id":"ui","result":{"duration":8.0,"fps":30,"playhead":0.0}}"#
+    }
+    return #"{"id":"ui","result":{"ok":true,"mock":true}}"#
+}
+#else
+typealias PMSEngineHandle = OpaquePointer
+#endif
+
 final class EngineStore: ObservableObject {
-    private var engine: OpaquePointer?
+    private var engine: PMSEngineHandle?
     private var displayLink: CADisplayLink?
     let device: MTLDevice = MTLCreateSystemDefaultDevice()!
 
@@ -22,11 +37,15 @@ final class EngineStore: ObservableObject {
 
     func start() {
         guard engine == nil else { return }
+#if ENGINE_MOCK
+        engine = 1
+#else
         let assets = Bundle.main.resourcePath! + "/EngineAssets"
         let state = FileManager.default.urls(for: .applicationSupportDirectory,
                                              in: .userDomainMask)[0].path
         engine = pms_create(Unmanaged.passUnretained(device).toOpaque(),
                             assets, state)
+#endif
         let link = CADisplayLink(target: self, selector: #selector(frame))
         link.add(to: .main, forMode: .common)
         displayLink = link
@@ -34,8 +53,13 @@ final class EngineStore: ObservableObject {
 
     @objc private func frame(_ link: CADisplayLink) {
         guard let e = engine else { return }
+#if ENGINE_MOCK
+        _ = e
+        if playing { playhead += link.targetTimestamp - link.timestamp }
+#else
         pms_tick(e, link.targetTimestamp - link.timestamp)
         pumpEvents(e)
+#endif
         // Rendering happens in MetalRenderView's draw, which pulls from here.
     }
 
@@ -45,10 +69,17 @@ final class EngineStore: ObservableObject {
         guard let e = engine else { return ["error": "engine not started"] }
         let req: [String: Any] = ["id": "ui", "method": method, "params": params]
         let data = try! JSONSerialization.data(withJSONObject: req)
-        guard let raw = pms_command(e, String(data: data, encoding: .utf8)!)
-        else { return ["error": "null reply"] }
+        let reqStr = String(data: data, encoding: .utf8)!
+#if ENGINE_MOCK
+        _ = e
+        if method == "play"  { playing = true }
+        if method == "pause" { playing = false }
+        let reply = mock_reply(reqStr)
+#else
+        guard let raw = pms_command(e, reqStr) else { return ["error": "null reply"] }
         defer { pms_free(raw) }
         let reply = String(cString: raw)
+#endif
         let obj = (try? JSONSerialization.jsonObject(with: Data(reply.utf8)))
             as? [String: Any] ?? [:]
         if let err = obj["error"] as? String { lastError = err }
@@ -57,11 +88,16 @@ final class EngineStore: ObservableObject {
 
     func render(into texture: MTLTexture) {
         guard let e = engine else { return }
+#if ENGINE_MOCK
+        _ = e   // MetalRenderView clears; the engine composite arrives with P3
+#else
         _ = pms_render(e, Unmanaged.passUnretained(texture).toOpaque(),
                        texture.width, texture.height)
+#endif
     }
 
-    private func pumpEvents(_ e: OpaquePointer) {
+#if !ENGINE_MOCK
+    private func pumpEvents(_ e: PMSEngineHandle) {
         guard let raw = pms_poll_events(e) else { return }
         defer { pms_free(raw) }
         guard let events = (try? JSONSerialization.jsonObject(
@@ -86,4 +122,5 @@ final class EngineStore: ObservableObject {
             }
         }
     }
+#endif
 }

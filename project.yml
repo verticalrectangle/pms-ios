@@ -14,6 +14,9 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "5.10"
+        # Screens develop against the mock until pms_engine.xcframework
+        # exists; remove this flag when the engine links (Playbook P2.5).
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: ENGINE_MOCK
         HEADER_SEARCH_PATHS: Engine/include
         INFOPLIST_KEY_NSCameraUsageDescription: "Record video takes with live filters."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Record audio takes."
