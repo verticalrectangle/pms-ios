@@ -1,0 +1,4183 @@
+[
+ {
+  "shader": "anamorphic_streak",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_threshold",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_length",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_anamorphic_streak"
+ },
+ {
+  "shader": "ascii_art",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_char_size",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_fg_r",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_fg_g",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_fg_b",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   },
+   {
+    "name": "u_bg_dark",
+    "type": "float",
+    "count": 0,
+    "offset": 24,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_ascii_art"
+ },
+ {
+  "shader": "aurora_borealis",
+  "params": [
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_color_shift",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_aurora_borealis"
+ },
+ {
+  "shader": "barrel_warp",
+  "params": [
+   {
+    "name": "u_k1",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_k2",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_scale",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_barrel_warp"
+ },
+ {
+  "shader": "bit_crush",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_levels",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_dither",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_bit_crush"
+ },
+ {
+  "shader": "bleach_bypass",
+  "params": [
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_bleach_bypass"
+ },
+ {
+  "shader": "bokeh_dream",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_radius",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_threshold",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_bokeh_dream"
+ },
+ {
+  "shader": "breathe",
+  "params": [
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_breathe_rate",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_warp_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_color_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_chroma_split",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   },
+   {
+    "name": "u_complexity",
+    "type": "float",
+    "count": 0,
+    "offset": 24,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_breathe"
+ },
+ {
+  "shader": "cam_shake",
+  "params": [
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_cam_shake"
+ },
+ {
+  "shader": "chromatic_aberration",
+  "params": [
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_chromatic_aberration"
+ },
+ {
+  "shader": "color_burn",
+  "params": [
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_hue",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_color_burn"
+ },
+ {
+  "shader": "color_dodge",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_hue",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_glow",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_color_dodge"
+ },
+ {
+  "shader": "comic_dots",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_dot_size",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_ink_threshold",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_color_levels",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_comic_dots"
+ },
+ {
+  "shader": "contour_map",
+  "params": [
+   {
+    "name": "u_levels",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_line_width",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_line_hue",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_fill_sat",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_contour_map"
+ },
+ {
+  "shader": "crosshatch",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_density",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_thickness",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_angle",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_crosshatch"
+ },
+ {
+  "shader": "cross_process",
+  "params": [
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_contrast",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_cross_process"
+ },
+ {
+  "shader": "crt_barrel",
+  "params": [
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_distort",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_corner_dark",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_rgb_shift",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_scanline",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_crt_barrel"
+ },
+ {
+  "shader": "crt",
+  "params": [
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_curvature",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_glow",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_crt"
+ },
+ {
+  "shader": "cyberpunk_grade",
+  "params": [
+   {
+    "name": "u_shadow_teal",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_hi_orange",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_contrast",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_cyberpunk_grade"
+ },
+ {
+  "shader": "daguerreotype",
+  "params": [
+   {
+    "name": "u_tone",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_vignette",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_scratch",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_daguerreotype"
+ },
+ {
+  "shader": "data_corrupt",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_density",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_block_size",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_data_corrupt"
+ },
+ {
+  "shader": "desert_gold",
+  "params": [
+   {
+    "name": "u_warmth",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_fade",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_haze",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_desert_gold"
+ },
+ {
+  "shader": "digital_noise",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_color_sep",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_luma_bias",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_digital_noise"
+ },
+ {
+  "shader": "dither_bayer",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_levels",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_scale",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_color",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_dither_bayer"
+ },
+ {
+  "shader": "dna_helix",
+  "params": [
+   {
+    "name": "u_grid_scale",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_wave_amp",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_line_width",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_hue",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_bg_darken",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_dna_helix"
+ },
+ {
+  "shader": "double_exposure",
+  "params": [
+   {
+    "name": "u_offset_x",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_offset_y",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_scale2",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_desaturate2",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_opacity",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_double_exposure"
+ },
+ {
+  "shader": "double_ghost",
+  "params": [
+   {
+    "name": "u_offset",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_opacity",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_angle",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_double_ghost"
+ },
+ {
+  "shader": "duotone",
+  "params": [
+   {
+    "name": "u_shadow_r",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_shadow_g",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_shadow_b",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_highlight_r",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_highlight_g",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_highlight_b",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_duotone"
+ },
+ {
+  "shader": "echo_trails",
+  "params": [
+   {
+    "name": "u_offset",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_fade",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_angle",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_echo_trails"
+ },
+ {
+  "shader": "emboss_relief",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_angle",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_colorize",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_emboss_relief"
+ },
+ {
+  "shader": "film_burn",
+  "params": [
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_edge",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_film_burn"
+ },
+ {
+  "shader": "film_grain",
+  "params": [
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_size",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_film_grain"
+ },
+ {
+  "shader": "film_halation",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_threshold",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_radius",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_red_shift",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_film_halation"
+ },
+ {
+  "shader": "fire_edge",
+  "params": [
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_height",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_fire_edge"
+ },
+ {
+  "shader": "fisheye",
+  "params": [
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_fisheye"
+ },
+ {
+  "shader": "frosted_glass",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_blur",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_noise",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_tint",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_frosted_glass"
+ },
+ {
+  "shader": "glass_skin",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_radius",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_gloss",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_glass_skin"
+ },
+ {
+  "shader": "glitch_block",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_glitch_block"
+ },
+ {
+  "shader": "glitter_dust",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_density",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_size",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_sparkle",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_color_var",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 24,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_glitter_dust"
+ },
+ {
+  "shader": "glow_up",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_warmth",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_brighten",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_glow",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_glow_up"
+ },
+ {
+  "shader": "god_rays",
+  "params": [
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_decay",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_cx",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_cy",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_god_rays"
+ },
+ {
+  "shader": "golden_hour",
+  "params": [
+   {
+    "name": "u_warmth",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_glow_str",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_shadow_lift",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_vignette",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_golden_hour"
+ },
+ {
+  "shader": "gradient_map",
+  "params": [
+   {
+    "name": "u_hue1",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_hue2",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_gradient_map"
+ },
+ {
+  "shader": "greenscreen",
+  "params": [
+   {
+    "name": "u_key_r",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_key_g",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_key_b",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_similarity",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_smoothness",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_spill",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_greenscreen"
+ },
+ {
+  "shader": "halftone",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_size",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_halftone"
+ },
+ {
+  "shader": "heat_haze",
+  "params": [
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_heat_haze"
+ },
+ {
+  "shader": "holographic",
+  "params": [
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_holographic"
+ },
+ {
+  "shader": "horror_grade",
+  "params": [
+   {
+    "name": "u_desat",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_red",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_crush",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_horror_grade"
+ },
+ {
+  "shader": "ice_crystal",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_scale",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_refract",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_tint",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_ice_crystal"
+ },
+ {
+  "shader": "infrared_film",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_channel_mix",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_glow",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_contrast",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_infrared_film"
+ },
+ {
+  "shader": "insta_2016",
+  "params": [
+   {
+    "name": "u_fade",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_pop",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_warmth",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_insta_2016"
+ },
+ {
+  "shader": "interlace_glitch",
+  "params": [
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_interlace_glitch"
+ },
+ {
+  "shader": "kaleidoscope",
+  "params": [
+   {
+    "name": "u_segments",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_rotation",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_zoom",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_kaleidoscope"
+ },
+ {
+  "shader": "kodachrome",
+  "params": [
+   {
+    "name": "u_saturation",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_reds",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_shadows",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_kodachrome"
+ },
+ {
+  "shader": "laser_grid",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_grid_size",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_hue",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_laser_grid"
+ },
+ {
+  "shader": "liquid_chrome",
+  "params": [
+   {
+    "name": "u_flow",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_metallic",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_tint_r",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_tint_g",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_tint_b",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_liquid_chrome"
+ },
+ {
+  "shader": "lomo",
+  "params": [
+   {
+    "name": "u_vignette",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_saturation",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_fade",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_lomo"
+ },
+ {
+  "shader": "long_exposure",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_threshold",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_trail",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_glow",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_long_exposure"
+ },
+ {
+  "shader": "matrix_rain",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_density",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_green_mix",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_matrix_rain"
+ },
+ {
+  "shader": "miami_vice",
+  "params": [
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_saturation",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_miami_vice"
+ },
+ {
+  "shader": "mirror_fold",
+  "params": [
+   {
+    "name": "u_axis",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_vertical",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_mirror_fold"
+ },
+ {
+  "shader": "mirror_tunnel",
+  "params": [
+   {
+    "name": "u_depth",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_rotation",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_zoom",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_mirror_tunnel"
+ },
+ {
+  "shader": "neon_edge_glow",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_threshold",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_glow",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_hue",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_neon_edge_glow"
+ },
+ {
+  "shader": "neon_glow",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_width",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_neon_glow"
+ },
+ {
+  "shader": "neon_sign",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_edge_str",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_glow_radius",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_hue_shift",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_bg_darken",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_neon_sign"
+ },
+ {
+  "shader": "night_vision",
+  "params": [
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_noise",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_gain",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_night_vision"
+ },
+ {
+  "shader": "oil_paint",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_radius",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_sharpness",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_oil_paint"
+ },
+ {
+  "shader": "old_film",
+  "params": [
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_sepia",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_scratch",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_flicker",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_old_film"
+ },
+ {
+  "shader": "pencil_sketch",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_line_str",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_paper_tone",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_hatching",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_pencil_sketch"
+ },
+ {
+  "shader": "pixelate",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_size",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_pixelate"
+ },
+ {
+  "shader": "pixel_mosaic",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_block_size",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_color_steps",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_pixel_mosaic"
+ },
+ {
+  "shader": "pixel_sort",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_threshold",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_direction",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_pixel_sort"
+ },
+ {
+  "shader": "plasma_field",
+  "params": [
+   {
+    "name": "u_scale",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_plasma_field"
+ },
+ {
+  "shader": "pointillist",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_dot_size",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_scatter",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_pointillist"
+ },
+ {
+  "shader": "posterize",
+  "params": [
+   {
+    "name": "u_levels",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_posterize"
+ },
+ {
+  "shader": "prism_disperse",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_spread",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_prism_disperse"
+ },
+ {
+  "shader": "raindrop_refract",
+  "params": [
+   {
+    "name": "u_density",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_size",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_refract_str",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_raindrop_refract"
+ },
+ {
+  "shader": "retro_beauty",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_glow",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_fade",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_blush",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_retro_beauty"
+ },
+ {
+  "shader": "rgb_split",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_rgb_split"
+ },
+ {
+  "shader": "rgb_split_wave",
+  "params": [
+   {
+    "name": "u_amplitude",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_frequency",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_rgb_split_wave"
+ },
+ {
+  "shader": "ripple",
+  "params": [
+   {
+    "name": "u_frequency",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_amplitude",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_ripple"
+ },
+ {
+  "shader": "risograph",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_hue1",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_hue2",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_dot_size",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_misreg",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   },
+   {
+    "name": "u_paper",
+    "type": "float",
+    "count": 0,
+    "offset": 24,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_risograph"
+ },
+ {
+  "shader": "scanline_color",
+  "params": [
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_line_width",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_rgb_sep",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_scanline_color"
+ },
+ {
+  "shader": "scanlines",
+  "params": [
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_density",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_scanlines"
+ },
+ {
+  "shader": "sepia_rich",
+  "params": [
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_vignette",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_contrast",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_sepia_rich"
+ },
+ {
+  "shader": "sketch",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_invert",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_sketch"
+ },
+ {
+  "shader": "skin_smooth",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_radius",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_tone",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_skin_smooth"
+ },
+ {
+  "shader": "solarize",
+  "params": [
+   {
+    "name": "u_threshold",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_solarize"
+ },
+ {
+  "shader": "spin_blur",
+  "params": [
+   {
+    "name": "u_angle",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_spin_blur"
+ },
+ {
+  "shader": "split_toning",
+  "params": [
+   {
+    "name": "u_shadow_hue",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_hi_hue",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_split_toning"
+ },
+ {
+  "shader": "stained_glass",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_cell_size",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_border",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_saturation",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_stained_glass"
+ },
+ {
+  "shader": "starburst_spike",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_threshold",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_length",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_rays",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_starburst_spike"
+ },
+ {
+  "shader": "super8_film",
+  "params": [
+   {
+    "name": "u_grain",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_gate",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_fade",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_super8_film"
+ },
+ {
+  "shader": "technicolor",
+  "params": [
+   {
+    "name": "u_saturation",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_contrast",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_warmth",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_technicolor"
+ },
+ {
+  "shader": "thermal",
+  "params": [
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_thermal"
+ },
+ {
+  "shader": "thermal_map",
+  "params": [
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_cold_hue",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_hot_hue",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_contrast",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_scanlines",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_thermal_map"
+ },
+ {
+  "shader": "tilt_shift",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_focus_y",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_focus_band",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_blur_radius",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_saturation",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_tilt_shift"
+ },
+ {
+  "shader": "tv_static",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_color_mix",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_tv_static"
+ },
+ {
+  "shader": "twirl",
+  "params": [
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_radius",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_twirl"
+ },
+ {
+  "shader": "vhs_dropout",
+  "params": [
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_density",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_vhs_dropout"
+ },
+ {
+  "shader": "vintage_negative",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_orange_mask",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_contrast",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_grain",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_vintage_negative"
+ },
+ {
+  "shader": "vortex_distort",
+  "params": [
+   {
+    "name": "u_strength",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_scale",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_vortex_distort"
+ },
+ {
+  "shader": "warhol_pop",
+  "params": [
+   {
+    "name": "u_levels",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_hue_shift",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_saturation",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_warhol_pop"
+ },
+ {
+  "shader": "watercolor",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_bleeding",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_paper",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_saturation",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_watercolor"
+ },
+ {
+  "shader": "wave_warp",
+  "params": [
+   {
+    "name": "u_freq_x",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_freq_y",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_amplitude",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_speed",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_wave_warp"
+ },
+ {
+  "shader": "x_ray",
+  "params": [
+   {
+    "name": "u_contrast",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_blue_tint",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_x_ray"
+ },
+ {
+  "shader": "zone_system_bw",
+  "params": [
+   {
+    "name": "u_tex_w",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_tex_h",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_zones",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   },
+   {
+    "name": "u_contrast",
+    "type": "float",
+    "count": 0,
+    "offset": 12,
+    "stride": 4
+   },
+   {
+    "name": "u_grain",
+    "type": "float",
+    "count": 0,
+    "offset": 16,
+    "stride": 4
+   },
+   {
+    "name": "u_paper_white",
+    "type": "float",
+    "count": 0,
+    "offset": 20,
+    "stride": 4
+   },
+   {
+    "name": "u_time",
+    "type": "float",
+    "count": 0,
+    "offset": 24,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 32,
+  "entry": "fx_zone_system_bw"
+ },
+ {
+  "shader": "zoom_blur_rad",
+  "params": [
+   {
+    "name": "u_intensity",
+    "type": "float",
+    "count": 0,
+    "offset": 0,
+    "stride": 4
+   },
+   {
+    "name": "u_cx",
+    "type": "float",
+    "count": 0,
+    "offset": 4,
+    "stride": 4
+   },
+   {
+    "name": "u_cy",
+    "type": "float",
+    "count": 0,
+    "offset": 8,
+    "stride": 4
+   }
+  ],
+  "samplers": [
+   "u_tex"
+  ],
+  "params_size": 16,
+  "entry": "fx_zoom_blur_rad"
+ }
+]
