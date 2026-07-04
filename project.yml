@@ -24,6 +24,10 @@ targets:
       base:
         SWIFT_VERSION: "5.10"
         GENERATE_INFOPLIST_FILE: YES
+        # A launch screen is what tells iOS the app supports the device's full
+        # native screen. WITHOUT it, iOS runs the app letterboxed in a scaled
+        # compatibility box (looks tiny + soft). YES synthesizes an empty one.
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
         PRODUCT_BUNDLE_IDENTIFIER: xyz.epsilver.popmakerstudio
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
