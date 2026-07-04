@@ -24,6 +24,7 @@ targets:
       base:
         SWIFT_VERSION: "5.10"
         GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # A launch screen is what tells iOS the app supports the device's full
         # native screen. WITHOUT it, iOS runs the app letterboxed in a scaled
         # compatibility box (looks tiny + soft). YES synthesizes an empty one.

@@ -7,6 +7,7 @@ import SwiftUI
 struct HomeView: View {
     let onOpen: (Project) -> Void
     @State private var sort: Sort = .recent
+    @State private var showSettings = false
 
     enum Sort: String, CaseIterable { case recent = "Recent", name = "Name", duration = "Duration", fx = "FX" }
 
@@ -54,6 +55,15 @@ struct HomeView: View {
         .scrollIndicators(.hidden)
         .background(AtmosphereView().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)   // Home has its own big title
+        .overlay(alignment: .topTrailing) {
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape.fill").font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.txtBody).frame(width: 44, height: 44).glass(14)
+            }
+            .pressable()
+            .padding(.trailing, 18).padding(.top, 4)
+        }
+        .sheet(isPresented: $showSettings) { SettingsSheet() }
     }
 
     private var title: some View {
@@ -85,6 +95,59 @@ struct HomeView: View {
             .glass(18)
         }
         .pressable()
+    }
+}
+
+// MARK: - Settings (theme mode + accent)
+
+struct SettingsSheet: View {
+    @Bindable private var palette = Palette.shared
+    @Environment(\.dismiss) private var dismiss
+    private let cols = [GridItem(.adaptive(minimum: 52), spacing: 16)]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+                    section("THEME") {
+                        Picker("", selection: $palette.light) {
+                            Text("Dark").tag(false)
+                            Text("Light").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    section("ACCENT") {
+                        LazyVGrid(columns: cols, spacing: 16) {
+                            ForEach(Palette.presets, id: \.name) { p in
+                                Button { palette.accent = p.color } label: {
+                                    Circle().fill(p.color).frame(width: 44, height: 44)
+                                        .overlay(Circle().strokeBorder(Theme.ink, lineWidth: Palette.matches(palette.accent, p.color) ? 3 : 0))
+                                        .overlay(Circle().strokeBorder(Theme.line, lineWidth: 1))
+                                        .shadow(color: p.color.opacity(0.55), radius: 8)
+                                }.pressable()
+                            }
+                        }
+                        ColorPicker("Custom color", selection: $palette.accent, supportsOpacity: false)
+                            .font(.disp(15)).foregroundStyle(Theme.txt).padding(.top, 8)
+                    }
+                }
+                .padding(22)
+            }
+            .scrollIndicators(.hidden)
+            .background(AtmosphereView().ignoresSafeArea())
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+        .preferredColorScheme(palette.light ? .light : .dark)
+    }
+
+    @ViewBuilder private func section(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.label(10)).tracking(2).foregroundStyle(Theme.txtMuted)
+            content()
+        }
     }
 }
 

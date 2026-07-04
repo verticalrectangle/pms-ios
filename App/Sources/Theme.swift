@@ -9,26 +9,31 @@ import SwiftUI
 
 enum Theme {
 
-    // ── Accent (was amber; now lavender). Rationed to "live"/active + screen voice. ──
-    static let accent      = Color(red: 0.710, green: 0.659, blue: 1.0)   // #B5A8FF
-    static let accentDeep  = Color(red: 0.545, green: 0.478, blue: 0.94)  // #8B7AF0
+    // ── Theme mode. Dark = goth-glass (default). Light = SOPHIE hyperpop. ──
+    // All tokens are computed off Palette so a mode/accent change re-tints the
+    // whole UI reactively (Observation tracks the access through these getters).
+    static var light: Bool { Palette.shared.light }
+
+    // ── Accent — user-selectable, persisted. ──
+    static var accent     : Color { Palette.shared.accent }
+    static var accentDeep : Color { Palette.deepen(Palette.shared.accent) }
     static func accentA(_ a: Double) -> Color { accent.opacity(a) }
 
-    // ── Ground / figure ──
-    static let ground   = Color(red: 0.02, green: 0.02, blue: 0.02)       // #050505
-    static let ink      = Color.white
+    // ── Ground / figure (ink = the figure color; text/lines derive from it) ──
+    static var ground   : Color { light ? Color(red: 0.95, green: 0.955, blue: 0.97) : Color(red: 0.02, green: 0.02, blue: 0.02) }
+    static var ink      : Color { light ? Color(red: 0.06, green: 0.06, blue: 0.10) : .white }
 
-    // ── Alpha-white ramp (greys don't exist as hues) ──
-    static let lineFaint  = Color.white.opacity(0.06)
-    static let line       = Color.white.opacity(0.15)
-    static let lineStrong = Color.white.opacity(0.22)
-    static let lineHover  = Color.white.opacity(0.50)
+    // ── Hairline ramp — alpha over the ink color (dark-on-light / light-on-dark) ──
+    static var lineFaint  : Color { ink.opacity(0.06) }
+    static var line       : Color { ink.opacity(light ? 0.12 : 0.15) }
+    static var lineStrong : Color { ink.opacity(light ? 0.18 : 0.22) }
+    static var lineHover  : Color { ink.opacity(0.50) }
 
-    static let txt      = Color.white
-    static let txtBody  = Color.white.opacity(0.80)
-    static let txtMuted = Color.white.opacity(0.58)
-    static let txtLabel = Color.white.opacity(0.40)
-    static let txtGhost = Color.white.opacity(0.25)
+    static var txt      : Color { ink }
+    static var txtBody  : Color { ink.opacity(0.80) }
+    static var txtMuted : Color { ink.opacity(light ? 0.55 : 0.58) }
+    static var txtLabel : Color { ink.opacity(0.40) }
+    static var txtGhost : Color { ink.opacity(0.25) }
 
     // ── Brick scope colors ──
     static let glassCyan = Color(red: 0.51, green: 0.82, blue: 1.0)       // clip-bound glass FX
@@ -84,7 +89,7 @@ struct Glass: ViewModifier {
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(
-                        active ? Theme.accentA(0.55) : Color.white.opacity(flat ? 0.12 : 0.16),
+                        active ? Theme.accentA(0.55) : Theme.ink.opacity(flat ? 0.12 : 0.16),
                         lineWidth: 1)
             )
             .overlay(alignment: .top) {
@@ -105,6 +110,9 @@ struct Glass: ViewModifier {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            // SOPHIE mode: soft drop shadow so panels read as glossy objects on white.
+            .shadow(color: Theme.light ? Color.black.opacity(0.10) : .clear,
+                    radius: 16, x: 0, y: 9)
     }
 }
 
@@ -138,9 +146,13 @@ struct AtmosphereView: View {
         let nx, ny, size, blur, opacity, dy: CGFloat
         let core, halo: Color
     }
-    private static let lav = Theme.accent
+    private static let lav = Palette.lavender
     private static let blu = Color(red: 0.42, green: 0.60, blue: 1.0)   // cool
     private static let emb = Color(red: 1.0,  green: 0.68, blue: 0.50)  // warm ember
+    // SOPHIE candy palette (glossy plastic hues) for the light theme
+    private static let pink = Color(red: 1.0,  green: 0.36, blue: 0.66)
+    private static let cblu = Color(red: 0.29, green: 0.42, blue: 1.0)
+    private static let cpur = Color(red: 0.66, green: 0.36, blue: 1.0)
 
     private let orbs: [Orb] = [
         // FAR — large, very soft, ambient
@@ -155,19 +167,39 @@ struct AtmosphereView: View {
         Orb(nx: 0.93, ny: 0.11, size: 44,  blur: 7,  opacity: 0.78, dy:  15, core: .white, halo: lav),
     ]
 
+    // SOPHIE light theme: glossy candy orbs on white — saturated cores, softer.
+    private let lightOrbs: [Orb] = [
+        Orb(nx: 0.12, ny: 0.16, size: 360, blur: 62, opacity: 0.34, dy:  34, core: pink, halo: pink),
+        Orb(nx: 0.88, ny: 0.72, size: 440, blur: 72, opacity: 0.30, dy: -42, core: cblu, halo: cblu),
+        Orb(nx: 0.80, ny: 0.20, size: 200, blur: 34, opacity: 0.36, dy:  26, core: cpur, halo: cpur),
+        Orb(nx: 0.14, ny: 0.61, size: 180, blur: 30, opacity: 0.32, dy: -22, core: cblu, halo: cblu),
+        Orb(nx: 0.30, ny: 0.30, size: 96,  blur: 16, opacity: 0.44, dy:  18, core: pink, halo: pink),
+        Orb(nx: 0.66, ny: 0.85, size: 70,  blur: 14, opacity: 0.38, dy: -14, core: cpur, halo: cpur),
+        Orb(nx: 0.92, ny: 0.11, size: 56,  blur: 12, opacity: 0.42, dy:  15, core: pink, halo: pink),
+    ]
+
     var body: some View {
-        GeometryReader { geo in
+        let lightMode = Theme.light
+        return GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
             ZStack {
                 Theme.ground
-                RadialGradient(colors: [Theme.accentA(0.12), .clear],
-                               center: .topLeading, startRadius: 0, endRadius: 540)
-                RadialGradient(colors: [Self.blu.opacity(0.09), .clear],
-                               center: .bottomTrailing, startRadius: 0, endRadius: 500)
-                ForEach(Array(orbs.enumerated()), id: \.offset) { i, o in
+                if lightMode {
+                    RadialGradient(colors: [Self.pink.opacity(0.10), .clear],
+                                   center: .topLeading, startRadius: 0, endRadius: 560)
+                    RadialGradient(colors: [Self.cblu.opacity(0.10), .clear],
+                                   center: .bottomTrailing, startRadius: 0, endRadius: 520)
+                } else {
+                    RadialGradient(colors: [Theme.accentA(0.12), .clear],
+                                   center: .topLeading, startRadius: 0, endRadius: 540)
+                    RadialGradient(colors: [Self.blu.opacity(0.09), .clear],
+                                   center: .bottomTrailing, startRadius: 0, endRadius: 500)
+                }
+                ForEach(Array((lightMode ? lightOrbs : orbs).enumerated()), id: \.offset) { i, o in
                     Circle()
                         .fill(RadialGradient(
-                            colors: [o.core.opacity(0.85), o.halo.opacity(0.42), .clear],
+                            colors: [o.core.opacity(lightMode ? 0.72 : 0.85),
+                                     o.halo.opacity(lightMode ? 0.34 : 0.42), .clear],
                             center: .center, startRadius: 0, endRadius: o.size * 0.5))
                         .frame(width: o.size, height: o.size)
                         .blur(radius: o.blur)

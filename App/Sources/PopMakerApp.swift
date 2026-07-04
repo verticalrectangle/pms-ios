@@ -16,8 +16,6 @@ struct PopMakerApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(engine)
-                .preferredColorScheme(.dark)
-                .tint(Theme.accent)
                 .onAppear { engine.start() }
         }
     }
@@ -38,5 +36,6 @@ struct RootView: View {
                 }
         }
         .tint(Theme.accent)
+        .preferredColorScheme(Palette.shared.light ? .light : .dark)   // reactive: SOPHIE ↔ goth
     }
 }
