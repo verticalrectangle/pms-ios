@@ -20,6 +20,8 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         HEADER_SEARCH_PATHS: Engine/include
         SWIFT_OBJC_BRIDGING_HEADER: App/PMS-Bridging-Header.h
+        # The engine is C++; a Swift app linking it must pull in libc++.
+        OTHER_LDFLAGS: [-lc++]
         INFOPLIST_KEY_NSCameraUsageDescription: "Record video takes with live filters."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Record audio takes."
     dependencies:
