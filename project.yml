@@ -18,16 +18,22 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: xyz.epsilver.popmakerstudio
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
-        # Screens develop against the mock until pms_engine.xcframework
-        # exists; remove this flag when the engine links (Playbook P2.5).
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: ENGINE_MOCK
         HEADER_SEARCH_PATHS: Engine/include
         INFOPLIST_KEY_NSCameraUsageDescription: "Record video takes with live filters."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Record audio takes."
-    # ENGINE_MOCK mode: no framework dependency — xcodebuild hard-errors on
-    # a missing xcframework even with optional:true. When Playbook P2.3
-    # produces Engine/build/pms_engine.xcframework, restore:
-    #   dependencies:
-    #     - framework: Engine/build/pms_engine.xcframework
-    #       embed: true
-    # and remove ENGINE_MOCK from SWIFT_ACTIVE_COMPILATION_CONDITIONS.
+    dependencies:
+      # The engine (C++ + whisper/ggml merged) and ONNX Runtime, both as
+      # device-arm64 xcframeworks built by scripts/build_mac.sh + the iOS
+      # cross-compile (Playbook P2.3). Static → embed:false.
+      - framework: Engine/build/pms_engine.xcframework
+        embed: false
+      - framework: Engine/build/onnxruntime.xcframework
+        embed: false
+      # System frameworks the engine's miniaudio/ggml-metal/ORT backends need.
+      - sdk: Accelerate.framework
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: AVFoundation.framework
+      - sdk: AudioToolbox.framework
+      - sdk: CoreAudio.framework
+      - sdk: CoreML.framework
