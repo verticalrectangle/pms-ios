@@ -222,7 +222,7 @@ struct ExportSheet: View {
         GlassSheet(title: "Export", eyebrow: "GL FBO → H.264 / AAC · PIXEL-IDENTICAL") {
             VStack(spacing: 12) {
                 ForEach(Format.allCases, id: \.self) { f in
-                    Button { if phase == .idle { format = f; model.engine.command("set_format", ["preset": f.lever]) } } label: {
+                    Button { if phase == .idle { format = f; model.engine.command("set_format", ["format": f.lever]) } } label: {
                         HStack(spacing: 14) {
                             RoundedRectangle(cornerRadius: 4)
                                 .strokeBorder(format == f ? Theme.accent : Theme.lineHover, lineWidth: 1.5)
