@@ -45,10 +45,9 @@ final class EditorModel: ObservableObject {
             let dur = (try? await AVURLAsset(url: url).load(.duration))?.seconds ?? 0
             guard dur > 0 else { return }
             playhead = 0
-            let name = url.deletingPathExtension().lastPathComponent.uppercased() + ".MP4"
             let n = max(1, min(24, Int(dur / 1.5)))   // ~1 frame / 1.5s, capped
             let strip = await VideoPlayback.filmstrip(for: url, count: n)
-            let clip = Clip(id: "vclip", label: name, start: 0, duration: dur,
+            let clip = Clip(id: "vclip", label: "CLIP 1", start: 0, duration: dur,
                             thumbs: strip, sourceURL: url, sourceStart: 0)
             tracks = [
                 Track(id: "GFX", kind: .fxRail, name: "FX", clips: []),
@@ -79,12 +78,13 @@ final class EditorModel: ObservableObject {
         videoDuration = video?.duration
     }
 
-    /// Lay the video clips end-to-end (no gaps).
+    /// Lay the video clips end-to-end (no gaps) and renumber their labels.
     private func relayoutVideoClips() {
         guard let ti = videoTrackIndex else { return }
         var cursor = 0.0
         for i in tracks[ti].clips.indices {
             tracks[ti].clips[i].start = cursor
+            tracks[ti].clips[i].label = "CLIP \(i + 1)"
             cursor += tracks[ti].clips[i].duration
         }
     }
@@ -96,12 +96,16 @@ final class EditorModel: ObservableObject {
         else { return }
         let c = tracks[ti].clips[ci]
         let off = playhead - c.start
-        var a = c; a.duration = off
+        // Slice the filmstrip so each part shows its own frames.
+        let cut = max(0, min(c.thumbs.count, Int((Double(c.thumbs.count) * off / c.duration).rounded())))
+        var a = c; a.duration = off; a.thumbs = Array(c.thumbs.prefix(cut))
         let b = Clip(id: c.id + "_s\(Int(playhead * 1000))", label: c.label,
                      start: playhead, duration: c.duration - off, seed: c.seed,
-                     thumbs: c.thumbs, sourceURL: c.sourceURL, sourceStart: c.sourceStart + off)
+                     thumbs: Array(c.thumbs.suffix(c.thumbs.count - cut)),
+                     sourceURL: c.sourceURL, sourceStart: c.sourceStart + off)
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             tracks[ti].clips.replaceSubrange(ci...ci, with: [a, b])
+            relayoutVideoClips()          // fix start positions + renumber labels
             selectedID = b.id
         }
         // composition unchanged (a+b == original) → no reload needed

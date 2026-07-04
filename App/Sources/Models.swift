@@ -51,7 +51,7 @@ struct Track: Identifiable {
 
 struct Clip: Identifiable {
     let id: String
-    let label: String
+    var label: String
     var start: Double
     var duration: Double
     var seed: String = "g1"
