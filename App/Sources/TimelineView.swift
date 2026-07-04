@@ -109,8 +109,10 @@ private struct ClipDrag {
     enum Zone { case trimLeft, trimRight, move }
     let id: String
     let zone: Zone
-    let start, srcStart, dur, srcDur: Double
-    var dx: CGFloat = 0     // body-move visual follow
+    let start, srcStart, dur, srcDur, speed: Double   // clip's ORIGINAL span at grab
+    var floor: Double = 0                             // trim walls (neighbor edges)
+    var ceil: Double = .greatestFiniteMagnitude
+    var snapHold: Double? = nil                       // move snap hysteresis latch
 }
 
 private struct TrackLane: View {
@@ -123,19 +125,11 @@ private struct TrackLane: View {
     }
     private var movingID: String? { drag?.zone == .move ? drag?.id : nil }
 
-    /// Insertion slot (index among the OTHER clips) for a clip dragged by `dx`.
-    private func reorderTarget(_ dragged: Clip, dx: CGFloat) -> Int {
-        let center = CGFloat(dragged.start + dragged.duration / 2) * PPS + dx
-        return track.clips
-            .filter { $0.id != dragged.id }
-            .filter { CGFloat($0.start + $0.duration / 2) * PPS < center }
-            .count
-    }
-
     /// THE desktop pattern: ONE gesture per clip. The grab position latches a
     /// zone — within 24pt of an edge (only if the clip is wider than 2× that) is
-    /// a trim, otherwise the body moves. Edge beats body. No second gesture, so
-    /// nothing conflicts with trim.
+    /// a trim, otherwise the body moves. Edge beats body. Trim clamps to walls +
+    /// source + snap; move sets a free start live (snap + hysteresis) and bounces
+    /// on release if it overlaps a neighbor.
     private func clipDrag(_ clip: Clip) -> some Gesture {
         DragGesture(minimumDistance: 6, coordinateSpace: .named("lane"))
             .onChanged { g in
@@ -146,31 +140,58 @@ private struct TrackLane: View {
                     let zone: ClipDrag.Zone =
                         (w > 2 * edge && localX <= edge)       ? .trimLeft :
                         (w > 2 * edge && localX >= w - edge)   ? .trimRight : .move
-                    drag = ClipDrag(id: clip.id, zone: zone, start: clip.start,
-                                    srcStart: clip.sourceStart, dur: clip.duration, srcDur: clip.sourceDuration)
-                    if zone != .move { model.beginTrim() }
+                    var d = ClipDrag(id: clip.id, zone: zone, start: clip.start,
+                                     srcStart: clip.sourceStart, dur: clip.duration,
+                                     srcDur: clip.sourceDuration, speed: clip.speed)
+                    if zone != .move {
+                        let walls = model.trimWalls(excluding: clip.id, origStart: clip.start, origEnd: clip.end)
+                        d.floor = walls.floor; d.ceil = walls.ceil
+                    }
+                    model.beginEdit()
+                    drag = d
                 }
                 guard var d = drag, d.id == clip.id else { return }
                 let dxSec = Double(g.translation.width / PPS)
                 switch d.zone {
                 case .trimLeft:
-                    let ns = min(max(d.srcStart + dxSec, 0), d.srcStart + d.dur - 0.3)
-                    let change = ns - d.srcStart
-                    model.setTrim(clip.id, start: d.start + change, sourceStart: ns, duration: d.dur - change)
+                    // in-point + start move together; walled + source-floored, edge snaps
+                    let raw = d.start + dxSec
+                    let srcFloor = d.srcDur > 0 ? d.start - d.srcStart / max(0.01, d.speed) : 0
+                    var ns = model.snapEdge(raw, excluding: clip.id)
+                    ns = max(d.floor, max(srcFloor, max(0, min(ns, (d.start + d.dur) - 0.3))))
+                    let delta = ns - d.start
+                    model.setTrim(clip.id, start: ns,
+                                  sourceStart: max(0, d.srcStart + delta * d.speed),
+                                  duration: d.dur - delta)
                 case .trimRight:
-                    let nd = min(max(d.dur + dxSec, 0.3), d.srcDur - d.srcStart)
-                    model.setTrim(clip.id, start: d.start, sourceStart: d.srcStart, duration: nd)
+                    // out-point only; capped by source length + right wall, edge snaps
+                    let rawEnd = (d.start + d.dur) + dxSec
+                    let maxEnd = d.srcDur > 0 ? d.start + (d.srcDur - d.srcStart) / max(0.01, d.speed) : rawEnd
+                    var end = min(model.snapEdge(rawEnd, excluding: clip.id), min(maxEnd, d.ceil))
+                    end = max(end, d.start + 0.3)
+                    model.setTrim(clip.id, start: d.start, sourceStart: d.srcStart, duration: end - d.start)
                 case .move:
-                    d.dx = g.translation.width
-                    drag = d
+                    // free start, snap with a hysteresis latch (no flicker)
+                    let raw = d.start + dxSec
+                    let escape = 0.2
+                    var target = raw
+                    if let held = d.snapHold, abs(raw - held) < escape {
+                        target = held
+                    } else {
+                        let snapped = model.snapStart(raw, excluding: clip.id, duration: d.dur)
+                        d.snapHold = abs(snapped - raw) > 0.0001 ? snapped : nil
+                        target = snapped
+                        drag = d
+                    }
+                    model.setClipStart(clip.id, max(0, target))
                 }
             }
-            .onEnded { g in
+            .onEnded { _ in
                 defer { drag = nil }
                 guard let d = drag, d.id == clip.id else { return }
                 switch d.zone {
-                case .trimLeft, .trimRight: model.endTrim()
-                case .move: model.moveClip(clip.id, toIndex: reorderTarget(clip, dx: g.translation.width))
+                case .trimLeft, .trimRight: model.endEdit()
+                case .move: model.endMove(clip.id, originStart: d.start)
                 }
             }
     }
@@ -193,7 +214,7 @@ private struct TrackLane: View {
                     .contentShape(Rectangle())
                     .scaleEffect(moving ? 1.05 : 1)
                     .shadow(color: moving ? Theme.accentA(0.5) : .clear, radius: 10)
-                    .offset(x: CGFloat(clip.start) * PPS + (moving ? (drag?.dx ?? 0) : 0))
+                    .offset(x: CGFloat(clip.start) * PPS)   // move updates clip.start live
                     .zIndex(moving ? 2 : (model.selectedID == clip.id ? 1 : 0))
                     .highPriorityGestureIf(track.kind == .video, clipDrag(clip))
                     .onTapGesture { model.selectedID = (model.selectedID == clip.id) ? nil : clip.id }

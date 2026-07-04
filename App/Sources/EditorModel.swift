@@ -151,8 +151,8 @@ final class EditorModel: ObservableObject {
         let b = Clip(id: c.id + "_s\(Int(playhead * 1000))", label: c.label,
                      start: playhead, duration: c.duration - off, seed: c.seed,
                      thumbs: c.thumbs,
-                     sourceURL: c.sourceURL, sourceStart: c.sourceStart + off,
-                     sourceDuration: c.sourceDuration)
+                     sourceURL: c.sourceURL, sourceStart: c.sourceStart + off * c.speed,
+                     sourceDuration: c.sourceDuration, speed: c.speed)
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             tracks[ti].clips.replaceSubrange(ci...ci, with: [a, b])   // a+b occupy c's exact span
             renumberLabels()              // labels only — nothing moves
@@ -161,50 +161,73 @@ final class EditorModel: ObservableObject {
         // composition unchanged (a+b == original) → no reload needed
     }
 
-    /// Reorder: move the clip to a new slot (index among the OTHER clips) and
-    /// re-lay the sequence contiguously from 0. This one DOES reposition — it's
-    /// a deliberate re-sequence.
-    func moveClip(_ id: String, toIndex dest: Int) {
-        guard let ti = videoTrackIndex,
-              let from = tracks[ti].clips.firstIndex(where: { $0.id == id }),
-              dest != from else { return }
-        snapshot()
-        var clips = tracks[ti].clips
-        let clip = clips.remove(at: from)
-        clips.insert(clip, at: max(0, min(dest, clips.count)))
-        var cursor = 0.0
-        for i in clips.indices {
-            clips[i].start = cursor
-            clips[i].label = "CLIP \(i + 1)"
-            cursor += clips[i].duration
+    // MARK: Free-position drag (the desktop model: free start/end, implicit
+    // gaps, wall-clamp, snap — one Clip struct, index-independent).
+
+    private let snapRadius = 0.17   // ≈ 8px @ PPS 46 (desktop SNAP_PX / zoom)
+
+    func beginEdit() { snapshot() }                 // one undo step per drag
+    func endEdit()   { Task { await rebuildVideo() } }
+
+    /// Lines a dragged edge snaps to: playhead, 0, every OTHER clip's edges.
+    private func snapCandidates(excluding id: String) -> [Double] {
+        var c: [Double] = [playhead, 0]
+        for tr in tracks { for cl in tr.clips where cl.id != id { c.append(cl.start); c.append(cl.end) } }
+        return c
+    }
+    /// Snap a single edge to the nearest candidate within the radius.
+    func snapEdge(_ t: Double, excluding id: String) -> Double {
+        var best = t, dt = snapRadius
+        for c in snapCandidates(excluding: id) where abs(c - t) < dt { dt = abs(c - t); best = c }
+        return best
+    }
+    /// Snap a body move — whichever of the clip's two edges is closest wins.
+    func snapStart(_ t: Double, excluding id: String, duration dur: Double) -> Double {
+        var best = t, dt = snapRadius
+        for c in snapCandidates(excluding: id) {
+            if abs(c - t) < dt         { dt = abs(c - t);         best = c }
+            if abs(c - (t + dur)) < dt { dt = abs(c - (t + dur)); best = c - dur }
         }
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { tracks[ti].clips = clips }
-        Task { await rebuildVideo() }
+        return best
+    }
+    /// Walls: an edge can't cross a same-track neighbor. floor = max end of clips
+    /// left of the dragged clip's ORIGINAL span, ceil = min start of clips right.
+    func trimWalls(excluding id: String, origStart: Double, origEnd: Double) -> (floor: Double, ceil: Double) {
+        guard let ti = videoTrackIndex else { return (0, .greatestFiniteMagnitude) }
+        var floor = 0.0, ceil = Double.greatestFiniteMagnitude
+        for oc in tracks[ti].clips where oc.id != id {
+            if oc.end   <= origStart + 0.001 { floor = max(floor, oc.end) }
+            if oc.start >= origEnd   - 0.001 { ceil  = min(ceil, oc.start) }
+        }
+        return (floor, ceil)
     }
 
-    // MARK: Trim (drag the clip edges)
-
-    func beginTrim() { snapshot() }
-    /// The clip stays exactly where the drag left it — no re-anchor. The
-    /// composition is rebuilt to match the timeline (a gap fills the trimmed
-    /// front), so playback stays aligned. Just rebuild.
-    func endTrim() { Task { await rebuildVideo() } }
-
-    /// Set a clip's timeline position + in-point + length (the trim handle
-    /// computes these). Left-trim moves `start` so the left edge follows the
-    /// finger (right edge fixed); right-trim keeps `start`. No relayout during
-    /// the drag (that jitters); positions settle + composition rebuilds on end.
+    /// Plain setter — the trim gesture has already clamped to walls + source.
     func setTrim(_ id: String, start: Double, sourceStart: Double, duration: Double) {
         guard let ti = videoTrackIndex, let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
-        var start = start, dur = duration
-        // Don't let the left edge cross into the previous clip.
-        if ci > 0 { start = max(start, tracks[ti].clips[ci - 1].end) }
-        // Don't let the right edge cross into the next clip.
-        if ci + 1 < tracks[ti].clips.count { dur = min(dur, tracks[ti].clips[ci + 1].start - start) }
-        dur = max(0.3, dur)
-        tracks[ti].clips[ci].start = start
-        tracks[ti].clips[ci].sourceStart = sourceStart
-        tracks[ti].clips[ci].duration = dur
+        tracks[ti].clips[ci].start = max(0, start)
+        tracks[ti].clips[ci].sourceStart = max(0, sourceStart)
+        tracks[ti].clips[ci].duration = max(0.3, duration)
+    }
+
+    // MARK: Body move — free set-start, overlap allowed live, bounced on release
+
+    /// Live during the drag (no rebuild) — the clip's start follows the finger.
+    func setClipStart(_ id: String, _ newStart: Double) {
+        guard let ti = videoTrackIndex, let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
+        tracks[ti].clips[ci].start = max(0, newStart)
+    }
+    /// Same-track content overlap, half-open (desktop clips_conflict).
+    func clipConflicts(_ id: String) -> Bool {
+        guard let ti = videoTrackIndex, let c = tracks[ti].clips.first(where: { $0.id == id }) else { return false }
+        return tracks[ti].clips.contains { $0.id != id && c.start < $0.end && c.end > $0.start }
+    }
+    /// Release: bounce back to the origin on overlap, else keep; rebuild either way.
+    func endMove(_ id: String, originStart: Double) {
+        if clipConflicts(id) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { setClipStart(id, originStart) }
+        }
+        Task { await rebuildVideo() }
     }
 
     /// Delete the selected clip; remaining clips close the gap.
