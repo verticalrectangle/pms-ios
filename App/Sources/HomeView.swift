@@ -131,7 +131,7 @@ struct ProjectCard: View {
         }
         .padding(11)
         .frame(maxWidth: .infinity)
-        .glass(Theme.rCard)
+        .glass(Theme.rCard, sheer: true)   // depth: orbs glow through the card
     }
 }
 

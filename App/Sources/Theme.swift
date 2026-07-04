@@ -62,6 +62,7 @@ struct Glass: ViewModifier {
     var radius: CGFloat = Theme.rCard
     var flat: Bool = false          // dense-data surfaces get less gloss
     var active: Bool = false        // "live" lavender ring
+    var sheer: Bool = false         // thinner frost — the atmosphere glows through (depth)
 
     func body(content: Content) -> some View {
         content
@@ -69,6 +70,7 @@ struct Glass: ViewModifier {
                 ZStack {
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .fill(.ultraThinMaterial)
+                        .opacity(sheer ? 0.5 : 1.0)   // a pane you look THROUGH, not a wall
                     // wet top-third reflection
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .fill(
@@ -85,6 +87,16 @@ struct Glass: ViewModifier {
                         active ? Theme.accentA(0.55) : Color.white.opacity(flat ? 0.12 : 0.16),
                         lineWidth: 1)
             )
+            .overlay(alignment: .top) {
+                // bright top rim — the light-catch on real frosted acrylic
+                if sheer {
+                    UnevenRoundedRectangle(topLeadingRadius: radius, topTrailingRadius: radius, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(colors: [.white.opacity(0.35), .clear], startPoint: .top, endPoint: .bottom),
+                            lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay {
                 // active "bioluminescent" bloom
                 if active {
@@ -97,8 +109,8 @@ struct Glass: ViewModifier {
 }
 
 extension View {
-    func glass(_ radius: CGFloat = Theme.rCard, flat: Bool = false, active: Bool = false) -> some View {
-        modifier(Glass(radius: radius, flat: flat, active: active))
+    func glass(_ radius: CGFloat = Theme.rCard, flat: Bool = false, active: Bool = false, sheer: Bool = false) -> some View {
+        modifier(Glass(radius: radius, flat: flat, active: active, sheer: sheer))
     }
 
     /// Press feedback matching the HTML: compress + brighten, no glow.
@@ -118,23 +130,52 @@ struct GlassPressStyle: ButtonStyle {
 
 struct AtmosphereView: View {
     @State private var drift = false
+
+    // A bokeh orb: normalized position, size, blur (far = big+soft, near = small+
+    // tight-cored), a luminous core + halo, and a slow drift. Varied blur is what
+    // the eye reads as depth.
+    private struct Orb {
+        let nx, ny, size, blur, opacity, dy: CGFloat
+        let core, halo: Color
+    }
+    private static let lav = Theme.accent
+    private static let blu = Color(red: 0.42, green: 0.60, blue: 1.0)   // cool
+    private static let emb = Color(red: 1.0,  green: 0.68, blue: 0.50)  // warm ember
+
+    private let orbs: [Orb] = [
+        // FAR — large, very soft, ambient
+        Orb(nx: 0.10, ny: 0.15, size: 340, blur: 50, opacity: 0.55, dy:  34, core: lav,    halo: lav),
+        Orb(nx: 0.90, ny: 0.70, size: 420, blur: 60, opacity: 0.42, dy: -42, core: blu,    halo: blu),
+        // MID
+        Orb(nx: 0.82, ny: 0.19, size: 190, blur: 28, opacity: 0.60, dy:  26, core: lav,    halo: lav),
+        Orb(nx: 0.13, ny: 0.60, size: 168, blur: 24, opacity: 0.50, dy: -22, core: blu,    halo: blu),
+        // NEAR — small, tight bright cores (these are the "pop")
+        Orb(nx: 0.29, ny: 0.31, size: 82,  blur: 10, opacity: 0.90, dy:  18, core: .white, halo: lav),
+        Orb(nx: 0.66, ny: 0.85, size: 58,  blur: 8,  opacity: 0.75, dy: -14, core: emb,    halo: emb),
+        Orb(nx: 0.93, ny: 0.11, size: 44,  blur: 7,  opacity: 0.78, dy:  15, core: .white, halo: lav),
+    ]
+
     var body: some View {
-        ZStack {
-            Theme.ground
-            RadialGradient(colors: [.white.opacity(0.05), .clear],
-                           center: .top, startRadius: 0, endRadius: 420)
-            RadialGradient(colors: [Theme.accentA(0.10), .clear],
-                           center: .bottomTrailing, startRadius: 0, endRadius: 380)
-            ForEach(0..<4, id: \.self) { i in
-                Circle()
-                    .fill(RadialGradient(
-                        colors: [.white.opacity(0.10), Theme.accentA(0.06), .clear],
-                        center: .init(x: 0.35, y: 0.3), startRadius: 0, endRadius: 120))
-                    .frame(width: [150, 90, 200, 70][i], height: [150, 90, 200, 70][i])
-                    .offset(x: [-60, 150, 170, -110][i], y: drift ? [-120, 40, 260, -40][i] : [-90, 90, 300, 0][i])
-                    .blur(radius: 2)
-                    .opacity(0.5)
-                    .animation(.easeInOut(duration: 26).repeatForever(autoreverses: true).delay(Double(i) * 2), value: drift)
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height
+            ZStack {
+                Theme.ground
+                RadialGradient(colors: [Theme.accentA(0.12), .clear],
+                               center: .topLeading, startRadius: 0, endRadius: 540)
+                RadialGradient(colors: [Self.blu.opacity(0.09), .clear],
+                               center: .bottomTrailing, startRadius: 0, endRadius: 500)
+                ForEach(Array(orbs.enumerated()), id: \.offset) { i, o in
+                    Circle()
+                        .fill(RadialGradient(
+                            colors: [o.core.opacity(0.85), o.halo.opacity(0.42), .clear],
+                            center: .center, startRadius: 0, endRadius: o.size * 0.5))
+                        .frame(width: o.size, height: o.size)
+                        .blur(radius: o.blur)
+                        .opacity(o.opacity)
+                        .position(x: o.nx * w, y: o.ny * h + (drift ? o.dy : -o.dy))
+                        .animation(.easeInOut(duration: 24 + Double(i) * 2.5)
+                            .repeatForever(autoreverses: true), value: drift)
+                }
             }
         }
         .ignoresSafeArea()

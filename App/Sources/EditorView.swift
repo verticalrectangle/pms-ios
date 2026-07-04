@@ -180,7 +180,7 @@ struct EditorView: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity)
             .frame(height: 132)          // fixed — was maxHeight:.infinity, which crushed the canvas
-            .glass(18, flat: true)
+            .glass(18, flat: true, sheer: true)   // thin frost so the atmosphere reads behind it
             .padding(.horizontal, 8)
             .onTapGesture { /* tap-away handled inside */ }
     }
