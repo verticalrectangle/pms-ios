@@ -96,6 +96,10 @@ final class EditorModel: ObservableObject {
         playhead = v
         if let vid = video { vid.seek(v) } else { engine.command("seek", ["time": v]) }
     }
+    /// Pause playback when the user grabs the timeline to scrub.
+    func pauseForScrub() {
+        if isPlaying { video?.pause(); isPlaying = false; if video == nil { engine.command("pause") } }
+    }
 
     // MARK: Mutations → levers
 

@@ -10,6 +10,7 @@ private let PPS: CGFloat = 46          // pixels per second
 struct TimelineView: View {
     @ObservedObject var model: EditorModel
     @ObservedObject var engine: EngineStore
+    @State private var dragStartT: Double?
 
     private var t: Double { model.playhead }
     private var contentWidth: CGFloat { CGFloat(model.duration) * PPS }
@@ -17,32 +18,31 @@ struct TimelineView: View {
     var body: some View {
         GeometryReader { geo in
             let sidePad = geo.size.width / 2
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    ZStack(alignment: .topLeading) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            RulerView(model: model)
-                            ForEach(model.tracks) { track in
-                                TrackLane(track: track, model: model)
-                            }
-                        }
-                        // seek anchor that we keep centred while playing
-                        Color.clear.frame(width: 1, height: 1)
-                            .offset(x: CGFloat(t) * PPS)
-                            .id("cursor")
-                    }
-                    .frame(width: contentWidth, alignment: .topLeading)
-                    .padding(.horizontal, sidePad)
-                    .contentShape(Rectangle())
-                    .onTapGesture { location in
-                        model.seek(Double((location.x - sidePad) / PPS))
-                    }
-                }
-                .onChange(of: t) { _, _ in
-                    if model.isPlaying { withAnimation(.linear(duration: 0.06)) { proxy.scrollTo("cursor", anchor: .center) } }
+            // The content is offset so the point at time `t` sits under the
+            // centred playhead; as `t` advances during playback the content
+            // slides left and the playhead visibly tracks it. (.offset is a
+            // cheap render transform — no per-frame relayout.)
+            VStack(alignment: .leading, spacing: 3) {
+                RulerView(model: model)
+                ForEach(model.tracks) { track in
+                    TrackLane(track: track, model: model)
                 }
             }
+            .frame(width: contentWidth, alignment: .topLeading)
+            .offset(x: sidePad - CGFloat(t) * PPS)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+            .clipped()
+            .contentShape(Rectangle())
             .overlay(alignment: .center) { Playhead(model: model, engine: engine) }
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 6)
+                    .onChanged { g in
+                        if dragStartT == nil { dragStartT = t; model.pauseForScrub() }
+                        model.seek((dragStartT ?? t) - Double(g.translation.width / PPS))
+                    }
+                    .onEnded { _ in dragStartT = nil }
+            )
+            .onTapGesture { loc in model.seek(t + Double((loc.x - sidePad) / PPS)) }
         }
     }
 }
@@ -63,28 +63,30 @@ private struct RulerView: View {
                         .offset(x: CGFloat(Double(i) * beatSec) * PPS)
                 }
             }
-            // second ticks
+            // second ticks + timecode on the BOTTOM row (kept clear of chapters)
             ForEach(0...secs, id: \.self) { s in
                 let major = s % 5 == 0
-                Rectangle().fill(major ? Theme.lineStrong : Theme.lineFaint).frame(width: 1)
-                    .offset(x: CGFloat(s) * PPS)
+                Rectangle().fill(major ? Theme.lineStrong : Theme.lineFaint).frame(width: 1, height: 8)
+                    .offset(x: CGFloat(s) * PPS, y: 18)
                 if major {
-                    Text(fullTC(Double(s))).font(.num(10)).foregroundStyle(Theme.txtMuted)
-                        .offset(x: CGFloat(s) * PPS + 4, y: 2)
+                    Text(fullTC(Double(s))).font(.num(9)).foregroundStyle(Theme.txtMuted)
+                        .fixedSize()
+                        .offset(x: CGFloat(s) * PPS + 3, y: 16)
                 }
             }
-            // chapter markers
+            // chapter markers on the TOP row
             ForEach(model.chapters) { m in
-                VStack(spacing: 2) {
+                VStack(spacing: 1) {
                     Text(m.label).font(.label(7)).tracking(0.6).foregroundStyle(m.color)
                         .padding(.horizontal, 3).padding(.vertical, 1)
                         .background(RoundedRectangle(cornerRadius: 2).fill(m.color.opacity(0.16)))
-                    Rectangle().fill(m.color).frame(width: 1)
+                    Rectangle().fill(m.color.opacity(0.5)).frame(width: 1, height: 8)
                 }
+                .fixedSize()
                 .offset(x: CGFloat(m.time) * PPS, y: 0)
             }
         }
-        .frame(height: 22, alignment: .topLeading)
+        .frame(height: 34, alignment: .topLeading)
     }
 }
 
