@@ -21,21 +21,22 @@ struct EditorView: View {
     private var t: Double { engine.playing ? engine.playhead : model.localSeek }
 
     var body: some View {
+        GeometryReader { geo in
         ZStack {
             AtmosphereView()
 
-            // GeometryReader hard-frames the column to the screen (width caps
-            // the overflow; height lets the canvas expand to fill).
-            GeometryReader { geo in
-                VStack(spacing: 10) {
-                    topBar
-                    canvas.layoutPriority(1)   // claims the extra height → fills
-                    TransportBar(model: model, engine: engine).padding(.horizontal, 16)
-                    timeline
-                    bottomStack
-                }
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+            // Explicit sizes off the root geometry — flex-sizing (GeometryReader
+            // / aspectRatio / maxHeight) collapses in this VStack, so the canvas
+            // is sized directly: the largest 9:16 box that fits ~half the height.
+            VStack(spacing: 10) {
+                topBar
+                canvas(box: canvasBox(in: geo.size))
+                TransportBar(model: model, engine: engine).padding(.horizontal, 16)
+                timeline
+                bottomStack
+                Spacer(minLength: 0)
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             .padding(.top, 8)
 
             VStack {
@@ -59,6 +60,16 @@ struct EditorView: View {
             }
         }
         .onAppear { engine.startMockMeters() }
+        }   // GeometryReader
+    }
+
+    /// Largest aspect-correct canvas box that fits ~half the screen height and
+    /// the available width (minus padding).
+    private func canvasBox(in size: CGSize) -> CGSize {
+        let maxH = size.height * 0.50
+        let maxW = size.width - 28
+        let h = min(maxH, maxW / model.format.aspect)
+        return CGSize(width: h * model.format.aspect, height: h)
     }
 
     private var topBar: some View {
@@ -76,29 +87,18 @@ struct EditorView: View {
         .padding(.horizontal, 14)
     }
 
-    private var canvas: some View {
-        // Portrait/landscape/square all fit within the available box, centered.
-        // MTKView (a UIViewRepresentable) ignores .aspectRatio, so we size it
-        // explicitly from the geometry — otherwise it fills full width and
-        // drags the whole layout off both screen edges.
-        // Color.clear drives the aspect-fit size (a real SwiftUI view that
-        // respects .aspectRatio, unlike MTKView), expanding to the largest
-        // portrait/landscape box that fits the available space; MetalPreview
-        // overlays it at exactly that size. This reliably fills — a nested
-        // GeometryReader collapses in a VStack.
-        Color.clear
-            .aspectRatio(model.format.aspect, contentMode: .fit)
-            .overlay {
-                MetalPreview(store: engine)
-                    .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
-                                          activeBricks: model.activeBricks(at: t)))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.rCard).strokeBorder(Theme.line))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    // MTKView (UIViewRepresentable) ignores .aspectRatio, so the canvas is
+    // sized explicitly (box computed from the root geometry).
+    private func canvas(box: CGSize) -> some View {
+        MetalPreview(store: engine)
+            .frame(width: box.width, height: box.height)
+            .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
+                                  activeBricks: model.activeBricks(at: t)))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
+            .overlay(RoundedRectangle(cornerRadius: Theme.rCard).strokeBorder(Theme.line))
+            .frame(maxWidth: .infinity)   // centre horizontally
             .contentShape(Rectangle())
             .onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
-            .padding(.horizontal, 14)
     }
 
     private var timeline: some View {
