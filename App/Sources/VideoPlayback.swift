@@ -224,7 +224,7 @@ enum TextRasterizer {
         guard !clip.label.isEmpty, size.width > 1 else { return nil }
         let key = "\(clip.id)|\(clip.label)|\(Int(size.width))x\(Int(size.height))"
         if let c = cache[key] { return c }
-        let root = CALayer(); root.frame = CGRect(origin: .zero, size: size); root.isGeometryFlipped = true
+        let root = CALayer(); root.frame = CGRect(origin: .zero, size: size)
         let para = NSMutableParagraphStyle(); para.alignment = .center
         let text = CATextLayer()
         text.contentsScale = 3; text.isWrapped = true; text.alignmentMode = .center
