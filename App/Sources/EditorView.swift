@@ -27,7 +27,7 @@ struct EditorView: View {
             VStack(spacing: 8) {
                 topBar
                 canvas
-                TransportBar(model: model, engine: engine).padding(.horizontal, 16)
+                TransportBar(model: model, engine: engine).border(Color.green, width: 4).padding(.horizontal, 16)
                 timeline
                 bottomStack
             }
@@ -92,6 +92,7 @@ struct EditorView: View {
                 .onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
         }
         .frame(maxHeight: 380)
+        .border(Color.red, width: 4)
         .padding(.horizontal, 14)
     }
 
