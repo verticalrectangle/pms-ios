@@ -347,6 +347,13 @@ equivalent trap is forgetting to end an encoder before reading its target.
     separation completes (any speed) without memory pressure kills —
     profile with Instruments allocations.
 
+> **STATUS 2026-07-03: the Glass SwiftUI shell is INTEGRATED, builds both ways.**
+> Alexis's design workflow produced a 14-file app (glass UI, lavender accent,
+> levers-correct via EditorModel -> command()). In App/Sources: simulator
+> (ENGINE_MOCK) build runs (Home live); device (real engine) build links. Its
+> EngineBridge was my exact bridge (identical). Not-yet-ported (design's note):
+> drag-to-timeline, keyframes, multicam, loop region, transcript search.
+
 ## Phase 7 — Screens (the design workflow's lane)
 
 Owned by Alexis's Claude design workflow; engineering agents support:
