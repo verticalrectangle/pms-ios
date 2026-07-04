@@ -161,22 +161,6 @@ final class EditorModel: ObservableObject {
         // composition unchanged (a+b == original) → no reload needed
     }
 
-    /// Nudge the selected clip one slot left (-1) or right (+1). Reliable
-    /// button-driven reorder alongside the drag.
-    func nudgeSelectedClip(_ delta: Int) {
-        guard let ti = videoTrackIndex, let id = selectedID,
-              let from = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
-        let target = from + delta
-        guard target >= 0, target < tracks[ti].clips.count else { return }
-        moveClip(id, toIndex: target)
-    }
-    /// Position of the selected clip in the video track (for enabling nudge arrows).
-    var selectedClipIndex: Int? {
-        guard let ti = videoTrackIndex, let id = selectedID else { return nil }
-        return tracks[ti].clips.firstIndex { $0.id == id }
-    }
-    var videoClipCount: Int { tracks.first { $0.kind == .video }?.clips.count ?? 0 }
-
     /// Reorder: move the clip to a new slot (index among the OTHER clips) and
     /// re-lay the sequence contiguously from 0. This one DOES reposition — it's
     /// a deliberate re-sequence.
