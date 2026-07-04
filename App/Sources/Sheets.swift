@@ -211,62 +211,76 @@ struct LyricsSheet: View {
 
 struct ExportSheet: View {
     @ObservedObject var model: EditorModel
-    @State private var format: Format
     @State private var phase: Phase = .idle
     @State private var pct = 0.0
+    @State private var outURL: URL?
+    @State private var failed = false
     enum Phase { case idle, rendering, done }
 
-    init(model: EditorModel) { self.model = model; _format = State(initialValue: model.format) }
+    init(model: EditorModel) { self.model = model }
+
+    private var hasVideo: Bool { !model.videoSegments.isEmpty }
 
     var body: some View {
-        GlassSheet(title: "Export", eyebrow: "GL FBO → H.264 / AAC · PIXEL-IDENTICAL") {
-            VStack(spacing: 12) {
-                ForEach(Format.allCases, id: \.self) { f in
-                    Button { if phase == .idle { format = f; model.engine.command("set_format", ["format": f.lever]) } } label: {
-                        HStack(spacing: 14) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .strokeBorder(format == f ? Theme.accent : Theme.lineHover, lineWidth: 1.5)
-                                .frame(width: f == .landscape ? 46 : f == .square ? 36 : 26, height: f == .landscape ? 26 : 36)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(f.rawValue).font(.disp(19)).foregroundStyle(format == f ? Theme.accent : Theme.txt)
-                                Text("\(f.resolution) · \(f.platform)").font(.num(12)).foregroundStyle(Theme.txtMuted)
-                            }
-                            Spacer()
-                            if format == f { Image(systemName: "checkmark").foregroundStyle(Theme.accent) }
+        GlassSheet(title: "Export", eyebrow: "TIMELINE → H.264 / AAC · MP4") {
+            VStack(spacing: 14) {
+                if !hasVideo {
+                    Text("Import a clip to export.")
+                        .font(.num(13)).foregroundStyle(Theme.txtMuted)
+                        .frame(maxWidth: .infinity).padding(.vertical, 22)
+                } else {
+                    switch phase {
+                    case .idle:
+                        VStack(spacing: 6) {
+                            Text(String(format: "%.1fs · %@", model.duration, model.format.resolution))
+                                .font(.num(13)).foregroundStyle(Theme.txtMuted)
+                        }.frame(maxWidth: .infinity).padding(.vertical, 8)
+                        Button { startRender() } label: {
+                            HStack(spacing: 10) { Image(systemName: "square.and.arrow.up"); Text("Export MP4").font(.disp(16)) }
+                                .foregroundStyle(Theme.accent).frame(maxWidth: .infinity).padding(.vertical, 15).glass(15, active: true)
                         }
-                        .padding(14).frame(maxWidth: .infinity).glass(15, active: format == f)
+                        if failed {
+                            Text("Export failed — try again.").font(.num(12)).foregroundStyle(Color(red: 1, green: 0.5, blue: 0.5))
+                        }
+                    case .rendering:
+                        VStack(alignment: .leading, spacing: 9) {
+                            HStack { Text("EXPORTING…").font(.label(10)).foregroundStyle(Theme.accent); Spacer(); Text("\(Int(pct * 100))%").font(.num(13)).foregroundStyle(Theme.accent) }
+                            ProgressView(value: pct).tint(Theme.accent)
+                        }.padding(16).glass(15, flat: true)
+                    case .done:
+                        VStack(spacing: 14) {
+                            Image(systemName: "checkmark.circle").font(.system(size: 34)).foregroundStyle(Theme.accent)
+                            Text("Export complete").font(.disp(18)).foregroundStyle(.white)
+                            if let outURL {
+                                Text(sizeString(outURL)).font(.num(12)).foregroundStyle(Theme.txtMuted)
+                                ShareLink(item: outURL) {
+                                    HStack(spacing: 10) { Image(systemName: "square.and.arrow.up"); Text("Save / Share").font(.disp(15)) }
+                                        .foregroundStyle(Theme.accent).frame(maxWidth: .infinity).padding(.vertical, 13).glass(15, active: true)
+                                }
+                                Button { phase = .idle } label: {
+                                    Text("Export again").font(.label(11)).foregroundStyle(Theme.txtMuted)
+                                }
+                            }
+                        }.padding(18).frame(maxWidth: .infinity).glass(15)
                     }
-                }
-
-                switch phase {
-                case .idle:
-                    Button { startRender() } label: {
-                        HStack(spacing: 10) { Image(systemName: "square.and.arrow.up"); Text("Render \(format.rawValue)").font(.disp(16)) }
-                            .foregroundStyle(Theme.accent).frame(maxWidth: .infinity).padding(.vertical, 15).glass(15, active: true)
-                    }
-                case .rendering:
-                    VStack(alignment: .leading, spacing: 9) {
-                        HStack { Text("RENDERING…").font(.label(10)).foregroundStyle(Theme.accent); Spacer(); Text("\(Int(pct * 100))%").font(.num(13)).foregroundStyle(Theme.accent) }
-                        ProgressView(value: pct).tint(Theme.accent)
-                        Text("frame \(Int(pct * 540))/540 · same GL pipeline as preview").font(.num(12)).foregroundStyle(Theme.txtMuted)
-                    }.padding(16).glass(15, flat: true)
-                case .done:
-                    VStack(spacing: 12) {
-                        Image(systemName: "checkmark.circle").font(.system(size: 34)).foregroundStyle(Theme.accent)
-                        Text("Render complete").font(.disp(18)).foregroundStyle(.white)
-                        Text("GLASS_DROWN_\(format.rawValue.replacingOccurrences(of: ":", with: "x")).MP4 · 14.2 MB").font(.num(12)).foregroundStyle(Theme.txtMuted)
-                    }.padding(18).frame(maxWidth: .infinity).glass(15)
                 }
             }
         }
     }
 
+    private func sizeString(_ url: URL) -> String {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let bytes = (attrs?[.size] as? Int) ?? 0
+        return url.lastPathComponent + " · " + ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
     private func startRender() {
-        model.engine.command("trigger_export", ["format": format.lever])
-        phase = .rendering; pct = 0
-        Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { tm in
-            pct += 0.02
-            if pct >= 1 { pct = 1; phase = .done; tm.invalidate() }
+        failed = false; phase = .rendering; pct = 0
+        let segments = model.videoSegments
+        Task {
+            let url = await VideoExporter.export(segments) { p in pct = p }
+            if let url { outURL = url; phase = .done }
+            else { failed = true; phase = .idle }
         }
     }
 }

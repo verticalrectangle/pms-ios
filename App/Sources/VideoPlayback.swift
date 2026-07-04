@@ -60,20 +60,14 @@ final class VideoPlayback {
         startLink()
     }
 
-    /// (Re)build the playable timeline from the ordered clip segments — every
-    /// edit (trim/split/delete) calls this. Preserves the play position.
-    func load(segments: [Segment], seekTo: Double? = nil) async {
-        let wasPlaying = player.rate > 0
-        let at = seekTo.map { CMTime(seconds: $0, preferredTimescale: 600) } ?? player.currentTime()
-        suppressTicks = true   // swallow the item-swap's transient 0 until the seek lands
-
+    /// Build the AVComposition (+ orientation video composition) from the clip
+    /// segments. Clips sit at their timeline `start`; an empty range fills any
+    /// gap (front-trim). Composition == timeline, 1:1. Shared by playback + export.
+    static func buildComposition(_ segments: [Segment]) async -> (AVMutableComposition, AVMutableVideoComposition?) {
         let comp = AVMutableComposition()
         let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
         var cursor = CMTime.zero
-        // Clips are placed at their timeline `start` — a front-trimmed first clip
-        // sits past 0, so an empty range fills the gap. Composition == timeline,
-        // 1:1, so the playhead stays aligned with no offset tricks.
         for seg in segments.sorted(by: { $0.start < $1.start }) {
             let clipStart = CMTime(seconds: seg.start, preferredTimescale: 600)
             if CMTimeCompare(clipStart, cursor) > 0 {
@@ -92,12 +86,22 @@ final class VideoPlayback {
             }
             cursor = CMTimeAdd(clipStart, range.duration)
         }
-        duration = cursor.seconds
+        let vc = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: comp)
+        return (comp, vc)
+    }
+
+    /// (Re)build the playable timeline from the ordered clip segments — every
+    /// edit (trim/split/delete) calls this. Preserves the play position.
+    func load(segments: [Segment], seekTo: Double? = nil) async {
+        let wasPlaying = player.rate > 0
+        let at = seekTo.map { CMTime(seconds: $0, preferredTimescale: 600) } ?? player.currentTime()
+        suppressTicks = true   // swallow the item-swap's transient 0 until the seek lands
+
+        let (comp, vc) = await Self.buildComposition(segments)
+        duration = comp.duration.seconds
 
         let item = AVPlayerItem(asset: comp)
-        if let vc = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: comp) {
-            item.videoComposition = vc   // bake in orientation
-        }
+        item.videoComposition = vc   // bake in orientation
         let out = AVPlayerItemVideoOutput(pixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
         item.add(out)
@@ -153,5 +157,37 @@ final class VideoPlayback {
               let pb = out.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil)
         else { return }
         engine?.submitCameraFrame(pb, rotation: 0, hostTime: itemTime.seconds)
+    }
+}
+
+// MARK: - Export
+
+/// Renders the timeline's AVComposition to an .mp4 the user can save or share.
+@MainActor
+enum VideoExporter {
+    /// Returns the written file URL, or nil on failure. `progress` is 0…1.
+    static func export(_ segments: [VideoPlayback.Segment],
+                       progress: @escaping (Double) -> Void) async -> URL? {
+        let (comp, vc) = await VideoPlayback.buildComposition(segments)
+        guard comp.duration.seconds > 0,
+              let session = AVAssetExportSession(asset: comp, presetName: AVAssetExportPresetHighestQuality)
+        else { return nil }
+
+        let out = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PopMaker_\(UUID().uuidString).mp4")
+        try? FileManager.default.removeItem(at: out)
+        session.outputURL = out
+        session.outputFileType = .mp4
+        if let vc { session.videoComposition = vc }
+
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            progress(Double(session.progress))
+        }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            session.exportAsynchronously { c.resume() }
+        }
+        timer.invalidate()
+        progress(1)
+        return session.status == .completed ? out : nil
     }
 }

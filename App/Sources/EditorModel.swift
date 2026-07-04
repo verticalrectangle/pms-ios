@@ -97,6 +97,13 @@ final class EditorModel: ObservableObject {
         return tracks[ti].clips.first { $0.id == selectedID }
     }
 
+    /// The current video clips as export/playback segments.
+    var videoSegments: [VideoPlayback.Segment] {
+        (tracks.first { $0.kind == .video }?.clips ?? []).compactMap { c in
+            c.sourceURL.map { VideoPlayback.Segment(url: $0, start: c.start, sourceStart: c.sourceStart, duration: c.duration) }
+        }
+    }
+
     /// Rebuild the player timeline from the current video clips.
     func rebuildVideo(seekTo: Double? = nil) async {
         guard let ti = videoTrackIndex else { return }
