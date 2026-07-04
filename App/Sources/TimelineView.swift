@@ -103,15 +103,25 @@ private struct RulerView: View {
 
 // MARK: - Track lane
 
+/// One drag in flight on a clip. The zone is latched at grab time (desktop
+/// pattern) and every update dispatches on it — never competing gestures.
+private struct ClipDrag {
+    enum Zone { case trimLeft, trimRight, move }
+    let id: String
+    let zone: Zone
+    let start, srcStart, dur, srcDur: Double
+    var dx: CGFloat = 0     // body-move visual follow
+}
+
 private struct TrackLane: View {
     let track: Track
     @ObservedObject var model: EditorModel
-    @State private var dragID: String?     // clip picked up for reorder
-    @State private var dragDX: CGFloat = 0
+    @State private var drag: ClipDrag?
 
     private var laneHeight: CGFloat {
         switch track.kind { case .fxRail: 30; case .video: 52; case .lyric: 40; case .audio: 34 }
     }
+    private var movingID: String? { drag?.zone == .move ? drag?.id : nil }
 
     /// Insertion slot (index among the OTHER clips) for a clip dragged by `dx`.
     private func reorderTarget(_ dragged: Clip, dx: CGFloat) -> Int {
@@ -122,6 +132,49 @@ private struct TrackLane: View {
             .count
     }
 
+    /// THE desktop pattern: ONE gesture per clip. The grab position latches a
+    /// zone — within 24pt of an edge (only if the clip is wider than 2× that) is
+    /// a trim, otherwise the body moves. Edge beats body. No second gesture, so
+    /// nothing conflicts with trim.
+    private func clipDrag(_ clip: Clip) -> some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .named("lane"))
+            .onChanged { g in
+                if drag == nil {
+                    let localX = g.startLocation.x - CGFloat(clip.start) * PPS
+                    let w = CGFloat(clip.duration) * PPS
+                    let edge: CGFloat = 24
+                    let zone: ClipDrag.Zone =
+                        (w > 2 * edge && localX <= edge)       ? .trimLeft :
+                        (w > 2 * edge && localX >= w - edge)   ? .trimRight : .move
+                    drag = ClipDrag(id: clip.id, zone: zone, start: clip.start,
+                                    srcStart: clip.sourceStart, dur: clip.duration, srcDur: clip.sourceDuration)
+                    if zone != .move { model.beginTrim() }
+                }
+                guard var d = drag, d.id == clip.id else { return }
+                let dxSec = Double(g.translation.width / PPS)
+                switch d.zone {
+                case .trimLeft:
+                    let ns = min(max(d.srcStart + dxSec, 0), d.srcStart + d.dur - 0.3)
+                    let change = ns - d.srcStart
+                    model.setTrim(clip.id, start: d.start + change, sourceStart: ns, duration: d.dur - change)
+                case .trimRight:
+                    let nd = min(max(d.dur + dxSec, 0.3), d.srcDur - d.srcStart)
+                    model.setTrim(clip.id, start: d.start, sourceStart: d.srcStart, duration: nd)
+                case .move:
+                    d.dx = g.translation.width
+                    drag = d
+                }
+            }
+            .onEnded { g in
+                defer { drag = nil }
+                guard let d = drag, d.id == clip.id else { return }
+                switch d.zone {
+                case .trimLeft, .trimRight: model.endTrim()
+                case .move: model.moveClip(clip.id, toIndex: reorderTarget(clip, dx: g.translation.width))
+                }
+            }
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             if track.kind == .fxRail && track.bricks.isEmpty {
@@ -129,37 +182,21 @@ private struct TrackLane: View {
                     .font(.label(8)).foregroundStyle(Theme.txtGhost).offset(x: 6, y: laneHeight/2 - 6)
             }
             ForEach(track.clips) { clip in
-                let dragging = dragID == clip.id
+                let moving = drag?.id == clip.id && drag?.zone == .move
                 ContentClipView(clip: clip, kind: track.kind, selected: model.selectedID == clip.id, height: laneHeight)
                     .frame(width: CGFloat(clip.duration) * PPS)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        model.selectedID = (model.selectedID == clip.id) ? nil : clip.id
-                    }
-                    .scaleEffect(dragging ? 1.06 : 1, anchor: .center)
-                    .shadow(color: dragging ? Theme.accentA(0.55) : .clear, radius: 12)
-                    .offset(x: CGFloat(clip.start) * PPS + (dragging ? dragDX : 0))
-                    .zIndex(dragging ? 2 : (model.selectedID == clip.id ? 1 : 0))
-                    // Reorder: drag a video clip's BODY to move it. High-priority so
-                    // it beats the scrub (which now lives on the ruler row). Attached
-                    // BEFORE the handle overlay so the trim handles sit on top and
-                    // win edge touches; the body passes through the HStack's spacer.
-                    .highPriorityGestureIf(track.kind == .video,
-                        DragGesture(minimumDistance: 8, coordinateSpace: .global)
-                            .onChanged { g in
-                                if dragID != clip.id { dragID = clip.id }
-                                dragDX = g.translation.width
-                            }
-                            .onEnded { g in
-                                model.moveClip(clip.id, toIndex: reorderTarget(clip, dx: g.translation.width))
-                                dragID = nil; dragDX = 0
-                            }
-                    )
                     .overlay {
                         if model.selectedID == clip.id && track.kind == .video {
-                            TrimHandles(clip: clip, model: model, height: laneHeight)
+                            TrimHandles(height: laneHeight)   // decorative — the clip gesture does the work
                         }
                     }
+                    .contentShape(Rectangle())
+                    .scaleEffect(moving ? 1.05 : 1)
+                    .shadow(color: moving ? Theme.accentA(0.5) : .clear, radius: 10)
+                    .offset(x: CGFloat(clip.start) * PPS + (moving ? (drag?.dx ?? 0) : 0))
+                    .zIndex(moving ? 2 : (model.selectedID == clip.id ? 1 : 0))
+                    .highPriorityGestureIf(track.kind == .video, clipDrag(clip))
+                    .onTapGesture { model.selectedID = (model.selectedID == clip.id) ? nil : clip.id }
             }
             ForEach(track.bricks) { brick in
                 BrickView(brick: brick, laneHeight: laneHeight,
@@ -171,9 +208,10 @@ private struct TrackLane: View {
             }
         }
         // Full content width so every offset clip is inside the lane's
-        // hit-testable frame (otherwise the topmost clip swallows the tap).
+        // hit-testable frame; named space lets the gesture read the grab zone.
         .frame(maxWidth: .infinity, minHeight: laneHeight, maxHeight: laneHeight, alignment: .topLeading)
-        .sensoryFeedback(.impact(weight: .medium), trigger: dragID)   // pick-up / drop
+        .coordinateSpace(.named("lane"))
+        .sensoryFeedback(.impact(weight: .light), trigger: movingID)   // move pick-up / drop
     }
 }
 
@@ -264,49 +302,22 @@ private struct BrickView: View {
 
 // MARK: - Trim handles (drag a selected clip's edges to set in/out)
 
+/// Decorative edge grips shown on the selected clip — they mark the trim zones.
+/// The actual trim is driven by the clip's single `clipDrag` gesture, so these
+/// don't hit-test (no competing gesture).
 private struct TrimHandles: View {
-    let clip: Clip
-    @ObservedObject var model: EditorModel
     let height: CGFloat
-    @State private var orig: (tlStart: Double, srcStart: Double, dur: Double, srcDur: Double)?
-
     var body: some View {
         HStack(spacing: 0) {
-            handle(leading: true)
-            Spacer(minLength: 0)
-            handle(leading: false)
+            bar; Spacer(minLength: 0); bar
         }
+        .allowsHitTesting(false)
     }
-
-    private func handle(leading: Bool) -> some View {
+    private var bar: some View {
         RoundedRectangle(cornerRadius: 4)
             .fill(Theme.accent)
-            .frame(width: 18, height: height)
-            .overlay(Capsule().fill(.white.opacity(0.85)).frame(width: 2.5, height: height * 0.4))
-            .contentShape(Rectangle())
-            .highPriorityGesture(
-                // GLOBAL coordinate space: translation stays stable even as the
-                // handle moves with the resizing clip — kills the jitter.
-                DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                    .onChanged { g in
-                        if orig == nil { model.beginTrim(); orig = (clip.start, clip.sourceStart, clip.duration, clip.sourceDuration) }
-                        guard let o = orig else { return }
-                        let dx = Double(g.translation.width / PPS)
-                        if leading {
-                            // Left edge follows the finger, right edge fixed, and
-                            // it STAYS (start moves, no re-anchor). A gap opens
-                            // where the trimmed front was; the offset compensates.
-                            let ns = min(max(o.srcStart + dx, 0), o.srcStart + o.dur - 0.3)
-                            let change = ns - o.srcStart
-                            model.setTrim(clip.id, start: o.tlStart + change, sourceStart: ns, duration: o.dur - change)
-                        } else {
-                            // move the out-point; start + in-point fixed
-                            let nd = min(max(o.dur + dx, 0.3), o.srcDur - o.srcStart)
-                            model.setTrim(clip.id, start: o.tlStart, sourceStart: o.srcStart, duration: nd)
-                        }
-                    }
-                    .onEnded { _ in orig = nil; model.endTrim() }
-            )
+            .frame(width: 16, height: height)
+            .overlay(Capsule().fill(.white.opacity(0.9)).frame(width: 2.5, height: height * 0.4))
     }
 }
 
