@@ -30,6 +30,7 @@ final class EditorModel: ObservableObject {
     var video: VideoPlayback?
     @Published var videoLoaded = false
     @Published var videoDuration: Double?
+    @Published var focusNewText = false   // keyboard pops only right after CREATING a title, not on select
 
     func importVideo(_ url: URL) {
         activeSheet = nil
@@ -108,6 +109,14 @@ final class EditorModel: ObservableObject {
     // MARK: Clip editing (structural — rebuilds the AVComposition)
 
     private var videoTrackIndex: Int? { tracks.firstIndex { $0.kind == .video } }
+    /// The track holding a clip (any kind) — drag ops operate on all tracks, not
+    /// just video, so text/other bricks move + trim the same way.
+    private func trackIndex(ofClip id: String) -> Int? {
+        tracks.firstIndex { $0.clips.contains { $0.id == id } }
+    }
+    func trackKind(ofClip id: String) -> TrackKind? {
+        trackIndex(ofClip: id).map { tracks[$0].kind }
+    }
     var selectedClip: Clip? {
         guard let ti = videoTrackIndex else { return nil }
         return tracks[ti].clips.first { $0.id == selectedID }
@@ -167,7 +176,7 @@ final class EditorModel: ObservableObject {
     private let snapRadius = 0.17   // ≈ 8px @ PPS 46 (desktop SNAP_PX / zoom)
 
     func beginEdit() { snapshot() }                 // one undo step per drag
-    func endEdit()   { Task { await rebuildVideo() } }
+    func endEdit(_ id: String) { if trackKind(ofClip: id) == .video { Task { await rebuildVideo() } } }
 
     /// Lines a dragged edge snaps to: playhead, 0, every OTHER clip's edges.
     private func snapCandidates(excluding id: String) -> [Double] {
@@ -193,7 +202,7 @@ final class EditorModel: ObservableObject {
     /// Walls: an edge can't cross a same-track neighbor. floor = max end of clips
     /// left of the dragged clip's ORIGINAL span, ceil = min start of clips right.
     func trimWalls(excluding id: String, origStart: Double, origEnd: Double) -> (floor: Double, ceil: Double) {
-        guard let ti = videoTrackIndex else { return (0, .greatestFiniteMagnitude) }
+        guard let ti = trackIndex(ofClip: id) else { return (0, .greatestFiniteMagnitude) }
         var floor = 0.0, ceil = Double.greatestFiniteMagnitude
         for oc in tracks[ti].clips where oc.id != id {
             if oc.end   <= origStart + 0.001 { floor = max(floor, oc.end) }
@@ -204,7 +213,7 @@ final class EditorModel: ObservableObject {
 
     /// Plain setter — the trim gesture has already clamped to walls + source.
     func setTrim(_ id: String, start: Double, sourceStart: Double, duration: Double) {
-        guard let ti = videoTrackIndex, let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
+        guard let ti = trackIndex(ofClip: id), let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
         tracks[ti].clips[ci].start = max(0, start)
         tracks[ti].clips[ci].sourceStart = max(0, sourceStart)
         tracks[ti].clips[ci].duration = max(0.3, duration)
@@ -214,20 +223,21 @@ final class EditorModel: ObservableObject {
 
     /// Live during the drag (no rebuild) — the clip's start follows the finger.
     func setClipStart(_ id: String, _ newStart: Double) {
-        guard let ti = videoTrackIndex, let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
+        guard let ti = trackIndex(ofClip: id), let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
         tracks[ti].clips[ci].start = max(0, newStart)
     }
-    /// Same-track content overlap, half-open (desktop clips_conflict).
+    /// Same-track overlap, half-open (desktop clips_conflict).
     func clipConflicts(_ id: String) -> Bool {
-        guard let ti = videoTrackIndex, let c = tracks[ti].clips.first(where: { $0.id == id }) else { return false }
+        guard let ti = trackIndex(ofClip: id), let c = tracks[ti].clips.first(where: { $0.id == id }) else { return false }
         return tracks[ti].clips.contains { $0.id != id && c.start < $0.end && c.end > $0.start }
     }
-    /// Release: bounce back to the origin on overlap, else keep; rebuild either way.
+    /// Release: bounce back to the origin on overlap, else keep. Rebuild the
+    /// composition only for video clips (text is an overlay — no reload).
     func endMove(_ id: String, originStart: Double) {
         if clipConflicts(id) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { setClipStart(id, originStart) }
         }
-        Task { await rebuildVideo() }
+        if trackKind(ofClip: id) == .video { Task { await rebuildVideo() } }
     }
 
     /// Delete the selected clip; remaining clips close the gap.
@@ -294,6 +304,7 @@ final class EditorModel: ObservableObject {
             tracks.append(Track(id: "TXT", kind: .lyric, name: "TEXT", clips: [clip]))
         }
         selectedID = clip.id
+        focusNewText = true   // just created → open the keyboard; selecting later won't
     }
     func setClipText(_ id: String, _ text: String) {
         for ti in tracks.indices where tracks[ti].kind == .lyric {

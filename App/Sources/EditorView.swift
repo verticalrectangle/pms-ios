@@ -265,7 +265,9 @@ private struct LyricEditBar: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .glass(16)
-        .onAppear { text = clip.label; focused = true }
+        // Keyboard only right after CREATING the title; selecting it later just
+        // shows the bar (tap the field to edit) so the timeline stays free to move it.
+        .onAppear { text = clip.label; if model.focusNewText { focused = true; model.focusNewText = false } }
     }
 }
 

@@ -190,7 +190,7 @@ private struct TrackLane: View {
                 defer { drag = nil }
                 guard let d = drag, d.id == clip.id else { return }
                 switch d.zone {
-                case .trimLeft, .trimRight: model.endEdit()
+                case .trimLeft, .trimRight: model.endEdit(clip.id)
                 case .move: model.endMove(clip.id, originStart: d.start)
                 }
             }
@@ -204,10 +204,11 @@ private struct TrackLane: View {
             }
             ForEach(track.clips) { clip in
                 let moving = drag?.id == clip.id && drag?.zone == .move
+                let editable = track.kind == .video || track.kind == .lyric   // draggable/trimmable
                 ContentClipView(clip: clip, kind: track.kind, selected: model.selectedID == clip.id, height: laneHeight)
                     .frame(width: CGFloat(clip.duration) * PPS)
                     .overlay {
-                        if model.selectedID == clip.id && track.kind == .video {
+                        if model.selectedID == clip.id && editable {
                             TrimHandles(height: laneHeight)   // decorative — the clip gesture does the work
                         }
                     }
@@ -216,7 +217,7 @@ private struct TrackLane: View {
                     .shadow(color: moving ? Theme.accentA(0.5) : .clear, radius: 10)
                     .offset(x: CGFloat(clip.start) * PPS)   // move updates clip.start live
                     .zIndex(moving ? 2 : (model.selectedID == clip.id ? 1 : 0))
-                    .highPriorityGestureIf(track.kind == .video, clipDrag(clip))
+                    .highPriorityGestureIf(editable, clipDrag(clip))
                     .onTapGesture { model.selectedID = (model.selectedID == clip.id) ? nil : clip.id }
             }
             ForEach(track.bricks) { brick in

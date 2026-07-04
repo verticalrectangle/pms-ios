@@ -62,7 +62,7 @@ struct HomeView: View {
                 .font(.disp(52)).tracking(-1).textCase(.uppercase)
                 .foregroundStyle(Theme.txt).lineSpacing(-4)
             Text("Vertical Rectangle")
-                .font(.label(10)).tracking(1.8).foregroundStyle(Theme.txtMuted)
+                .font(.label(10)).tracking(1.8).textCase(.uppercase).foregroundStyle(Theme.txt)
         }
     }
 
