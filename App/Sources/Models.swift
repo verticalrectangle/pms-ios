@@ -55,6 +55,7 @@ struct Clip: Identifiable {
     var start: Double
     var duration: Double
     var seed: String = "g1"
+    var thumbURL: URL? = nil    // real frame for imported clips (else the seed image)
     var end: Double { start + duration }
 }
 

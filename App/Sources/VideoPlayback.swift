@@ -4,6 +4,25 @@
 // transport (onTick), and a CADisplayLink pulls the current frame each vsync.
 import AVFoundation
 import QuartzCore
+import UIKit
+
+extension VideoPlayback {
+    /// A single-frame JPEG thumbnail (~1s in), written to a temp file — for the
+    /// timeline clip's preview.
+    static func thumbnail(for url: URL) async -> URL? {
+        let asset = AVURLAsset(url: url)
+        let gen = AVAssetImageGenerator(asset: asset)
+        gen.appliesPreferredTrackTransform = true
+        gen.maximumSize = CGSize(width: 240, height: 240)
+        let dur = (try? await asset.load(.duration))?.seconds ?? 0
+        let at = CMTime(seconds: min(1, dur), preferredTimescale: 600)
+        guard let cg = try? await gen.image(at: at).image,
+              let data = UIImage(cgImage: cg).jpegData(compressionQuality: 0.7) else { return nil }
+        let dst = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+        try? data.write(to: dst)
+        return dst
+    }
+}
 
 @MainActor
 final class VideoPlayback {

@@ -41,8 +41,17 @@ final class EditorModel: ObservableObject {
         Task {
             await v.load(url: url)
             videoDuration = v.duration
-            videoLoaded = true
             playhead = 0
+            // Replace the mock scene with the imported video as a real clip.
+            let name = url.deletingPathExtension().lastPathComponent.uppercased() + ".MP4"
+            let thumb = await VideoPlayback.thumbnail(for: url)
+            let clip = Clip(id: "vclip", label: name, start: 0, duration: v.duration, thumbURL: thumb)
+            tracks = [
+                Track(id: "GFX", kind: .fxRail, name: "FX", clips: []),
+                Track(id: "V1", kind: .video, name: "V1", clips: [clip]),
+            ]
+            selectedID = nil
+            videoLoaded = true
         }
     }
 

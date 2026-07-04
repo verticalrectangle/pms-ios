@@ -134,7 +134,7 @@ private struct ContentClipView: View {
         ZStack(alignment: kind == .video ? .bottomLeading : .leading) {
             RoundedRectangle(cornerRadius: 7).fill(.ultraThinMaterial)
             if kind == .video {
-                AsyncImage(url: URL(string: "https://picsum.photos/seed/\(clip.seed)cl/240/120")) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                AsyncImage(url: clip.thumbURL ?? URL(string: "https://picsum.photos/seed/\(clip.seed)cl/240/120")) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                     .opacity(0.5).clipped()
             }
             if kind == .audio { Waveform().stroke(Color.white.opacity(0.55), lineWidth: 1).padding(.vertical, 6) }
