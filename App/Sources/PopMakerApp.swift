@@ -36,9 +36,6 @@ struct RootView: View {
                 .navigationDestination(item: $openProject) { project in
                     EditorView(project: project, engine: engine)
                 }
-#if targetEnvironment(simulator)
-                .onAppear { if openProject == nil { openProject = Sample.projects[0] } }   // DEBUG sim editor
-#endif
         }
         .tint(Theme.accent)
     }
