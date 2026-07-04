@@ -97,9 +97,9 @@ final class EditorModel: ObservableObject {
         let c = tracks[ti].clips[ci]
         let off = playhead - c.start
         var a = c; a.duration = off
-        var b = c
-        b.id = c.id + "_s\(Int(playhead * 1000))"
-        b.start = playhead; b.duration = c.duration - off; b.sourceStart = c.sourceStart + off
+        let b = Clip(id: c.id + "_s\(Int(playhead * 1000))", label: c.label,
+                     start: playhead, duration: c.duration - off, seed: c.seed,
+                     thumbs: c.thumbs, sourceURL: c.sourceURL, sourceStart: c.sourceStart + off)
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             tracks[ti].clips.replaceSubrange(ci...ci, with: [a, b])
             selectedID = b.id
