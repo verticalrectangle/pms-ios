@@ -117,7 +117,7 @@ private struct FullscreenPlayer: View {
     var body: some View {
         let progress = min(1, max(0, drag / 400))
         ZStack {
-            Color.black.opacity(1 - progress * 0.5).ignoresSafeArea()
+            Color.black.opacity(Double(1 - progress * 0.5)).ignoresSafeArea()
             MetalPreview(store: engine)
                 .aspectRatio(model.format.aspect, contentMode: .fit)
                 .overlay(controls)
