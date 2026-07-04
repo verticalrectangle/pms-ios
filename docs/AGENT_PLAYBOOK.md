@@ -89,10 +89,28 @@ packaged as an xcframework this repo links.
 > pw.cpp (PipeWire) excluded on Apple; engine-consumed embedded assets
 > (portrait/fx_motion/fx_face/inter_font) now depend from pms-engine directly.
 >
-> **Next: P2.3 (iOS + simulator slices → xcframework).** Harder: ORT/whisper/
-> ggml need iOS-arch builds, not the macOS Homebrew dylibs; ffmpeg has no
-> iOS build (→ the MediaBackend stub gates it out for the iOS slice). See
-> the P2.3 scouting output.
+> **P2.3 + P2.5 DONE 2026-07-03 — the app BUILDS against the real engine
+> for the iPhone (arm64 device).** `PopMakerStudio.app` (arm64, ~35 MB,
+> engine statically embedded — pms_command/pms_create present, no dylib
+> deps) links: libpms-engine.a (PMS_HEADLESS iOS build) + whisper/ggml
+> (merged) + onnxruntime.xcframework + Accelerate/Metal/MetalKit/AVFoundation/
+> AudioToolbox/CoreAudio/CoreML + libc++, with the real EngineBridge (no
+> ENGINE_MOCK) via a Swift bridging header. Reproducible: engine
+> `scripts/build_xcframework.sh` → pms-ios `xcodegen generate` + `xcodebuild
+> -sdk iphoneos26.2`. The iOS gating (PMS_HEADLESS + the ~15 iOS-arch fixes)
+> is all in engine `dev`.
+>
+> iOS-arch fixes beyond the macOS set: system()→pms_system shim (no spawn),
+> gl_compat.h iOS-empty + GL handle typedefs, audio.cpp as Objective-C++
+> (miniaudio CoreAudio backend), Apple audio frameworks, face_filters GL
+> gating, pms_render/capture/model_status ABI stubs, -lc++.
+>
+> REMAINING to run on-device (needs the physical device + free Apple ID):
+> code signing. Open pms-ios/PopMakerStudio.xcodeproj in Xcode → add the
+> Apple ID (Settings→Accounts) → target Signing: automatic, Personal Team →
+> install the iOS 26.2 device platform component (Settings→Components) →
+> plug in + trust the iPhone → Run. That on-device pms_command(get_project)
+> JSON round-trip is the P2.3 proof (P2.3(e)).
 
 2.1 **macOS build first.** In the engine repo, drive the existing CMake with
     the Xcode/clang toolchain. Expected friction, in order:
