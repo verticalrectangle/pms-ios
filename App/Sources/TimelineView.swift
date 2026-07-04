@@ -34,7 +34,9 @@ struct TimelineView: View {
             .clipped()
             .contentShape(Rectangle())
             .overlay(alignment: .center) { Playhead(model: model, engine: engine) }
-            .highPriorityGesture(
+            // Normal priority (NOT high) so the trim handles' high-priority drag
+            // wins when you grab an edge; scrub only claims drags on empty timeline.
+            .gesture(
                 DragGesture(minimumDistance: 6)
                     .onChanged { g in
                         if dragStartT == nil { dragStartT = t; model.pauseForScrub() }
@@ -226,6 +228,7 @@ private struct TrimHandles: View {
             .fill(Theme.accent)
             .frame(width: 16, height: height)
             .overlay(Capsule().fill(.white.opacity(0.85)).frame(width: 2.5, height: height * 0.4))
+            .padding(.horizontal, 10)          // widen the grab area (~36pt)
             .contentShape(Rectangle())
             .highPriorityGesture(
                 DragGesture(minimumDistance: 2)
