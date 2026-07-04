@@ -128,7 +128,7 @@ final class EditorModel: ObservableObject {
     /// The current video clips as export/playback segments.
     var videoSegments: [VideoPlayback.Segment] {
         (tracks.first { $0.kind == .video }?.clips ?? []).compactMap { c in
-            c.sourceURL.map { VideoPlayback.Segment(url: $0, start: c.start, sourceStart: c.sourceStart, duration: c.duration) }
+            c.sourceURL.map { VideoPlayback.Segment(url: $0, start: c.start, sourceStart: c.sourceStart, duration: c.duration, fadeIn: c.fadeIn, fadeOut: c.fadeOut) }
         }
     }
 
@@ -136,7 +136,7 @@ final class EditorModel: ObservableObject {
     func rebuildVideo(seekTo: Double? = nil) async {
         guard let ti = videoTrackIndex else { return }
         let segs = tracks[ti].clips.compactMap { c in
-            c.sourceURL.map { VideoPlayback.Segment(url: $0, start: c.start, sourceStart: c.sourceStart, duration: c.duration) }
+            c.sourceURL.map { VideoPlayback.Segment(url: $0, start: c.start, sourceStart: c.sourceStart, duration: c.duration, fadeIn: c.fadeIn, fadeOut: c.fadeOut) }
         }
         await video?.load(segments: segs, seekTo: seekTo)
         videoDuration = video?.duration
@@ -221,6 +221,15 @@ final class EditorModel: ObservableObject {
         tracks[ti].clips[ci].sourceStart = max(0, sourceStart)
         tracks[ti].clips[ci].duration = max(0.3, duration)
     }
+
+    // MARK: Fades (live value; rebuild the composition on release)
+
+    func setFade(_ id: String, fadeIn: Double? = nil, fadeOut: Double? = nil) {
+        guard let ti = trackIndex(ofClip: id), let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
+        if let fadeIn  { tracks[ti].clips[ci].fadeIn  = max(0, fadeIn) }
+        if let fadeOut { tracks[ti].clips[ci].fadeOut = max(0, fadeOut) }
+    }
+    func commitFade() { Task { await rebuildVideo() } }
 
     // MARK: Body move — free set-start, overlap allowed live, bounced on release
 

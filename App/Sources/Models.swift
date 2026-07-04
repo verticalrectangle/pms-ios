@@ -68,6 +68,8 @@ struct Clip: Identifiable {
     var sourceStart: Double = 0   // in-point within the source (desktop in_point)
     var sourceDuration: Double = 0 // full length of the source (clamps trim)
     var speed: Double = 1.0       // source-consumption rate; srcTime = sourceStart + (t-start)*speed
+    var fadeIn: Double = 0        // seconds ramping up from black at the clip's start
+    var fadeOut: Double = 0       // seconds ramping down to black at the clip's end
     var end: Double { start + duration }
 }
 

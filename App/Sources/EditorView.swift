@@ -255,22 +255,49 @@ struct EditorView: View {
 private struct ClipActionBar: View {
     @ObservedObject var model: EditorModel
     let clip: Clip
+    @State private var showFade = false
+    @State private var fadeIn = 0.0
+    @State private var fadeOut = 0.0
+
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(clip.label).font(.label(10)).tracking(0.5).foregroundStyle(Theme.txt).lineLimit(1)
-                Text(String(format: "%.1fs", clip.duration)).font(.num(9)).foregroundStyle(Theme.txtMuted)
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(clip.label).font(.label(10)).tracking(0.5).foregroundStyle(Theme.txt).lineLimit(1)
+                    Text(String(format: "%.1fs", clip.duration)).font(.num(9)).foregroundStyle(Theme.txtMuted)
+                }
+                Spacer(minLength: 8)
+                Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { showFade.toggle() } } label: {
+                    Label("Fade", systemImage: "circle.righthalf.filled").font(.label(11)).tracking(0.5)
+                }.tint(showFade || fadeIn > 0 || fadeOut > 0 ? Theme.accent : Theme.txtBody)
+                Button { model.splitAtPlayhead() } label: {
+                    Label("Split", systemImage: "scissors").font(.label(11)).tracking(0.5)
+                }.tint(Theme.txtBody)
+                Button(role: .destructive) { model.deleteSelectedClip() } label: {
+                    Label("Delete", systemImage: "trash").font(.label(11)).tracking(0.5)
+                }.tint(Color(red: 1, green: 0.5, blue: 0.5))
             }
-            Spacer(minLength: 8)
-            Button { model.splitAtPlayhead() } label: {
-                Label("Split", systemImage: "scissors").font(.label(11)).tracking(0.5)
-            }.tint(Theme.txtBody)
-            Button(role: .destructive) { model.deleteSelectedClip() } label: {
-                Label("Delete", systemImage: "trash").font(.label(11)).tracking(0.5)
-            }.tint(Color(red: 1, green: 0.5, blue: 0.5))
+            if showFade {
+                fadeRow("IN",  value: $fadeIn)  { model.setFade(clip.id, fadeIn: $0) }
+                fadeRow("OUT", value: $fadeOut) { model.setFade(clip.id, fadeOut: $0) }
+            }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .glass(16)
+        .onAppear { fadeIn = clip.fadeIn; fadeOut = clip.fadeOut }
+    }
+
+    private func fadeRow(_ label: String, value: Binding<Double>, set: @escaping (Double) -> Void) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(.label(9)).tracking(0.8).foregroundStyle(Theme.txtMuted).frame(width: 30, alignment: .leading)
+            Slider(value: value, in: 0...2, onEditingChanged: { editing in
+                set(value.wrappedValue)
+                if !editing { model.commitFade() }   // rebuild once, on release
+            })
+            .tint(Theme.accent)
+            .onChange(of: value.wrappedValue) { _, v in set(v) }
+            Text(String(format: "%.1fs", value.wrappedValue)).font(.num(10)).foregroundStyle(Theme.txtMuted).frame(width: 34)
+        }
     }
 }
 

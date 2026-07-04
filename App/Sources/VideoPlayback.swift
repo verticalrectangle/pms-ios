@@ -5,6 +5,7 @@
 import AVFoundation
 import QuartzCore
 import UIKit
+import CoreImage
 
 extension VideoPlayback {
     /// A filmstrip of `count` evenly-spaced JPEG frames written to temp files —
@@ -44,7 +45,10 @@ final class VideoPlayback {
     /// (currentTime, isPlaying) — the AVPlayer clock, for the transport.
     var onTick: ((Double, Bool) -> Void)?
 
-    struct Segment { let url: URL; let start: Double; let sourceStart: Double; let duration: Double }
+    struct Segment {
+        let url: URL; let start: Double; let sourceStart: Double; let duration: Double
+        var fadeIn: Double = 0; var fadeOut: Double = 0
+    }
 
     init(engine: EngineStore) {
         self.engine = engine
@@ -86,8 +90,39 @@ final class VideoPlayback {
             }
             cursor = CMTimeAdd(clipStart, range.duration)
         }
+        // If any clip fades, apply it per-frame via Core Image (handles orientation,
+        // works in preview + export). Otherwise the plain orientation composition.
+        if segments.contains(where: { $0.fadeIn > 0 || $0.fadeOut > 0 }) {
+            let segs = segments
+            let vc = AVMutableVideoComposition(asset: comp, applyingCIFiltersWithHandler: { req in
+                let t = req.compositionTime.seconds
+                var img = req.sourceImage
+                if let s = segs.first(where: { $0.start <= t && t < $0.start + $0.duration }) {
+                    let o = fadeOpacity(s, at: t)
+                    if o < 0.999 {
+                        img = img.applyingFilter("CIColorMatrix", parameters: [
+                            "inputRVector": CIVector(x: o, y: 0, z: 0, w: 0),
+                            "inputGVector": CIVector(x: 0, y: o, z: 0, w: 0),
+                            "inputBVector": CIVector(x: 0, y: 0, z: o, w: 0),
+                            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+                        ]).cropped(to: req.sourceImage.extent)
+                    }
+                }
+                req.finish(with: img, context: nil)
+            })
+            return (comp, vc)
+        }
         let vc = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: comp)
         return (comp, vc)
+    }
+
+    /// Linear fade-from-black opacity for a segment at composition time `t`.
+    static func fadeOpacity(_ s: Segment, at t: Double) -> Double {
+        let local = t - s.start
+        var o = 1.0
+        if s.fadeIn  > 0, local < s.fadeIn            { o = min(o, local / s.fadeIn) }
+        if s.fadeOut > 0, local > s.duration - s.fadeOut { o = min(o, (s.duration - local) / s.fadeOut) }
+        return max(0, min(1, o))
     }
 
     /// (Re)build the playable timeline from the ordered clip segments — every
