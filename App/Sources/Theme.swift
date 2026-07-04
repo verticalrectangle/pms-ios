@@ -154,29 +154,47 @@ struct AtmosphereView: View {
     private static let cblu = Color(red: 0.29, green: 0.42, blue: 1.0)
     private static let cpur = Color(red: 0.66, green: 0.36, blue: 1.0)
 
+    // Dark: lavender/blue/ember glossy spheres — a few in focus, the rest bokeh.
     private let orbs: [Orb] = [
-        // FAR — large, very soft, ambient
-        Orb(nx: 0.10, ny: 0.15, size: 340, blur: 50, opacity: 0.55, dy:  34, core: lav,    halo: lav),
-        Orb(nx: 0.90, ny: 0.70, size: 420, blur: 60, opacity: 0.42, dy: -42, core: blu,    halo: blu),
-        // MID
-        Orb(nx: 0.82, ny: 0.19, size: 190, blur: 28, opacity: 0.60, dy:  26, core: lav,    halo: lav),
-        Orb(nx: 0.13, ny: 0.60, size: 168, blur: 24, opacity: 0.50, dy: -22, core: blu,    halo: blu),
-        // NEAR — small, tight bright cores (these are the "pop")
-        Orb(nx: 0.29, ny: 0.31, size: 82,  blur: 10, opacity: 0.90, dy:  18, core: .white, halo: lav),
-        Orb(nx: 0.66, ny: 0.85, size: 58,  blur: 8,  opacity: 0.75, dy: -14, core: emb,    halo: emb),
-        Orb(nx: 0.93, ny: 0.11, size: 44,  blur: 7,  opacity: 0.78, dy:  15, core: .white, halo: lav),
+        Orb(nx: 0.14, ny: 0.15, size: 330, blur: 52, opacity: 0.50, dy:  34, core: lav, halo: lav),
+        Orb(nx: 0.90, ny: 0.74, size: 400, blur: 66, opacity: 0.40, dy: -42, core: blu, halo: blu),
+        Orb(nx: 0.52, ny: 0.48, size: 200, blur: 40, opacity: 0.30, dy:  16, core: lav, halo: lav),
+        Orb(nx: 0.86, ny: 0.13, size: 112, blur: 1,  opacity: 0.95, dy:  22, core: lav, halo: lav),   // in focus
+        Orb(nx: 0.15, ny: 0.52, size: 88,  blur: 1,  opacity: 0.92, dy: -16, core: blu, halo: blu),   // in focus
+        Orb(nx: 0.91, ny: 0.55, size: 64,  blur: 2,  opacity: 0.94, dy:  24, core: emb, halo: emb),   // in focus
     ]
 
-    // SOPHIE light theme: glossy candy orbs on white — saturated cores, softer.
+    // SOPHIE light: punchy glossy candy spheres, strong DOF — crisp heroes + soft bokeh.
     private let lightOrbs: [Orb] = [
-        Orb(nx: 0.12, ny: 0.16, size: 360, blur: 62, opacity: 0.34, dy:  34, core: pink, halo: pink),
-        Orb(nx: 0.88, ny: 0.72, size: 440, blur: 72, opacity: 0.30, dy: -42, core: cblu, halo: cblu),
-        Orb(nx: 0.80, ny: 0.20, size: 200, blur: 34, opacity: 0.36, dy:  26, core: cpur, halo: cpur),
-        Orb(nx: 0.14, ny: 0.61, size: 180, blur: 30, opacity: 0.32, dy: -22, core: cblu, halo: cblu),
-        Orb(nx: 0.30, ny: 0.30, size: 96,  blur: 16, opacity: 0.44, dy:  18, core: pink, halo: pink),
-        Orb(nx: 0.66, ny: 0.85, size: 70,  blur: 14, opacity: 0.38, dy: -14, core: cpur, halo: cpur),
-        Orb(nx: 0.92, ny: 0.11, size: 56,  blur: 12, opacity: 0.42, dy:  15, core: pink, halo: pink),
+        Orb(nx: 0.20, ny: 0.14, size: 340, blur: 58, opacity: 0.48, dy:  30, core: pink, halo: pink),
+        Orb(nx: 0.82, ny: 0.82, size: 400, blur: 72, opacity: 0.42, dy: -38, core: cblu, halo: cblu),
+        Orb(nx: 0.56, ny: 0.54, size: 210, blur: 42, opacity: 0.42, dy:  18, core: cpur, halo: cpur),
+        Orb(nx: 0.88, ny: 0.12, size: 132, blur: 1,  opacity: 0.98, dy:  22, core: pink, halo: pink),  // in focus
+        Orb(nx: 0.11, ny: 0.47, size: 104, blur: 1,  opacity: 0.96, dy: -16, core: cblu, halo: cblu),  // in focus
+        Orb(nx: 0.91, ny: 0.55, size: 84,  blur: 2,  opacity: 0.95, dy:  24, core: cpur, halo: cpur),  // in focus
+        Orb(nx: 0.31, ny: 0.83, size: 62,  blur: 1,  opacity: 0.95, dy: -12, core: pink, halo: pink),  // in focus
     ]
+
+    // A glossy 3D sphere: lit top-left (bright desaturated highlight → body → dark
+    // saturated terminator) + a crisp specular. Blur it and the SAME ball reads as
+    // soft bokeh — that variance IS the depth of field.
+    @ViewBuilder private func ball(_ o: Orb) -> some View {
+        Circle()
+            .fill(RadialGradient(
+                colors: [o.core.shade(1.7), o.core, o.core.shade(0.45)],
+                center: UnitPoint(x: 0.36, y: 0.30),
+                startRadius: o.size * 0.02, endRadius: o.size * 0.62))
+            .overlay(alignment: .topLeading) {
+                Circle()
+                    .fill(RadialGradient(colors: [.white.opacity(0.95), .white.opacity(0)],
+                                         center: .center, startRadius: 0, endRadius: o.size * 0.12))
+                    .frame(width: o.size * 0.32, height: o.size * 0.32)
+                    .offset(x: o.size * 0.14, y: o.size * 0.10)
+            }
+            .frame(width: o.size, height: o.size)
+            .blur(radius: o.blur)      // ≤2 = glossy in-focus ball; high = soft bokeh
+            .opacity(o.opacity)
+    }
 
     var body: some View {
         let lightMode = Theme.light
@@ -185,9 +203,9 @@ struct AtmosphereView: View {
             ZStack {
                 Theme.ground
                 if lightMode {
-                    RadialGradient(colors: [Self.pink.opacity(0.10), .clear],
+                    RadialGradient(colors: [Self.pink.opacity(0.09), .clear],
                                    center: .topLeading, startRadius: 0, endRadius: 560)
-                    RadialGradient(colors: [Self.cblu.opacity(0.10), .clear],
+                    RadialGradient(colors: [Self.cblu.opacity(0.09), .clear],
                                    center: .bottomTrailing, startRadius: 0, endRadius: 520)
                 } else {
                     RadialGradient(colors: [Theme.accentA(0.12), .clear],
@@ -196,14 +214,7 @@ struct AtmosphereView: View {
                                    center: .bottomTrailing, startRadius: 0, endRadius: 500)
                 }
                 ForEach(Array((lightMode ? lightOrbs : orbs).enumerated()), id: \.offset) { i, o in
-                    Circle()
-                        .fill(RadialGradient(
-                            colors: [o.core.opacity(lightMode ? 0.72 : 0.85),
-                                     o.halo.opacity(lightMode ? 0.34 : 0.42), .clear],
-                            center: .center, startRadius: 0, endRadius: o.size * 0.5))
-                        .frame(width: o.size, height: o.size)
-                        .blur(radius: o.blur)
-                        .opacity(o.opacity)
+                    ball(o)
                         .position(x: o.nx * w, y: o.ny * h + (drift ? o.dy : -o.dy))
                         .animation(.easeInOut(duration: 24 + Double(i) * 2.5)
                             .repeatForever(autoreverses: true), value: drift)

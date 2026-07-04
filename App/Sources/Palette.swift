@@ -74,3 +74,16 @@ final class Palette {
         return abs(r1 - r2) < 0.02 && abs(g1 - g2) < 0.02 && abs(b1 - b2) < 0.02
     }
 }
+
+extension Color {
+    /// Brightness-scaled shade for sphere shading. f>1 → lighter + desaturated
+    /// (the lit highlight side); f<1 → darker + more saturated (the shadow side).
+    func shade(_ f: Double) -> Color {
+        let u = UIColor(self); var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        u.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return Color(hue: Double(h),
+                     saturation: Double(max(0, min(1, s * (f > 1 ? 0.62 : 1.18)))),
+                     brightness: Double(max(0, min(1, b * f))),
+                     opacity: Double(a))
+    }
+}
