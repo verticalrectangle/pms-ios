@@ -40,8 +40,5 @@ struct RootView: View {
                     .transition(.opacity)
             }
         }
-#if targetEnvironment(simulator)
-        .onAppear { if open == nil { open = Sample.projects[0] } }   // DEBUG sim editor iteration
-#endif
     }
 }
