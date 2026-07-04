@@ -48,7 +48,7 @@ final class EditorModel: ObservableObject {
             let n = max(1, min(24, Int(dur / 1.5)))   // ~1 frame / 1.5s, capped
             let strip = await VideoPlayback.filmstrip(for: url, count: n)
             let clip = Clip(id: "vclip", label: "CLIP 1", start: 0, duration: dur,
-                            thumbs: strip, sourceURL: url, sourceStart: 0)
+                            thumbs: strip, sourceURL: url, sourceStart: 0, sourceDuration: dur)
             tracks = [
                 Track(id: "GFX", kind: .fxRail, name: "FX", clips: []),
                 Track(id: "V1", kind: .video, name: "V1", clips: [clip]),
@@ -58,6 +58,35 @@ final class EditorModel: ObservableObject {
             videoLoaded = true
             await rebuildVideo()
         }
+    }
+
+    // MARK: Undo / redo (snapshots of the timeline)
+
+    private var undoStack: [[Track]] = []
+    private var redoStack: [[Track]] = []
+    @Published var canUndo = false
+    @Published var canRedo = false
+
+    /// Snapshot the timeline before a mutating edit.
+    private func snapshot() {
+        undoStack.append(tracks)
+        if undoStack.count > 60 { undoStack.removeFirst() }
+        redoStack.removeAll()
+        canUndo = true; canRedo = false
+    }
+    func undo() {
+        guard let prev = undoStack.popLast() else { return }
+        redoStack.append(tracks)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { tracks = prev; selectedID = nil }
+        canUndo = !undoStack.isEmpty; canRedo = true
+        Task { await rebuildVideo() }
+    }
+    func redo() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(tracks)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { tracks = next; selectedID = nil }
+        canUndo = true; canRedo = !redoStack.isEmpty
+        Task { await rebuildVideo() }
     }
 
     // MARK: Clip editing (structural — rebuilds the AVComposition)
@@ -94,6 +123,7 @@ final class EditorModel: ObservableObject {
         guard let ti = videoTrackIndex,
               let ci = tracks[ti].clips.firstIndex(where: { playhead > $0.start + 0.1 && playhead < $0.end - 0.1 })
         else { return }
+        snapshot()
         let c = tracks[ti].clips[ci]
         let off = playhead - c.start
         // Slice the filmstrip so each part shows its own frames.
@@ -102,7 +132,8 @@ final class EditorModel: ObservableObject {
         let b = Clip(id: c.id + "_s\(Int(playhead * 1000))", label: c.label,
                      start: playhead, duration: c.duration - off, seed: c.seed,
                      thumbs: Array(c.thumbs.suffix(c.thumbs.count - cut)),
-                     sourceURL: c.sourceURL, sourceStart: c.sourceStart + off)
+                     sourceURL: c.sourceURL, sourceStart: c.sourceStart + off,
+                     sourceDuration: c.sourceDuration)
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             tracks[ti].clips.replaceSubrange(ci...ci, with: [a, b])
             relayoutVideoClips()          // fix start positions + renumber labels
@@ -111,9 +142,24 @@ final class EditorModel: ObservableObject {
         // composition unchanged (a+b == original) → no reload needed
     }
 
+    // MARK: Trim (drag the clip edges)
+
+    func beginTrim() { snapshot() }
+    func endTrim() { Task { await rebuildVideo() } }
+
+    /// Set a clip's in-point + length absolutely (the trim handle computes these
+    /// from the drag). Positions re-lay out; the composition rebuilds on end.
+    func setTrim(_ id: String, sourceStart: Double, duration: Double) {
+        guard let ti = videoTrackIndex, let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
+        tracks[ti].clips[ci].sourceStart = sourceStart
+        tracks[ti].clips[ci].duration = duration
+        relayoutVideoClips()
+    }
+
     /// Delete the selected clip; remaining clips close the gap.
     func deleteSelectedClip() {
         guard let ti = videoTrackIndex, let id = selectedID else { return }
+        snapshot()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             tracks[ti].clips.removeAll { $0.id == id }
             selectedID = nil

@@ -96,6 +96,14 @@ struct EditorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
+                Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }
+                    .disabled(!model.canUndo)
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                Button { model.redo() } label: { Image(systemName: "arrow.uturn.forward") }
+                    .disabled(!model.canRedo)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 PhotosPicker(selection: $pickerItem, matching: .videos) {
                     Image(systemName: "photo.badge.plus")
                 }

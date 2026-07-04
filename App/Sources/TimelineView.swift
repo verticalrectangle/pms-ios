@@ -109,6 +109,11 @@ private struct TrackLane: View {
             ForEach(track.clips) { clip in
                 ContentClipView(clip: clip, kind: track.kind, selected: model.selectedID == clip.id, height: laneHeight)
                     .frame(width: CGFloat(clip.duration) * PPS)
+                    .overlay {
+                        if model.selectedID == clip.id && track.kind == .video {
+                            TrimHandles(clip: clip, model: model, height: laneHeight)
+                        }
+                    }
                     .offset(x: CGFloat(clip.start) * PPS)
                     .onTapGesture {
                         model.selectedID = (model.selectedID == clip.id) ? nil : clip.id
@@ -197,6 +202,47 @@ private struct BrickView: View {
         .background(RoundedRectangle(cornerRadius: Theme.rBrick).fill(fill))
         .overlay(RoundedRectangle(cornerRadius: Theme.rBrick).strokeBorder(selected ? Theme.accentA(0.8) : stroke, lineWidth: 1))
         .padding(.top, 2)
+    }
+}
+
+// MARK: - Trim handles (drag a selected clip's edges to set in/out)
+
+private struct TrimHandles: View {
+    let clip: Clip
+    @ObservedObject var model: EditorModel
+    let height: CGFloat
+    @State private var orig: (start: Double, dur: Double, srcDur: Double)?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            handle(leading: true)
+            Spacer(minLength: 0)
+            handle(leading: false)
+        }
+    }
+
+    private func handle(leading: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(Theme.accent)
+            .frame(width: 16, height: height)
+            .overlay(Capsule().fill(.white.opacity(0.85)).frame(width: 2.5, height: height * 0.4))
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 2)
+                    .onChanged { g in
+                        if orig == nil { model.beginTrim(); orig = (clip.sourceStart, clip.duration, clip.sourceDuration) }
+                        guard let o = orig else { return }
+                        let dx = Double(g.translation.width / PPS)
+                        if leading {
+                            let ns = min(max(o.start + dx, 0), o.start + o.dur - 0.3)
+                            model.setTrim(clip.id, sourceStart: ns, duration: o.dur - (ns - o.start))
+                        } else {
+                            let nd = min(max(o.dur + dx, 0.3), o.srcDur - o.start)
+                            model.setTrim(clip.id, sourceStart: o.start, duration: nd)
+                        }
+                    }
+                    .onEnded { _ in orig = nil; model.endTrim() }
+            )
     }
 }
 
