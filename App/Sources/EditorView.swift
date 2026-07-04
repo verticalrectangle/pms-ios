@@ -24,14 +24,18 @@ struct EditorView: View {
         ZStack {
             AtmosphereView()
 
-            VStack(spacing: 10) {
-                topBar
-                canvas.layoutPriority(1)   // canvas claims the extra height → fills the screen
-                TransportBar(model: model, engine: engine).padding(.horizontal, 16)
-                timeline
-                bottomStack
+            // GeometryReader hard-frames the column to the screen (width caps
+            // the overflow; height lets the canvas expand to fill).
+            GeometryReader { geo in
+                VStack(spacing: 10) {
+                    topBar
+                    canvas.layoutPriority(1)   // claims the extra height → fills
+                    TransportBar(model: model, engine: engine).padding(.horizontal, 16)
+                    timeline
+                    bottomStack
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, 8)
 
             VStack {
@@ -77,21 +81,24 @@ struct EditorView: View {
         // MTKView (a UIViewRepresentable) ignores .aspectRatio, so we size it
         // explicitly from the geometry — otherwise it fills full width and
         // drags the whole layout off both screen edges.
-        GeometryReader { geo in
-            let h = min(geo.size.height, geo.size.width / model.format.aspect)
-            let w = h * model.format.aspect
-            MetalPreview(store: engine)
-                .frame(width: w, height: h)
-                .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
-                                      activeBricks: model.activeBricks(at: t)))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
-                .overlay(RoundedRectangle(cornerRadius: Theme.rCard).strokeBorder(Theme.line))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)   // center in the box
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)   // canvas takes the flexible remaining height
-        .padding(.horizontal, 14)
+        // Color.clear drives the aspect-fit size (a real SwiftUI view that
+        // respects .aspectRatio, unlike MTKView), expanding to the largest
+        // portrait/landscape box that fits the available space; MetalPreview
+        // overlays it at exactly that size. This reliably fills — a nested
+        // GeometryReader collapses in a VStack.
+        Color.clear
+            .aspectRatio(model.format.aspect, contentMode: .fit)
+            .overlay {
+                MetalPreview(store: engine)
+                    .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
+                                          activeBricks: model.activeBricks(at: t)))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.rCard).strokeBorder(Theme.line))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
+            .padding(.horizontal, 14)
     }
 
     private var timeline: some View {
