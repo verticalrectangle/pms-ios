@@ -58,9 +58,12 @@ struct HomeView: View {
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 10) {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.35)) {
-                        Palette.shared.mode = Theme.light ? .dark : .light
-                    }
+                    // Bare mutation, no withAnimation: iOS already fires ONE snapshot
+                    // crossfade for the preferredColorScheme flip (it covers every token,
+                    // shadow and orb). A withAnimation here was a second, differently-timed
+                    // 0.35s clock forcing shadows+orbs to interpolate live under that
+                    // crossfade — that collision was the dark→light jerk.
+                    Palette.shared.mode = Theme.light ? .dark : .light
                 } label: {
                     Image(systemName: Theme.light ? "sun.max.fill" : "moon.stars.fill")
                         .font(.system(size: 16, weight: .semibold))

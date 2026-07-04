@@ -110,6 +110,7 @@ struct Glass: ViewModifier {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .compositingGroup()   // shadow cast once from the flattened panel (not per sub-layer)
             // SOPHIE mode: soft drop shadow so panels read as glossy objects on white.
             .shadow(color: Theme.light ? Color.black.opacity(0.10) : .clear,
                     radius: 16, x: 0, y: 9)
@@ -231,6 +232,7 @@ struct AtmosphereView: View {
                         .animation(.easeInOut(duration: 21 + Double(i) * 2.6)
                             .repeatForever(autoreverses: true), value: driftX)
                 }
+                .id(lightMode)   // swap the whole sphere set on mode flip — cut, don't blur-morph
             }
         }
         .ignoresSafeArea()
