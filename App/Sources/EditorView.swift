@@ -112,7 +112,7 @@ struct EditorView: View {
                     Spacer()
                     LyricEditBar(model: model, clip: lyric).padding(.horizontal, 12)
                 }
-                .padding(.bottom, keyboard.height > 0 ? keyboard.height + 10 : 12)
+                .padding(.bottom, keyboard.height > 0 ? keyboard.height + 4 : 8)   // flush on the keyboard
                 .ignoresSafeArea(.keyboard, edges: .bottom)   // we lift it ourselves
                 .animation(.easeOut(duration: 0.22), value: keyboard.height)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -131,6 +131,9 @@ struct EditorView: View {
         .onTapGesture { if model.selectedLyricClip != nil { model.selectedID = nil } }
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
+        // Hide the tool dock while editing a title so the edit bar owns the
+        // bottom cleanly (nothing to float over).
+        .toolbar(model.selectedLyricClip != nil ? .hidden : .visible, for: .bottomBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }
