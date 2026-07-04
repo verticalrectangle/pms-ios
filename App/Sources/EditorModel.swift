@@ -161,6 +161,27 @@ final class EditorModel: ObservableObject {
         // composition unchanged (a+b == original) → no reload needed
     }
 
+    /// Reorder: move the clip to a new slot (index among the OTHER clips) and
+    /// re-lay the sequence contiguously from 0. This one DOES reposition — it's
+    /// a deliberate re-sequence.
+    func moveClip(_ id: String, toIndex dest: Int) {
+        guard let ti = videoTrackIndex,
+              let from = tracks[ti].clips.firstIndex(where: { $0.id == id }),
+              dest != from else { return }
+        snapshot()
+        var clips = tracks[ti].clips
+        let clip = clips.remove(at: from)
+        clips.insert(clip, at: max(0, min(dest, clips.count)))
+        var cursor = 0.0
+        for i in clips.indices {
+            clips[i].start = cursor
+            clips[i].label = "CLIP \(i + 1)"
+            cursor += clips[i].duration
+        }
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { tracks[ti].clips = clips }
+        Task { await rebuildVideo() }
+    }
+
     // MARK: Trim (drag the clip edges)
 
     func beginTrim() { snapshot() }

@@ -97,9 +97,20 @@ private struct RulerView: View {
 private struct TrackLane: View {
     let track: Track
     @ObservedObject var model: EditorModel
+    @State private var dragID: String?     // clip picked up for reorder
+    @State private var dragDX: CGFloat = 0
 
     private var laneHeight: CGFloat {
         switch track.kind { case .fxRail: 30; case .video: 52; case .lyric: 40; case .audio: 34 }
+    }
+
+    /// Insertion slot (index among the OTHER clips) for a clip dragged by `dx`.
+    private func reorderTarget(_ dragged: Clip, dx: CGFloat) -> Int {
+        let center = CGFloat(dragged.start + dragged.duration / 2) * PPS + dx
+        return track.clips
+            .filter { $0.id != dragged.id }
+            .filter { CGFloat($0.start + $0.duration / 2) * PPS < center }
+            .count
     }
 
     var body: some View {
@@ -109,6 +120,7 @@ private struct TrackLane: View {
                     .font(.label(8)).foregroundStyle(Theme.txtGhost).offset(x: 6, y: laneHeight/2 - 6)
             }
             ForEach(track.clips) { clip in
+                let dragging = dragID == clip.id
                 ContentClipView(clip: clip, kind: track.kind, selected: model.selectedID == clip.id, height: laneHeight)
                     .frame(width: CGFloat(clip.duration) * PPS)
                     .contentShape(Rectangle())
@@ -120,8 +132,28 @@ private struct TrackLane: View {
                             TrimHandles(clip: clip, model: model, height: laneHeight)
                         }
                     }
-                    .offset(x: CGFloat(clip.start) * PPS)
-                    .zIndex(model.selectedID == clip.id ? 1 : 0)   // selected on top for its handles
+                    .scaleEffect(dragging ? 1.06 : 1, anchor: .center)
+                    .shadow(color: dragging ? Theme.accentA(0.55) : .clear, radius: 12)
+                    .offset(x: CGFloat(clip.start) * PPS + (dragging ? dragDX : 0))
+                    .zIndex(dragging ? 2 : (model.selectedID == clip.id ? 1 : 0))
+                    .gesture(
+                        // Long-press to pick up, THEN drag to reorder. A quick drag
+                        // falls through to the scrub; a tap still selects.
+                        LongPressGesture(minimumDuration: 0.28)
+                            .sequenced(before: DragGesture(coordinateSpace: .global))
+                            .onChanged { value in
+                                guard track.kind == .video, case .second(true, let drag?) = value else { return }
+                                if dragID != clip.id { dragID = clip.id }
+                                dragDX = drag.translation.width
+                            }
+                            .onEnded { value in
+                                guard track.kind == .video else { return }
+                                if case .second(true, let drag?) = value {
+                                    model.moveClip(clip.id, toIndex: reorderTarget(clip, dx: drag.translation.width))
+                                }
+                                dragID = nil; dragDX = 0
+                            }
+                    )
             }
             ForEach(track.bricks) { brick in
                 BrickView(brick: brick, laneHeight: laneHeight,
@@ -135,6 +167,7 @@ private struct TrackLane: View {
         // Full content width so every offset clip is inside the lane's
         // hit-testable frame (otherwise the topmost clip swallows the tap).
         .frame(maxWidth: .infinity, minHeight: laneHeight, maxHeight: laneHeight, alignment: .topLeading)
+        .sensoryFeedback(.impact(weight: .medium), trigger: dragID)   // pick-up / drop
     }
 }
 
