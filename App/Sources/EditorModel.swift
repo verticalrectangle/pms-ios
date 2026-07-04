@@ -114,16 +114,11 @@ final class EditorModel: ObservableObject {
         videoDuration = video?.duration
     }
 
-    /// Lay the video clips end-to-end (contiguous) and renumber, preserving the
-    /// first clip's start — front-trim moves it right and it should stay there.
-    private func relayoutVideoClips() {
-        guard let ti = videoTrackIndex, !tracks[ti].clips.isEmpty else { return }
-        var cursor = tracks[ti].clips[0].start
-        for i in tracks[ti].clips.indices {
-            tracks[ti].clips[i].start = cursor
-            tracks[ti].clips[i].label = "CLIP \(i + 1)"
-            cursor += tracks[ti].clips[i].duration
-        }
+    /// Renumber labels by order — WITHOUT moving any clip. Edits are local: a
+    /// split cuts in place, a delete leaves its gap, nothing else shifts.
+    private func renumberLabels() {
+        guard let ti = videoTrackIndex else { return }
+        for i in tracks[ti].clips.indices { tracks[ti].clips[i].label = "CLIP \(i + 1)" }
     }
 
     /// Split the clip under the playhead into two (structural — same footage).
@@ -143,8 +138,8 @@ final class EditorModel: ObservableObject {
                      sourceURL: c.sourceURL, sourceStart: c.sourceStart + off,
                      sourceDuration: c.sourceDuration)
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-            tracks[ti].clips.replaceSubrange(ci...ci, with: [a, b])
-            relayoutVideoClips()          // fix start positions + renumber labels
+            tracks[ti].clips.replaceSubrange(ci...ci, with: [a, b])   // a+b occupy c's exact span
+            renumberLabels()              // labels only — nothing moves
             selectedID = b.id
         }
         // composition unchanged (a+b == original) → no reload needed
@@ -187,7 +182,7 @@ final class EditorModel: ObservableObject {
             video?.stop(); video = nil
             videoLoaded = false; videoDuration = nil; playhead = 0; isPlaying = false
         } else {
-            relayoutVideoClips()
+            renumberLabels()              // leave the gap; don't shift other clips
             Task { await rebuildVideo() }
         }
     }
