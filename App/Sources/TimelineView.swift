@@ -11,7 +11,7 @@ struct TimelineView: View {
     @ObservedObject var model: EditorModel
     @ObservedObject var engine: EngineStore
 
-    private var t: Double { engine.playing ? engine.playhead : model.localSeek }
+    private var t: Double { model.playhead }
     private var contentWidth: CGFloat { CGFloat(model.duration) * PPS }
 
     var body: some View {
@@ -39,7 +39,7 @@ struct TimelineView: View {
                     }
                 }
                 .onChange(of: t) { _, _ in
-                    if engine.playing { withAnimation(.linear(duration: 0.06)) { proxy.scrollTo("cursor", anchor: .center) } }
+                    if model.isPlaying { withAnimation(.linear(duration: 0.06)) { proxy.scrollTo("cursor", anchor: .center) } }
                 }
             }
             .overlay(alignment: .center) { Playhead(model: model, engine: engine) }

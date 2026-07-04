@@ -85,7 +85,7 @@ struct FXSheet: View {
     }
 
     private func place(_ effect: EffectDef) {
-        let t = model.localSeek
+        let t = model.playhead
         // weld into the currently selected brick if there is one
         if let sel = model.selectedID, model.selection() != nil {
             model.weld(effect.id, intoBrick: sel)

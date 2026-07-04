@@ -47,7 +47,7 @@ struct EditorView: View {
         _model = StateObject(wrappedValue: EditorModel(project: project, engine: engine))
     }
 
-    private var t: Double { engine.playing ? engine.playhead : model.localSeek }
+    private var t: Double { model.playhead }
 
     private let tools: [(EditorSheet, String, String)] = [
         (.media,  "square.stack",       "Media"),
@@ -183,7 +183,7 @@ private struct FullscreenPlayer: View {
     @Binding var isPresented: Bool
     @State private var drag: CGFloat = 0
 
-    private var t: Double { engine.playing ? engine.playhead : model.localSeek }
+    private var t: Double { model.playhead }
 
     var body: some View {
         let progress = min(1, max(0, drag / 400))
@@ -215,7 +215,7 @@ private struct FullscreenPlayer: View {
             }.padding(.top, 24)
 
             Button { model.togglePlay() } label: {
-                Image(systemName: engine.playing ? "pause.fill" : "play.fill")
+                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 22)).foregroundStyle(.white)
                     .frame(width: 62, height: 62).background(.ultraThinMaterial, in: Circle())
             }

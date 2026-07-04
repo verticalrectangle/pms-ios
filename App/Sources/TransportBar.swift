@@ -8,7 +8,7 @@ struct TransportBar: View {
     @ObservedObject var model: EditorModel
     @ObservedObject var engine: EngineStore
 
-    private var t: Double { engine.playing ? engine.playhead : model.localSeek }
+    private var t: Double { model.playhead }
 
     var body: some View {
         // Buttons are always perfectly centred (ZStack center); the readouts
@@ -18,9 +18,9 @@ struct TransportBar: View {
             HStack(spacing: 12) {
                 TransportButton(system: "gobackward.5", size: 20) { model.seek(t - 5) }
                 Button { model.togglePlay() } label: {
-                    Image(systemName: engine.playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 22)).foregroundStyle(engine.playing ? Theme.accent : Theme.txt)
-                        .frame(width: 56, height: 56).glass(28, active: engine.playing)
+                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 22)).foregroundStyle(model.isPlaying ? Theme.accent : Theme.txt)
+                        .frame(width: 56, height: 56).glass(28, active: model.isPlaying)
                 }.pressable()
                 TransportButton(system: "goforward.5", size: 20) { model.seek(t + 5) }
             }

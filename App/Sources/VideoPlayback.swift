@@ -1,7 +1,7 @@
 // VideoPlayback.swift — decode an imported video and feed its frames to the
 // engine's Metal compositor (the same submit-frame path as the live camera).
-// AVPlayer is the clock; a CADisplayLink pulls the current frame each vsync and
-// pushes it to the canvas. play/pause/seek drive the player.
+// The AVPlayer is the master clock: a periodic time observer drives the
+// transport (onTick), and a CADisplayLink pulls the current frame each vsync.
 import AVFoundation
 import QuartzCore
 
@@ -10,14 +10,20 @@ final class VideoPlayback {
     let player = AVPlayer()
     private var output: AVPlayerItemVideoOutput?
     private var link: CADisplayLink?
+    private var timeObserver: Any?
     private weak var engine: EngineStore?
     private(set) var duration: Double = 0
 
+    /// (currentTime, isPlaying) — the AVPlayer clock, for the transport.
+    var onTick: ((Double, Bool) -> Void)?
+
     init(engine: EngineStore) { self.engine = engine }
 
-    /// Load a video URL. Applies the source orientation transform so frames come
-    /// out upright, then starts pumping frames to the canvas.
     func load(url: URL) async {
+        // Route audio to the speaker even on silent mode.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+
         let asset = AVURLAsset(url: url)
         let item = AVPlayerItem(asset: asset)
         if let comp = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset) {
@@ -29,21 +35,33 @@ final class VideoPlayback {
         output = out
         player.replaceCurrentItem(with: item)
         duration = (try? await asset.load(.duration))?.seconds ?? 0
+
+        // The AVPlayer clock → the transport (~30 Hz).
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
+            guard let self else { return }
+            self.onTick?(time.seconds, self.player.rate > 0)
+        }
         startLink()
-        pushFrame()   // show the first frame immediately (paused)
+        pushFrame()   // first frame (paused)
     }
 
     func play()  { player.play() }
     func pause() { player.pause() }
+
     func seek(_ t: Double) {
+        // A small tolerance keeps scrubbing responsive (exact-frame seeks are
+        // slow); AVPlayer coalesces rapid in-flight seeks.
+        let tol = CMTime(seconds: 0.08, preferredTimescale: 600)
         player.seek(to: CMTime(seconds: t, preferredTimescale: 600),
-                    toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-            self?.pushFrame()   // update the still while scrubbing
+                    toleranceBefore: tol, toleranceAfter: tol) { [weak self] _ in
+            self?.pushFrame()
         }
     }
 
     func stop() {
         link?.invalidate(); link = nil
+        if let o = timeObserver { player.removeTimeObserver(o); timeObserver = nil }
         player.pause()
         player.replaceCurrentItem(with: nil)
         engine?.clearContent()

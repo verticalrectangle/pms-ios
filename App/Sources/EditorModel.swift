@@ -20,8 +20,10 @@ final class EditorModel: ObservableObject {
     @Published var bpm: Double
     @Published var beatsVisible = true
 
-    // scrub mirror (engine is the source of truth via `engine.playhead`)
-    @Published var localSeek: Double = 0
+    // Authoritative playback state — the AVPlayer clock drives these when a
+    // video is loaded (via onTick); otherwise optimistic + the engine.
+    @Published var playhead: Double = 0
+    @Published var isPlaying = false
 
     // Imported video (decoded through the engine's frame path).
     var video: VideoPlayback?
@@ -31,12 +33,16 @@ final class EditorModel: ObservableObject {
     func importVideo(_ url: URL) {
         activeSheet = nil
         let v = VideoPlayback(engine: engine)
+        v.onTick = { [weak self] time, playing in
+            self?.playhead = time
+            self?.isPlaying = playing
+        }
         video = v
         Task {
             await v.load(url: url)
             videoDuration = v.duration
             videoLoaded = true
-            localSeek = 0
+            playhead = 0
         }
     }
 
@@ -81,14 +87,14 @@ final class EditorModel: ObservableObject {
     // MARK: Transport (levers)
 
     func togglePlay() {
-        if engine.playing { video?.pause() } else { video?.play() }
-        engine.playing ? engine.command("pause") : engine.command("play")
+        isPlaying.toggle()
+        if let v = video { isPlaying ? v.play() : v.pause() }   // onTick reconciles
+        else { engine.command(isPlaying ? "play" : "pause") }
     }
     func seek(_ t: Double) {
         let v = min(max(t, 0), duration)
-        localSeek = v
-        video?.seek(v)
-        engine.command("seek", ["time": v])
+        playhead = v
+        if let vid = video { vid.seek(v) } else { engine.command("seek", ["time": v]) }
     }
 
     // MARK: Mutations → levers
