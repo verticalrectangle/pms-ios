@@ -1,5 +1,14 @@
 # XcodeGen spec — run `xcodegen generate` on macOS to produce the Xcode
 # project reproducibly (the .xcodeproj is never committed).
+#
+# Two build modes so the design workflow gets a fast loop:
+#   - SIMULATOR → ENGINE_MOCK: no engine framework needed, runs instantly on
+#     the Intel Mac's x86_64 simulator (and SwiftUI Previews). This is the
+#     screen-iteration path — translate the mockup, wire levers, see it live.
+#   - DEVICE (iphoneos) → the real arm64 engine xcframework. On-hardware
+#     validation.
+# The engine xcframeworks are device-arm64 only (no sim slice — the host is
+# an Intel Mac), so they link ONLY under [sdk=iphoneos*].
 name: PopMakerStudio
 options:
   bundleIdPrefix: xyz.epsilver
@@ -20,19 +29,20 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         HEADER_SEARCH_PATHS: Engine/include
         SWIFT_OBJC_BRIDGING_HEADER: App/PMS-Bridging-Header.h
-        # The engine is C++; a Swift app linking it must pull in libc++.
-        OTHER_LDFLAGS: [-lc++]
         INFOPLIST_KEY_NSCameraUsageDescription: "Record video takes with live filters."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Record audio takes."
+        # Simulator builds the mock engine (fast design loop, no engine deps).
+        "SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=iphonesimulator*]": ENGINE_MOCK
+        # Device links the real engine (C++ → needs libc++) + ORT framework.
+        "OTHER_LDFLAGS[sdk=iphoneos*]":
+          - -lc++
+          - $(PROJECT_DIR)/Engine/build/pms_engine.xcframework/ios-arm64/libpms-engine-full.a
+          - -F$(PROJECT_DIR)/Engine/build/onnxruntime.xcframework/ios-arm64
+          - -framework
+          - onnxruntime
     dependencies:
-      # The engine (C++ + whisper/ggml merged) and ONNX Runtime, both as
-      # device-arm64 xcframeworks built by scripts/build_mac.sh + the iOS
-      # cross-compile (Playbook P2.3). Static → embed:false.
-      - framework: Engine/build/pms_engine.xcframework
-        embed: false
-      - framework: Engine/build/onnxruntime.xcframework
-        embed: false
-      # System frameworks the engine's miniaudio/ggml-metal/ORT backends need.
+      # System frameworks the engine's backends need. Available on simulator
+      # too, so unconditional (harmless under mock).
       - sdk: Accelerate.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework
