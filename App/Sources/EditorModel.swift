@@ -44,8 +44,9 @@ final class EditorModel: ObservableObject {
             playhead = 0
             // Replace the mock scene with the imported video as a real clip.
             let name = url.deletingPathExtension().lastPathComponent.uppercased() + ".MP4"
-            let thumb = await VideoPlayback.thumbnail(for: url)
-            let clip = Clip(id: "vclip", label: name, start: 0, duration: v.duration, thumbURL: thumb)
+            let n = max(1, min(24, Int(v.duration / 1.5)))   // ~1 frame / 1.5s, capped
+            let strip = await VideoPlayback.filmstrip(for: url, count: n)
+            let clip = Clip(id: "vclip", label: name, start: 0, duration: v.duration, thumbs: strip)
             tracks = [
                 Track(id: "GFX", kind: .fxRail, name: "FX", clips: []),
                 Track(id: "V1", kind: .video, name: "V1", clips: [clip]),

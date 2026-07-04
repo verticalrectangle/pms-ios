@@ -134,8 +134,18 @@ private struct ContentClipView: View {
         ZStack(alignment: kind == .video ? .bottomLeading : .leading) {
             RoundedRectangle(cornerRadius: 7).fill(.ultraThinMaterial)
             if kind == .video {
-                AsyncImage(url: clip.thumbURL ?? URL(string: "https://picsum.photos/seed/\(clip.seed)cl/240/120")) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
-                    .opacity(0.5).clipped()
+                if clip.thumbs.isEmpty {
+                    AsyncImage(url: URL(string: "https://picsum.photos/seed/\(clip.seed)cl/240/120")) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                        .opacity(0.5).clipped()
+                } else {
+                    HStack(spacing: 0) {   // filmstrip: sampled frames tiled across the clip
+                        ForEach(clip.thumbs, id: \.self) { u in
+                            AsyncImage(url: u) { $0.resizable().scaledToFill() } placeholder: { Color.white.opacity(0.04) }
+                                .frame(maxWidth: .infinity).frame(height: height).clipped()
+                        }
+                    }
+                    .opacity(0.62)
+                }
             }
             if kind == .audio { Waveform().stroke(Color.white.opacity(0.55), lineWidth: 1).padding(.vertical, 6) }
             Rectangle().fill(accent).frame(width: 3).frame(maxHeight: .infinity, alignment: .leading)

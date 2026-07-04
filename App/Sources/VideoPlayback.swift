@@ -7,20 +7,27 @@ import QuartzCore
 import UIKit
 
 extension VideoPlayback {
-    /// A single-frame JPEG thumbnail (~1s in), written to a temp file — for the
-    /// timeline clip's preview.
-    static func thumbnail(for url: URL) async -> URL? {
+    /// A filmstrip of `count` evenly-spaced JPEG frames written to temp files —
+    /// for the timeline clip's preview. A coarse tolerance keeps it fast.
+    static func filmstrip(for url: URL, count: Int) async -> [URL] {
         let asset = AVURLAsset(url: url)
+        let dur = (try? await asset.load(.duration))?.seconds ?? 0
+        guard dur > 0, count > 0 else { return [] }
         let gen = AVAssetImageGenerator(asset: asset)
         gen.appliesPreferredTrackTransform = true
-        gen.maximumSize = CGSize(width: 240, height: 240)
-        let dur = (try? await asset.load(.duration))?.seconds ?? 0
-        let at = CMTime(seconds: min(1, dur), preferredTimescale: 600)
-        guard let cg = try? await gen.image(at: at).image,
-              let data = UIImage(cgImage: cg).jpegData(compressionQuality: 0.7) else { return nil }
-        let dst = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
-        try? data.write(to: dst)
-        return dst
+        gen.maximumSize = CGSize(width: 160, height: 160)
+        gen.requestedTimeToleranceBefore = CMTime(seconds: 0.4, preferredTimescale: 600)
+        gen.requestedTimeToleranceAfter  = CMTime(seconds: 0.4, preferredTimescale: 600)
+        var urls: [URL] = []
+        for i in 0..<count {
+            let sec = dur * (Double(i) + 0.5) / Double(count)
+            guard let cg = try? await gen.image(at: CMTime(seconds: sec, preferredTimescale: 600)).image,
+                  let data = UIImage(cgImage: cg).jpegData(compressionQuality: 0.6) else { continue }
+            let dst = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+            try? data.write(to: dst)
+            urls.append(dst)
+        }
+        return urls
     }
 }
 
