@@ -11,7 +11,7 @@ import UniformTypeIdentifiers
 struct PickedMovie: Transferable {
     let url: URL
     static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(contentType: .movie) { SentFile($0.url) } importing: { received in
+        FileRepresentation(contentType: .movie) { SentTransferredFile($0.url) } importing: { received in
             let dst = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString + "." + received.file.pathExtension)
             try? FileManager.default.removeItem(at: dst)
