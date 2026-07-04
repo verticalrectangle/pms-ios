@@ -69,12 +69,8 @@ struct EditorView: View {
                     ClipActionBar(model: model, clip: clip)
                         .padding(.horizontal, 12)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if let lyric = model.selectedLyricClip {
-                    LyricEditBar(model: model, clip: lyric)
-                        .padding(.horizontal, 12)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if let sel = model.selectedID {
-                    InspectorView(model: model, brickID: sel)
+                } else if model.selectedLyricClip == nil, let sel = model.selectedID {
+                    InspectorView(model: model, brickID: sel)   // bricks (text bar floats separately)
                         .padding(.horizontal, 12)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -83,6 +79,7 @@ struct EditorView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, 6)
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedID)
+            .ignoresSafeArea(.keyboard, edges: .bottom)   // the UI stays put; only the text bar floats up
 
             VStack {
                 BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 8)
@@ -90,11 +87,24 @@ struct EditorView: View {
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.busy?.label)
 
+            // The text edit bar floats just above the keyboard (respects the
+            // keyboard safe area) while the rest of the UI stays put — nothing jumps.
+            if let lyric = model.selectedLyricClip {
+                VStack {
+                    Spacer()
+                    LyricEditBar(model: model, clip: lyric)
+                        .padding(.horizontal, 12).padding(.bottom, 8)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(20)
+            }
+
             if fullscreen {
                 FullscreenPlayer(engine: engine, model: model, isPresented: $fullscreen)
                     .zIndex(50)
             }
         }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedLyricClip?.id)
         .background(AtmosphereView().ignoresSafeArea())
         // Tap empty space while editing a title → commit + dismiss keyboard (text
         // is saved live). Gated so it never interferes with normal use.
