@@ -61,9 +61,9 @@ final class VideoPlayback {
 
     /// (Re)build the playable timeline from the ordered clip segments — every
     /// edit (trim/split/delete) calls this. Preserves the play position.
-    func load(segments: [Segment]) async {
+    func load(segments: [Segment], seekTo: Double? = nil) async {
         let wasPlaying = player.rate > 0
-        let at = player.currentTime()
+        let at = seekTo.map { CMTime(seconds: $0, preferredTimescale: 600) } ?? player.currentTime()
 
         let comp = AVMutableComposition()
         let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
@@ -92,7 +92,7 @@ final class VideoPlayback {
         item.add(out)
         output = out
         player.replaceCurrentItem(with: item)
-        if at.seconds > 0 {
+        if seekTo != nil || at.seconds > 0 {
             player.seek(to: CMTimeMinimum(at, CMTime(seconds: duration, preferredTimescale: 600)),
                         toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
         }

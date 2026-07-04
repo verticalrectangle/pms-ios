@@ -98,16 +98,16 @@ final class EditorModel: ObservableObject {
     }
 
     /// Rebuild the player timeline from the current video clips.
-    func rebuildVideo() async {
+    func rebuildVideo(seekTo: Double? = nil) async {
         guard let ti = videoTrackIndex else { return }
         let segs = tracks[ti].clips.compactMap { c in
             c.sourceURL.map { VideoPlayback.Segment(url: $0, sourceStart: c.sourceStart, duration: c.duration) }
         }
-        await video?.load(segments: segs)
+        await video?.load(segments: segs, seekTo: seekTo)
         videoDuration = video?.duration
     }
 
-    /// Lay the video clips end-to-end (no gaps) and renumber their labels.
+    /// Lay the video clips end-to-end (contiguous from 0) and renumber.
     private func relayoutVideoClips() {
         guard let ti = videoTrackIndex else { return }
         var cursor = 0.0
@@ -145,9 +145,18 @@ final class EditorModel: ObservableObject {
     // MARK: Trim (drag the clip edges)
 
     func beginTrim() { snapshot() }
+    /// On release, re-anchor the clips to 0 AND shift the playhead back by how
+    /// far front-trim moved the first clip — so the footage under the playhead
+    /// stays put (no visible jump) while the clip settles at the origin.
     func endTrim() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { relayoutVideoClips() }
-        Task { await rebuildVideo() }
+        guard let ti = videoTrackIndex else { return }
+        let change = tracks[ti].clips.first?.start ?? 0   // front-trim's leftward displacement
+        let target = max(0, playhead - change)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+            relayoutVideoClips()
+            playhead = target                              // set synchronously so the offset compensates
+        }
+        Task { await rebuildVideo(seekTo: target) }
     }
 
     /// Set a clip's timeline position + in-point + length (the trim handle
