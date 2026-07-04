@@ -237,7 +237,10 @@ enum TextRasterizer {
         let h = size.height * 0.25
         text.frame = CGRect(x: size.width * 0.06, y: (size.height - h) / 2, width: size.width * 0.88, height: h)
         root.addSublayer(text)
-        let cg = UIGraphicsImageRenderer(size: size).image { ctx in root.render(in: ctx.cgContext) }.cgImage
+        // scale 1 → the image is exactly `size` px, matching the video frame
+        // (default screen-scale would make it 3× and crop the text out of view).
+        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1; fmt.opaque = false
+        let cg = UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in root.render(in: ctx.cgContext) }.cgImage
         guard let cg else { return nil }
         let img = CIImage(cgImage: cg)
         cache[key] = img
