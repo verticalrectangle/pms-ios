@@ -249,10 +249,12 @@ private struct TrimHandles: View {
                         guard let o = orig else { return }
                         let dx = Double(g.translation.width / PPS)
                         if leading {
-                            // move the in-point; left edge (start) follows, right edge fixed
+                            // Advance the in-point; the clip stays anchored (no
+                            // push-back) and the filmstrip crops from the left to
+                            // show the removed front. Clip shortens from the right.
                             let ns = min(max(o.srcStart + dx, 0), o.srcStart + o.dur - 0.3)
                             let change = ns - o.srcStart
-                            model.setTrim(clip.id, start: o.tlStart + change, sourceStart: ns, duration: o.dur - change)
+                            model.setTrim(clip.id, start: o.tlStart, sourceStart: ns, duration: o.dur - change)
                         } else {
                             // move the out-point; start + in-point fixed
                             let nd = min(max(o.dur + dx, 0.3), o.srcDur - o.srcStart)
