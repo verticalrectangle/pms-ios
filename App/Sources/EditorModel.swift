@@ -271,6 +271,42 @@ final class EditorModel: ObservableObject {
         return (v.clips.first { t >= $0.start && t < $0.end } ?? v.clips.last)?.label ?? "CLIP"
     }
 
+    // MARK: Text / lyric clips (rendered as canvas overlays; preview now, bake later)
+
+    /// Text clips (lyric track) whose span contains `t` — drives the canvas title.
+    func activeLyrics(at t: Double) -> [Clip] {
+        tracks.first { $0.kind == .lyric }?.clips.filter { t >= $0.start && t < $0.end } ?? []
+    }
+    var selectedLyricClip: Clip? {
+        tracks.first { $0.kind == .lyric }?.clips.first { $0.id == selectedID }
+    }
+    /// Add a text clip at the playhead (creates the text track if needed) + select it.
+    func addTextClip() {
+        activeSheet = nil
+        snapshot()
+        let clip = Clip(id: "t_\(UUID().uuidString.prefix(6))", label: "YOUR TEXT",
+                        start: playhead, duration: 3)
+        if let ti = tracks.firstIndex(where: { $0.kind == .lyric }) {
+            tracks[ti].clips.append(clip)
+        } else {
+            tracks.append(Track(id: "TXT", kind: .lyric, name: "TEXT", clips: [clip]))
+        }
+        selectedID = clip.id
+    }
+    func setClipText(_ id: String, _ text: String) {
+        for ti in tracks.indices where tracks[ti].kind == .lyric {
+            if let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) {
+                tracks[ti].clips[ci].label = text; return
+            }
+        }
+    }
+    /// Delete a clip on any non-video track (text/audio) — video uses deleteSelectedClip.
+    func deleteClipAnywhere(_ id: String) {
+        snapshot()
+        for ti in tracks.indices { tracks[ti].clips.removeAll { $0.id == id } }
+        if selectedID == id { selectedID = nil }
+    }
+
     func selection() -> (track: Track, brick: Brick)? {
         for tr in tracks { if let b = tr.bricks.first(where: { $0.id == selectedID }) { return (tr, b) } }
         return nil

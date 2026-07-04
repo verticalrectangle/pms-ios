@@ -69,6 +69,10 @@ struct EditorView: View {
                     ClipActionBar(model: model, clip: clip)
                         .padding(.horizontal, 12)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if let lyric = model.selectedLyricClip {
+                    LyricEditBar(model: model, clip: lyric)
+                        .padding(.horizontal, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else if let sel = model.selectedID {
                     InspectorView(model: model, brickID: sel)
                         .padding(.horizontal, 12)
@@ -123,7 +127,8 @@ struct EditorView: View {
                 ForEach(Array(tools.enumerated()), id: \.offset) { i, item in
                     if i > 0 { Spacer() }
                     Button {
-                        model.activeSheet = (model.activeSheet == item.0) ? nil : item.0
+                        if item.0 == .lyrics { model.addTextClip() }   // Text → add a title at the playhead
+                        else { model.activeSheet = (model.activeSheet == item.0) ? nil : item.0 }
                     } label: {
                         Label(item.2, systemImage: item.1)
                     }
@@ -168,6 +173,7 @@ struct EditorView: View {
             .frame(width: box.width, height: box.height)
             .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
                                   activeBricks: model.activeBricks(at: t)))
+            .overlay(LyricOverlay(clips: model.activeLyrics(at: t), width: box.width))
             .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
             .overlay(RoundedRectangle(cornerRadius: Theme.rCard).strokeBorder(Theme.line))
             .frame(maxWidth: .infinity)   // centre horizontally
@@ -208,6 +214,32 @@ private struct ClipActionBar: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .glass(16)
+    }
+}
+
+// MARK: - Text edit bar (shown when a text/lyric clip is selected)
+
+private struct LyricEditBar: View {
+    @ObservedObject var model: EditorModel
+    let clip: Clip
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "textformat").font(.system(size: 15)).foregroundStyle(Theme.accent)
+            TextField("Title text", text: $text, axis: .horizontal)
+                .textInputAutocapitalization(.characters)
+                .font(.label(13)).foregroundStyle(Theme.txt)
+                .focused($focused)
+                .onChange(of: text) { _, v in model.setClipText(clip.id, v) }
+            Button(role: .destructive) { model.deleteClipAnywhere(clip.id) } label: {
+                Image(systemName: "trash").font(.system(size: 14))
+            }.tint(Color(red: 1, green: 0.5, blue: 0.5))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .glass(16)
+        .onAppear { text = clip.label; focused = true }
     }
 }
 

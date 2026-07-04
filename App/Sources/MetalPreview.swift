@@ -83,3 +83,26 @@ struct CanvasChrome: View {
         }
     }
 }
+
+/// Time-windowed text/title overlay on the canvas (preview). The same clips
+/// will bake into export via a CATextLayer once the animation-tool path lands.
+struct LyricOverlay: View {
+    let clips: [Clip]
+    let width: CGFloat
+    var body: some View {
+        VStack(spacing: width * 0.02) {
+            ForEach(clips) { c in
+                Text(c.label)
+                    .font(.system(size: width * 0.12, weight: .black))
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.55), radius: width * 0.02)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.4)
+                    .lineLimit(3)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .padding(.horizontal, width * 0.06)
+        .allowsHitTesting(false)
+    }
+}
