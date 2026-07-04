@@ -44,17 +44,31 @@ final class EditorModel: ObservableObject {
         Task {
             let dur = (try? await AVURLAsset(url: url).load(.duration))?.seconds ?? 0
             guard dur > 0 else { return }
-            playhead = 0
             let n = max(1, min(24, Int(dur / 1.5)))   // ~1 frame / 1.5s, capped
             let strip = await VideoPlayback.filmstrip(for: url, count: n)
-            let clip = Clip(id: "vclip", label: "CLIP 1", start: 0, duration: dur,
-                            thumbs: strip, sourceURL: url, sourceStart: 0, sourceDuration: dur)
-            tracks = [
-                Track(id: "GFX", kind: .fxRail, name: "FX", clips: []),
-                Track(id: "V1", kind: .video, name: "V1", clips: [clip]),
-            ]
-            selectedID = nil
-            videoDuration = dur
+            let id = "v_\(UUID().uuidString.prefix(6))"
+
+            if let ti = videoTrackIndex, !tracks[ti].clips.isEmpty {
+                // APPEND after the last clip — builds a multi-clip sequence.
+                let startAt = tracks[ti].clips.map(\.end).max() ?? 0
+                let clip = Clip(id: id, label: "CLIP", start: startAt, duration: dur,
+                                thumbs: strip, sourceURL: url, sourceStart: 0, sourceDuration: dur)
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    tracks[ti].clips.append(clip)
+                    renumberLabels()
+                    selectedID = clip.id
+                }
+            } else {
+                // FIRST import — lay down the tracks.
+                playhead = 0
+                let clip = Clip(id: id, label: "CLIP 1", start: 0, duration: dur,
+                                thumbs: strip, sourceURL: url, sourceStart: 0, sourceDuration: dur)
+                tracks = [
+                    Track(id: "GFX", kind: .fxRail, name: "FX", clips: []),
+                    Track(id: "V1", kind: .video, name: "V1", clips: [clip]),
+                ]
+                selectedID = nil
+            }
             videoLoaded = true
             await rebuildVideo()
         }
