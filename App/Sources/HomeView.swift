@@ -3,11 +3,17 @@
 //  sort chips, and glass project cards with deterministic thumbnails.
 
 import SwiftUI
+import UIKit
 
 struct HomeView: View {
     let onOpen: (Project) -> Void
     @State private var sort: Sort = .recent
     @State private var showSettings = false
+    // Circular theme reveal: a snapshot of the OLD theme, wiped away by a hole
+    // growing from the toggle button — reveals the NEW theme underneath.
+    @State private var revealImage: UIImage?
+    @State private var revealRadius: CGFloat = 0
+    @State private var toggleCenter = CGPoint(x: UIScreen.main.bounds.width - 40, y: 70)
 
     enum Sort: String, CaseIterable { case recent = "Recent", name = "Name", duration = "Duration", fx = "FX" }
 
@@ -57,18 +63,17 @@ struct HomeView: View {
         .toolbar(.hidden, for: .navigationBar)   // Home has its own big title
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 10) {
-                Button {
-                    // Bare mutation, no withAnimation: iOS already fires ONE snapshot
-                    // crossfade for the preferredColorScheme flip (it covers every token,
-                    // shadow and orb). A withAnimation here was a second, differently-timed
-                    // 0.35s clock forcing shadows+orbs to interpolate live under that
-                    // crossfade — that collision was the dark→light jerk.
-                    Palette.shared.mode = Theme.light ? .dark : .light
-                } label: {
+                Button { toggleTheme() } label: {
                     Image(systemName: Theme.light ? "sun.max.fill" : "moon.stars.fill")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.txtBody).frame(width: 44, height: 44).glass(14)
-                }.pressable()
+                }
+                .pressable()
+                .background(GeometryReader { g in
+                    Color.clear.onAppear {
+                        let f = g.frame(in: .global); toggleCenter = CGPoint(x: f.midX, y: f.midY)
+                    }
+                })
                 Button { showSettings = true } label: {
                     Image(systemName: "gearshape.fill").font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Theme.txtBody).frame(width: 44, height: 44).glass(14)
@@ -77,6 +82,54 @@ struct HomeView: View {
             .padding(.trailing, 18).padding(.top, 4)
         }
         .sheet(isPresented: $showSettings) { SettingsSheet() }
+        // Circular reveal: old-theme snapshot on top, a hole growing from the
+        // toggle button wipes it away to show the new theme underneath.
+        .overlay {
+            if let img = revealImage {
+                Image(uiImage: img)
+                    .resizable().ignoresSafeArea()
+                    .mask {
+                        ZStack {
+                            Rectangle().fill(.black)
+                            Circle()
+                                .frame(width: revealRadius * 2, height: revealRadius * 2)
+                                .position(toggleCenter)
+                                .blendMode(.destinationOut)
+                        }
+                        .compositingGroup().ignoresSafeArea()
+                    }
+                    .ignoresSafeArea().allowsHitTesting(false).zIndex(999)
+            }
+        }
+    }
+
+    /// Tap the sun/moon: snapshot the current theme, flip, then wipe the snapshot
+    /// away with a circle growing from the button — the new theme reveals through it.
+    private func toggleTheme() {
+        guard let snap = snapshotWindow() else {
+            Palette.shared.mode = Theme.light ? .dark : .light; return   // fallback: plain flip
+        }
+        revealRadius = 0
+        revealImage = snap
+        Palette.shared.mode = Theme.light ? .dark : .light   // new theme renders UNDER the snapshot
+        let s = UIScreen.main.bounds.size, c = toggleCenter
+        let maxR = max(hypot(c.x, c.y), hypot(s.width - c.x, c.y),
+                       hypot(c.x, s.height - c.y), hypot(s.width - c.x, s.height - c.y)) + 24
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.52)) { revealRadius = maxR }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.58) {
+            revealImage = nil; revealRadius = 0
+        }
+    }
+
+    private func snapshotWindow() -> UIImage? {
+        guard let window = UIApplication.shared.connectedScenes
+            .compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first else { return nil }
+        let fmt = UIGraphicsImageRendererFormat(); fmt.opaque = true
+        return UIGraphicsImageRenderer(bounds: window.bounds, format: fmt).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+        }
     }
 
     private var title: some View {
