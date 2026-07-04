@@ -32,6 +32,7 @@ struct EditorView: View {
                 bottomStack
             }
             .padding(.top, 60)
+            .border(Color(red:1,green:0,blue:1), width: 6)   // DEBUG VStack bounds
 
             VStack {
                 BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 56)
@@ -98,6 +99,7 @@ struct EditorView: View {
 
     private var timeline: some View {
         TimelineView(model: model, engine: engine)
+            .border(Color.blue, width: 4)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .glass(18, flat: true)
@@ -112,6 +114,7 @@ struct EditorView: View {
             }
             ToolDock(model: model)
         }
+        .border(Color.orange, width: 4)
         .padding(.horizontal, 12)
         .padding(.bottom, 30)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedID)
