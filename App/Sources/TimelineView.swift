@@ -146,10 +146,11 @@ private struct TrackLane: View {
                                 if dragID != clip.id { dragID = clip.id }
                                 dragDX = drag.translation.width
                             }
-                            .onEnded { value in
-                                guard track.kind == .video else { return }
-                                if case .second(true, let drag?) = value {
-                                    model.moveClip(clip.id, toIndex: reorderTarget(clip, dx: drag.translation.width))
+                            .onEnded { _ in
+                                // Use the tracked dragDX — the sequenced gesture's
+                                // end value drops the drag payload (comes back nil).
+                                if track.kind == .video, dragID == clip.id {
+                                    model.moveClip(clip.id, toIndex: reorderTarget(clip, dx: dragDX))
                                 }
                                 dragID = nil; dragDX = 0
                             }
