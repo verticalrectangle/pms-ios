@@ -48,8 +48,10 @@ final class EditorModel: ObservableObject {
             let strip = await VideoPlayback.filmstrip(for: url, count: n)
             let id = "v_\(UUID().uuidString.prefix(6))"
 
-            if let ti = videoTrackIndex, !tracks[ti].clips.isEmpty {
+            if videoLoaded, let ti = videoTrackIndex, !tracks[ti].clips.isEmpty {
                 // APPEND after the last clip — builds a multi-clip sequence.
+                // (videoLoaded, NOT "has clips" — the initial timeline is Sample
+                //  mock data, so the first real import must replace it, not append.)
                 let startAt = tracks[ti].clips.map(\.end).max() ?? 0
                 let clip = Clip(id: id, label: "CLIP", start: startAt, duration: dur,
                                 thumbs: strip, sourceURL: url, sourceStart: 0, sourceDuration: dur)
