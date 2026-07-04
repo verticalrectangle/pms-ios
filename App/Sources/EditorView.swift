@@ -96,6 +96,9 @@ struct EditorView: View {
             }
         }
         .background(AtmosphereView().ignoresSafeArea())
+        // Tap empty space while editing a title → commit + dismiss keyboard (text
+        // is saved live). Gated so it never interferes with normal use.
+        .onTapGesture { if model.selectedLyricClip != nil { model.selectedID = nil } }
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -178,14 +181,25 @@ struct EditorView: View {
             .overlay(RoundedRectangle(cornerRadius: Theme.rCard).strokeBorder(Theme.line))
             .frame(maxWidth: .infinity)   // centre horizontally
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
+            .onTapGesture {
+                if model.selectedLyricClip != nil { model.selectedID = nil }   // commit text edit
+                else { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
+            }
+    }
+
+    /// Fit the timeline to its tracks (ruler + lanes + spacing + vpad), so lower
+    /// tracks (text/audio) aren't clipped. Clamped so it never crushes the canvas.
+    private var timelineHeight: CGFloat {
+        func laneH(_ k: TrackKind) -> CGFloat { switch k { case .fxRail: 30; case .video: 52; case .lyric: 40; case .audio: 34 } }
+        let content = 34 + model.tracks.reduce(0) { $0 + laneH($1.kind) + 3 } + 12
+        return min(max(content, 132), 252)
     }
 
     private var timeline: some View {
         TimelineView(model: model, engine: engine)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity)
-            .frame(height: 132)          // fixed — was maxHeight:.infinity, which crushed the canvas
+            .frame(height: timelineHeight)
             .glass(18, flat: true, sheer: true)   // thin frost so the atmosphere reads behind it
             .padding(.horizontal, 8)
             .onTapGesture { /* tap-away handled inside */ }
@@ -228,11 +242,13 @@ private struct LyricEditBar: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "textformat").font(.system(size: 15)).foregroundStyle(Theme.accent)
-            TextField("Title text", text: $text, axis: .horizontal)
+            TextField("Title text", text: $text)
                 .textInputAutocapitalization(.characters)
+                .submitLabel(.done)
                 .font(.label(13)).foregroundStyle(Theme.txt)
                 .focused($focused)
                 .onChange(of: text) { _, v in model.setClipText(clip.id, v) }
+                .onSubmit { model.selectedID = nil }   // Return commits + deselects
             Button(role: .destructive) { model.deleteClipAnywhere(clip.id) } label: {
                 Image(systemName: "trash").font(.system(size: 14))
             }.tint(Color(red: 1, green: 0.5, blue: 0.5))
