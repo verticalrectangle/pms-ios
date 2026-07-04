@@ -149,11 +149,13 @@ final class EditorModel: ObservableObject {
         for i in tracks[ti].clips.indices { tracks[ti].clips[i].label = "CLIP \(i + 1)" }
     }
 
-    /// Split the SELECTED clip's track under the playhead into two (structural —
-    /// same footage / same text). Works for any track kind (video or text).
+    /// Split the SELECTED item under the playhead into two — a clip (any kind) OR
+    /// an FX brick. Structural; same footage / text / chain in each half.
     func splitAtPlayhead() {
-        guard let id = selectedID, let ti = trackIndex(ofClip: id),
-              let ci = tracks[ti].clips.firstIndex(where: { playhead > $0.start + 0.1 && playhead < $0.end - 0.1 })
+        guard let r = selectedRef else { return }
+        if r.kind == .brick { splitBrickAtPlayhead(r); return }
+        let ti = r.track
+        guard let ci = tracks[ti].clips.firstIndex(where: { playhead > $0.start + 0.1 && playhead < $0.end - 0.1 })
         else { return }
         snapshot()
         let c = tracks[ti].clips[ci]
@@ -173,6 +175,19 @@ final class EditorModel: ObservableObject {
             selectedID = b.id
         }
         // composition unchanged (a+b == original span & net fade) → no reload needed
+    }
+
+    /// Split an FX brick at the playhead — chain/params/binding carry to both halves.
+    private func splitBrickAtPlayhead(_ r: ItemRef) {
+        let b = tracks[r.track].bricks[r.index]
+        guard playhead > b.start + 0.1, playhead < b.end - 0.1 else { return }
+        snapshot()
+        var left = b; left.duration = playhead - b.start
+        var right = b; right.id = regenID(b.id); right.start = playhead; right.duration = b.end - playhead
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            tracks[r.track].bricks.replaceSubrange(r.index...r.index, with: [left, right])
+            selectedID = right.id
+        }
     }
 
     // MARK: Free-position drag (the desktop model: free start/end, implicit

@@ -40,6 +40,7 @@ struct InspectorView: View {
                     .font(.num(11.5)).foregroundStyle(Theme.txtMuted)
             }
             Spacer()
+            ItemActionsMenu(model: model, id: brick.id)
             Button { model.selectedID = nil } label: {
                 Image(systemName: "xmark").font(.system(size: 14)).foregroundStyle(Theme.txtMuted)
                     .frame(width: 30, height: 30)
@@ -107,7 +108,9 @@ struct InspectorView: View {
             if brick.boundClipID != nil {
                 inspectorButton("Decouple", tint: Theme.txt) { model.decouple(brick.id) }
             }
-            inspectorButton("Add to chain", tint: Theme.txt) { model.activeSheet = .fx }
+            inspectorButton("Add FX", tint: Theme.txt) { model.activeSheet = .fx }
+            inspectorButton("Split", tint: Theme.txt) { model.splitAtPlayhead() }
+                .disabled(!(model.playhead > brick.start + 0.1 && model.playhead < brick.end - 0.1))
             inspectorButton("Delete", tint: Color(red: 1, green: 0.55, blue: 0.55)) { model.deleteBrick(brick.id) }
         }
     }

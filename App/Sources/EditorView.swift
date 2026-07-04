@@ -271,7 +271,7 @@ struct EditorView: View {
 
 /// One reusable copy/cut/duplicate/paste menu — dropped into every selection bar
 /// so the action set is identical for clips and bricks.
-private struct ItemActionsMenu: View {
+struct ItemActionsMenu: View {
     @ObservedObject var model: EditorModel
     let id: String
     var body: some View {
