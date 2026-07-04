@@ -136,18 +136,14 @@ private struct TrackLane: View {
                     .onTapGesture {
                         model.selectedID = (model.selectedID == clip.id) ? nil : clip.id
                     }
-                    .overlay {
-                        if model.selectedID == clip.id && track.kind == .video {
-                            TrimHandles(clip: clip, model: model, height: laneHeight)
-                        }
-                    }
                     .scaleEffect(dragging ? 1.06 : 1, anchor: .center)
                     .shadow(color: dragging ? Theme.accentA(0.55) : .clear, radius: 12)
                     .offset(x: CGFloat(clip.start) * PPS + (dragging ? dragDX : 0))
                     .zIndex(dragging ? 2 : (model.selectedID == clip.id ? 1 : 0))
-                    // Reorder: drag ANY video clip to move it (no need to select
-                    // first). High-priority so it beats the timeline scrub; scrub
-                    // lives on the ruler row now. Plain DragGesture = reliable onEnded.
+                    // Reorder: drag a video clip's BODY to move it. High-priority so
+                    // it beats the scrub (which now lives on the ruler row). Attached
+                    // BEFORE the handle overlay so the trim handles sit on top and
+                    // win edge touches; the body passes through the HStack's spacer.
                     .highPriorityGestureIf(track.kind == .video,
                         DragGesture(minimumDistance: 8, coordinateSpace: .global)
                             .onChanged { g in
@@ -159,6 +155,11 @@ private struct TrackLane: View {
                                 dragID = nil; dragDX = 0
                             }
                     )
+                    .overlay {
+                        if model.selectedID == clip.id && track.kind == .video {
+                            TrimHandles(clip: clip, model: model, height: laneHeight)
+                        }
+                    }
             }
             ForEach(track.bricks) { brick in
                 BrickView(brick: brick, laneHeight: laneHeight,
