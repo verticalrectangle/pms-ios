@@ -137,13 +137,14 @@ struct GlassPressStyle: ButtonStyle {
 // MARK: - Atmosphere (dark goth-aero backdrop + drifting bokeh)
 
 struct AtmosphereView: View {
-    @State private var drift = false
+    @State private var drift = false    // y clock
+    @State private var driftX = false   // x clock (different period → elliptical float)
 
     // A bokeh orb: normalized position, size, blur (far = big+soft, near = small+
     // tight-cored), a luminous core + halo, and a slow drift. Varied blur is what
     // the eye reads as depth.
     private struct Orb {
-        let nx, ny, size, blur, opacity, dy: CGFloat
+        let nx, ny, size, blur, opacity, dx, dy: CGFloat   // dx/dy = 2D float amplitude
         let core, halo: Color
     }
     private static let lav = Palette.lavender
@@ -154,25 +155,33 @@ struct AtmosphereView: View {
     private static let cblu = Color(red: 0.29, green: 0.42, blue: 1.0)
     private static let cpur = Color(red: 0.66, green: 0.36, blue: 1.0)
 
-    // Dark: lavender/blue/ember glossy spheres — a few in focus, the rest bokeh.
+    // Depth cue: bigger = closer (sharp, front), smaller = further (blurred, back).
+    // Dark: lavender / blue / ember glossy spheres.
     private let orbs: [Orb] = [
-        Orb(nx: 0.14, ny: 0.15, size: 330, blur: 52, opacity: 0.50, dy:  34, core: lav, halo: lav),
-        Orb(nx: 0.90, ny: 0.74, size: 400, blur: 66, opacity: 0.40, dy: -42, core: blu, halo: blu),
-        Orb(nx: 0.52, ny: 0.48, size: 200, blur: 40, opacity: 0.30, dy:  16, core: lav, halo: lav),
-        Orb(nx: 0.86, ny: 0.13, size: 112, blur: 1,  opacity: 0.95, dy:  22, core: lav, halo: lav),   // in focus
-        Orb(nx: 0.15, ny: 0.52, size: 88,  blur: 1,  opacity: 0.92, dy: -16, core: blu, halo: blu),   // in focus
-        Orb(nx: 0.91, ny: 0.55, size: 64,  blur: 2,  opacity: 0.94, dy:  24, core: emb, halo: emb),   // in focus
+        // NEAR — big + sharp (hero balls, peeking from the edges)
+        Orb(nx: 0.90, ny: 0.15, size: 200, blur: 1, opacity: 0.96, dx:  16, dy:  24, core: lav, halo: lav),
+        Orb(nx: 0.08, ny: 0.70, size: 176, blur: 2, opacity: 0.94, dx: -14, dy: -20, core: blu, halo: blu),
+        // MID
+        Orb(nx: 0.74, ny: 0.86, size: 120, blur: 9,  opacity: 0.78, dx:  18, dy: -16, core: emb, halo: emb),
+        Orb(nx: 0.30, ny: 0.28, size: 96,  blur: 7,  opacity: 0.72, dx: -16, dy:  18, core: lav, halo: lav),
+        // FAR — small + blurred (deep background bokeh)
+        Orb(nx: 0.52, ny: 0.52, size: 68,  blur: 30, opacity: 0.55, dx:  22, dy:  22, core: blu, halo: blu),
+        Orb(nx: 0.86, ny: 0.52, size: 54,  blur: 34, opacity: 0.5,  dx: -20, dy:  16, core: lav, halo: lav),
+        Orb(nx: 0.20, ny: 0.16, size: 58,  blur: 30, opacity: 0.5,  dx:  18, dy: -14, core: emb, halo: emb),
     ]
 
-    // SOPHIE light: punchy glossy candy spheres, strong DOF — crisp heroes + soft bokeh.
+    // SOPHIE light: punchy glossy candy spheres — big sharp heroes + small soft bokeh.
     private let lightOrbs: [Orb] = [
-        Orb(nx: 0.20, ny: 0.14, size: 340, blur: 58, opacity: 0.48, dy:  30, core: pink, halo: pink),
-        Orb(nx: 0.82, ny: 0.82, size: 400, blur: 72, opacity: 0.42, dy: -38, core: cblu, halo: cblu),
-        Orb(nx: 0.56, ny: 0.54, size: 210, blur: 42, opacity: 0.42, dy:  18, core: cpur, halo: cpur),
-        Orb(nx: 0.88, ny: 0.12, size: 132, blur: 1,  opacity: 0.98, dy:  22, core: pink, halo: pink),  // in focus
-        Orb(nx: 0.11, ny: 0.47, size: 104, blur: 1,  opacity: 0.96, dy: -16, core: cblu, halo: cblu),  // in focus
-        Orb(nx: 0.91, ny: 0.55, size: 84,  blur: 2,  opacity: 0.95, dy:  24, core: cpur, halo: cpur),  // in focus
-        Orb(nx: 0.31, ny: 0.83, size: 62,  blur: 1,  opacity: 0.95, dy: -12, core: pink, halo: pink),  // in focus
+        // NEAR — big + sharp
+        Orb(nx: 0.92, ny: 0.17, size: 210, blur: 1, opacity: 0.98, dx:  16, dy:  24, core: pink, halo: pink),
+        Orb(nx: 0.07, ny: 0.72, size: 184, blur: 2, opacity: 0.96, dx: -14, dy: -20, core: cblu, halo: cblu),
+        // MID
+        Orb(nx: 0.74, ny: 0.88, size: 128, blur: 8,  opacity: 0.82, dx:  18, dy: -16, core: cpur, halo: cpur),
+        Orb(nx: 0.28, ny: 0.29, size: 100, blur: 7,  opacity: 0.80, dx: -16, dy:  18, core: pink, halo: pink),
+        // FAR — small + blurred
+        Orb(nx: 0.52, ny: 0.50, size: 72,  blur: 30, opacity: 0.55, dx:  22, dy:  22, core: cblu, halo: cblu),
+        Orb(nx: 0.86, ny: 0.48, size: 58,  blur: 34, opacity: 0.52, dx: -20, dy:  16, core: cpur, halo: cpur),
+        Orb(nx: 0.20, ny: 0.15, size: 60,  blur: 30, opacity: 0.52, dx:  18, dy: -14, core: pink, halo: pink),
     ]
 
     // A glossy 3D sphere: lit top-left (bright desaturated highlight → body → dark
@@ -215,13 +224,16 @@ struct AtmosphereView: View {
                 }
                 ForEach(Array((lightMode ? lightOrbs : orbs).enumerated()), id: \.offset) { i, o in
                     ball(o)
-                        .position(x: o.nx * w, y: o.ny * h + (drift ? o.dy : -o.dy))
-                        .animation(.easeInOut(duration: 24 + Double(i) * 2.5)
+                        .position(x: o.nx * w + (driftX ? o.dx : -o.dx),
+                                  y: o.ny * h + (drift  ? o.dy : -o.dy))
+                        .animation(.easeInOut(duration: 15 + Double(i) * 3.3)
                             .repeatForever(autoreverses: true), value: drift)
+                        .animation(.easeInOut(duration: 21 + Double(i) * 2.6)
+                            .repeatForever(autoreverses: true), value: driftX)
                 }
             }
         }
         .ignoresSafeArea()
-        .onAppear { drift = true }
+        .onAppear { drift = true; driftX = true }
     }
 }
