@@ -164,9 +164,15 @@ final class EditorModel: ObservableObject {
     /// the drag (that jitters); positions settle + composition rebuilds on end.
     func setTrim(_ id: String, start: Double, sourceStart: Double, duration: Double) {
         guard let ti = videoTrackIndex, let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
+        var start = start, dur = duration
+        // Don't let the left edge cross into the previous clip.
+        if ci > 0 { start = max(start, tracks[ti].clips[ci - 1].end) }
+        // Don't let the right edge cross into the next clip.
+        if ci + 1 < tracks[ti].clips.count { dur = min(dur, tracks[ti].clips[ci + 1].start - start) }
+        dur = max(0.3, dur)
         tracks[ti].clips[ci].start = start
         tracks[ti].clips[ci].sourceStart = sourceStart
-        tracks[ti].clips[ci].duration = duration
+        tracks[ti].clips[ci].duration = dur
     }
 
     /// Delete the selected clip; remaining clips close the gap.

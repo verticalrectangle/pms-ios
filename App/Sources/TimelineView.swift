@@ -111,25 +111,30 @@ private struct TrackLane: View {
             ForEach(track.clips) { clip in
                 ContentClipView(clip: clip, kind: track.kind, selected: model.selectedID == clip.id, height: laneHeight)
                     .frame(width: CGFloat(clip.duration) * PPS)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        model.selectedID = (model.selectedID == clip.id) ? nil : clip.id
+                    }
                     .overlay {
                         if model.selectedID == clip.id && track.kind == .video {
                             TrimHandles(clip: clip, model: model, height: laneHeight)
                         }
                     }
                     .offset(x: CGFloat(clip.start) * PPS)
-                    .onTapGesture {
-                        model.selectedID = (model.selectedID == clip.id) ? nil : clip.id
-                    }
+                    .zIndex(model.selectedID == clip.id ? 1 : 0)   // selected on top for its handles
             }
             ForEach(track.bricks) { brick in
                 BrickView(brick: brick, laneHeight: laneHeight,
                           selected: model.selectedID == brick.id)
                     .frame(width: CGFloat(brick.duration) * PPS)
-                    .offset(x: CGFloat(brick.start) * PPS)
+                    .contentShape(Rectangle())
                     .onTapGesture { model.selectedID = brick.id }
+                    .offset(x: CGFloat(brick.start) * PPS)
             }
         }
-        .frame(height: laneHeight, alignment: .topLeading)
+        // Full content width so every offset clip is inside the lane's
+        // hit-testable frame (otherwise the topmost clip swallows the tap).
+        .frame(maxWidth: .infinity, minHeight: laneHeight, maxHeight: laneHeight, alignment: .topLeading)
     }
 }
 
