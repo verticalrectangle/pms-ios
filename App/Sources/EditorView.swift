@@ -48,6 +48,7 @@ struct EditorView: View {
     @State private var cameraOn = false
     @State private var pickerItem: PhotosPickerItem?
     @StateObject private var keyboard = KeyboardObserver()
+    @Environment(\.scenePhase) private var scenePhase
 
     private func toggleCamera() {
         if cameraOn {
@@ -141,6 +142,8 @@ struct EditorView: View {
         .onTapGesture { if model.selectedLyricClip != nil { model.selectedID = nil } }
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear { model.save() }                                  // persist on leave
+        .onChange(of: scenePhase) { _, p in if p != .active { model.save() } }  // + on background
         // Native bars step aside as the preview expands to fullscreen; the dock
         // also hides while editing a title so the edit bar owns the bottom.
         .toolbar(fullscreen ? .hidden : .visible, for: .navigationBar)

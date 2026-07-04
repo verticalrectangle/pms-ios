@@ -31,7 +31,7 @@ struct Project: Identifiable, Hashable {
     }
 }
 
-enum Format: String, CaseIterable, Hashable {
+enum Format: String, CaseIterable, Hashable, Codable {
     case portrait = "9:16"
     case landscape = "16:9"
     case square = "1:1"
@@ -45,9 +45,9 @@ enum Format: String, CaseIterable, Hashable {
 
 // MARK: - Timeline
 
-enum TrackKind: String { case fxRail, video, lyric, audio }
+enum TrackKind: String, Codable { case fxRail, video, lyric, audio }
 
-struct Track: Identifiable {
+struct Track: Identifiable, Codable {
     let id: String
     let kind: TrackKind
     let name: String
@@ -66,25 +66,32 @@ protocol TimelineItem: Identifiable {
     var end: Double { get }
 }
 
-struct Clip: Identifiable, TimelineItem {
+struct Clip: Identifiable, TimelineItem, Codable {
     var id: String                 // var so copy/paste can regenerate it
     var label: String
     var start: Double
     var duration: Double
     var seed: String = "g1"
-    var thumbs: [URL] = []      // filmstrip of sampled frames for imported clips
-    var sourceURL: URL? = nil     // the video file this clip plays from
+    var thumbs: [URL] = []      // filmstrip — runtime only, regenerated on load (not persisted)
+    var sourceURL: URL? = nil     // ABSOLUTE runtime URL — persisted as `mediaFile` (relative), resolved on load
     var sourceStart: Double = 0   // in-point within the source (desktop in_point)
     var sourceDuration: Double = 0 // full length of the source (clamps trim)
     var speed: Double = 1.0       // source-consumption rate; srcTime = sourceStart + (t-start)*speed
     var fadeIn: Double = 0        // seconds ramping up from black at the clip's start
     var fadeOut: Double = 0       // seconds ramping down to black at the clip's end
+    var mediaFile: String? = nil  // relative media filename in the project's media/ dir (persisted)
     var end: Double { start + duration }
+
+    // Persist scalars + the RELATIVE media filename; sourceURL/thumbs are resolved
+    // at load (iOS moves the app container, so absolute paths can't be stored).
+    enum CodingKeys: String, CodingKey {
+        case id, label, start, duration, seed, sourceStart, sourceDuration, speed, fadeIn, fadeOut, mediaFile
+    }
 }
 
 /// Every flavour of FX brick the engine supports. `scope`/`coupled` mirror the
 /// glass-vs-global + weld semantics from add_effect_brick / decouple_fx_brick.
-enum BrickKind {
+enum BrickKind: String, Codable {
     case glassFX      // add_effect_brick on a video track → clip-only, pre-composite
     case globalFX     // add_effect_brick on its own rail → everything below, post-composite
     case multiFX      // add_multifx_brick → ordered chain, one brick
@@ -92,7 +99,7 @@ enum BrickKind {
     case audioFX      // add_audio_multifx_brick → LIVE audio chain, auto-welds to clip
 }
 
-struct Brick: Identifiable, TimelineItem {
+struct Brick: Identifiable, TimelineItem, Codable {
     var id: String                 // var so copy/paste can regenerate it
     var kind: BrickKind
     var start: Double
@@ -225,7 +232,13 @@ enum AIActions {
 
 // MARK: - Chapter markers (add_chapter_marker)
 
-struct ChapterMarker: Identifiable { let id = UUID(); let time: Double; let label: String; let color: Color }
+struct ChapterMarker: Identifiable, Codable {
+    var id = UUID()
+    var time: Double
+    var label: String
+    var color: Color = Theme.accent          // runtime tint, not persisted
+    enum CodingKeys: String, CodingKey { case time, label }
+}
 
 // MARK: - Sample project / scene (stand-in for get_project + get_all_clips)
 

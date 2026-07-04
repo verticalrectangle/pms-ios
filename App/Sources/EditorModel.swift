@@ -45,8 +45,10 @@ final class EditorModel: ObservableObject {
         Task {
             let dur = (try? await AVURLAsset(url: url).load(.duration))?.seconds ?? 0
             guard dur > 0 else { return }
+            // Copy the picked file into the project's durable media/ dir (was temp).
+            let media = ProjectStore.importMedia(url, into: project.id)
             let n = max(1, min(24, Int(dur / 1.5)))   // ~1 frame / 1.5s, capped
-            let strip = await VideoPlayback.filmstrip(for: url, count: n)
+            let strip = await VideoPlayback.filmstrip(for: media, count: n)
             let id = "v_\(UUID().uuidString.prefix(6))"
 
             if videoLoaded, let ti = videoTrackIndex, !tracks[ti].clips.isEmpty {
@@ -55,7 +57,7 @@ final class EditorModel: ObservableObject {
                 //  mock data, so the first real import must replace it, not append.)
                 let startAt = tracks[ti].clips.map(\.end).max() ?? 0
                 let clip = Clip(id: id, label: "CLIP", start: startAt, duration: dur,
-                                thumbs: strip, sourceURL: url, sourceStart: 0, sourceDuration: dur)
+                                thumbs: strip, sourceURL: media, sourceStart: 0, sourceDuration: dur)
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                     tracks[ti].clips.append(clip)
                     renumberLabels()
@@ -65,7 +67,7 @@ final class EditorModel: ObservableObject {
                 // FIRST import — lay down the tracks.
                 playhead = 0
                 let clip = Clip(id: id, label: "CLIP 1", start: 0, duration: dur,
-                                thumbs: strip, sourceURL: url, sourceStart: 0, sourceDuration: dur)
+                                thumbs: strip, sourceURL: media, sourceStart: 0, sourceDuration: dur)
                 tracks = [
                     Track(id: "GFX", kind: .fxRail, name: "FX", clips: []),
                     Track(id: "V1", kind: .video, name: "V1", clips: [clip]),
@@ -327,13 +329,56 @@ final class EditorModel: ObservableObject {
     init(project: Project, engine: EngineStore) {
         self.project = project
         self.engine = engine
-        // A new project starts genuinely empty; existing (demo) projects show the
-        // Sample timeline until real .pms persistence lands.
-        self.tracks = project.isNew ? [] : Sample.tracks
-        self.chapters = project.isNew ? [] : Sample.chapters
-        self.format = project.format
-        self.bpm = Sample.bpm
-        if !project.isNew { engine.command("load_project", ["path": project.id]) }   // stand-in
+        if let doc = ProjectStore.load(project.id) {          // saved project → hydrate from .pms
+            self.tracks = doc.tracks
+            self.chapters = doc.chapters
+            self.format = doc.format
+            self.bpm = doc.bpm
+        } else if project.isNew {                             // fresh empty project
+            self.tracks = []; self.chapters = []
+            self.format = project.format; self.bpm = Sample.bpm
+        } else {                                              // demo card (no saved doc yet)
+            self.tracks = Sample.tracks; self.chapters = Sample.chapters
+            self.format = project.format; self.bpm = Sample.bpm
+        }
+        if tracks.contains(where: { $0.kind == .video && !$0.clips.isEmpty }) {
+            Task { await hydrateVideo() }                     // rebuild player + filmstrips
+        }
+    }
+
+    /// Rebuild the AVPlayer + regenerate filmstrips (thumbs aren't persisted) from
+    /// the loaded video clips.
+    private func hydrateVideo() async {
+        guard let ti = videoTrackIndex, !tracks[ti].clips.isEmpty else { return }
+        if video == nil {
+            let v = VideoPlayback(engine: engine)
+            v.onTick = { [weak self] time, playing in self?.playhead = time; self?.isPlaying = playing }
+            video = v
+        }
+        for ci in tracks[ti].clips.indices {
+            let c = tracks[ti].clips[ci]
+            if c.thumbs.isEmpty, let url = c.sourceURL {
+                let n = max(1, min(24, Int(c.sourceDuration / 1.5)))
+                let strip = await VideoPlayback.filmstrip(for: url, count: n)
+                if ti < tracks.count, ci < tracks[ti].clips.count { tracks[ti].clips[ci].thumbs = strip }
+            }
+        }
+        videoLoaded = true
+        await rebuildVideo()
+    }
+
+    /// Persist the project to its .pms (media already lives in the project's media/ dir).
+    func save() {
+        guard !tracks.isEmpty || ProjectStore.exists(project.id) else { return }
+        var t = tracks
+        for ti in t.indices {
+            for ci in t[ti].clips.indices {
+                t[ti].clips[ci].mediaFile = t[ti].clips[ci].sourceURL?.lastPathComponent
+            }
+        }
+        let doc = ProjectDoc(name: project.name, format: format, bpm: bpm,
+                             duration: duration, tracks: t, chapters: chapters)
+        ProjectStore.save(doc, id: project.id)
     }
 
     var duration: Double { videoDuration ?? project.duration }

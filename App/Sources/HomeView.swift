@@ -17,14 +17,24 @@ struct HomeView: View {
 
     enum Sort: String, CaseIterable { case recent = "Recent", name = "Name", duration = "Duration", fx = "FX" }
 
-    private var projects: [Project] {
+    @State private var metas: [ProjectMeta] = []   // real saved projects, scanned from disk
+
+    private var sortedMetas: [ProjectMeta] {
         switch sort {
-        case .recent:   return Sample.projects
-        case .name:     return Sample.projects.sorted { $0.name < $1.name }
-        case .duration: return Sample.projects.sorted { $0.duration > $1.duration }
-        case .fx:       return Sample.projects.sorted { $0.fxCount > $1.fxCount }
+        case .recent:   return metas                                   // list() is already newest-first
+        case .name:     return metas.sorted { $0.name < $1.name }
+        case .duration: return metas.sorted { $0.duration > $1.duration }
+        case .fx:       return metas.sorted { $0.fxCount > $1.fxCount }
         }
     }
+
+    private func projectFor(_ m: ProjectMeta) -> Project {
+        Project(id: m.id, name: m.name, sub: "\(m.clipCount) clips · \(m.fxCount) FX",
+                duration: m.duration, format: m.format, clipCount: m.clipCount, fxCount: m.fxCount,
+                updated: Self.relative.localizedString(for: m.updated, relativeTo: Date()),
+                thumbSeed: m.id, isNew: false)
+    }
+    private static let relative = RelativeDateTimeFormatter()
 
     var body: some View {
         ScrollView {
@@ -37,7 +47,7 @@ struct HomeView: View {
                 HStack {
                     Text("Recent projects").font(.label(13)).foregroundStyle(Theme.txtMuted)
                     Spacer()
-                    Text("\(Sample.projects.count)").font(.num(13)).foregroundStyle(Theme.txtMuted)
+                    Text("\(metas.count)").font(.num(13)).foregroundStyle(Theme.txtMuted)
                 }
                 .padding(.top, 26).padding(.bottom, 10)
 
@@ -48,9 +58,15 @@ struct HomeView: View {
                 }
                 .padding(.bottom, 14)
 
-                LazyVStack(spacing: 11) {
-                    ForEach(projects) { p in
-                        Button { onOpen(p) } label: { ProjectCard(project: p) }.pressable()
+                if metas.isEmpty {
+                    Text("No projects yet — tap New Project to start.")
+                        .font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.txtMuted)
+                        .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 30)
+                } else {
+                    LazyVStack(spacing: 11) {
+                        ForEach(sortedMetas) { m in
+                            Button { onOpen(projectFor(m)) } label: { ProjectCard(project: projectFor(m)) }.pressable()
+                        }
                     }
                 }
             }
@@ -61,6 +77,7 @@ struct HomeView: View {
         .scrollIndicators(.hidden)
         .background(AtmosphereView().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)   // Home has its own big title
+        .onAppear { metas = ProjectStore.list() }   // refresh the saved-project list
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 10) {
                 Button { toggleTheme() } label: {
