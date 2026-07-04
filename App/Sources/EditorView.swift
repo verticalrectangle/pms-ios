@@ -24,19 +24,15 @@ struct EditorView: View {
         ZStack {
             AtmosphereView()
 
-            // Hard-cap the column to the available width — otherwise a greedy
-            // child can push the VStack wider than the screen and the whole
-            // editor spills off both edges.
-            GeometryReader { geo in
-                VStack(spacing: 10) {
-                    topBar
-                    canvas.layoutPriority(1)   // canvas claims the extra height → fills the screen
-                    TransportBar(model: model, engine: engine).padding(.horizontal, 16)
-                    timeline
-                    bottomStack
-                }
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+            VStack(spacing: 10) {
+                topBar
+                canvas.layoutPriority(1)   // canvas claims the extra height → fills the screen
+                TransportBar(model: model, engine: engine).padding(.horizontal, 16)
+                timeline
+                bottomStack
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.top, 8)
 
             VStack {
                 BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 56)
