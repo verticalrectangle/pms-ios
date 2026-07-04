@@ -83,14 +83,17 @@ struct EditorView: View {
                 canvas(box: canvasBox())
                 TransportBar(model: model, engine: engine).padding(.horizontal, 16)
                 timeline
-                if let clip = model.selectedClip {
+                switch model.selectedBar {
+                case .clip(let clip):   // video OR audio (no longer a dead end)
                     ClipActionBar(model: model, clip: clip)
                         .padding(.horizontal, 12)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if model.selectedLyricClip == nil, let sel = model.selectedID {
-                    InspectorView(model: model, brickID: sel)   // bricks (text bar floats separately)
+                case .brick(let brick):
+                    InspectorView(model: model, brickID: brick.id)
                         .padding(.horizontal, 12)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
+                case .lyric, .none:
+                    EmptyView()   // text bar floats separately; nothing selected → no bar
                 }
                 Spacer(minLength: 0)
             }
@@ -150,6 +153,12 @@ struct EditorView: View {
             ToolbarItem(placement: .topBarLeading) {
                 Button { model.redo() } label: { Image(systemName: "arrow.uturn.forward") }
                     .disabled(!model.canRedo)
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                if model.clipboard != nil {   // paste lands at the playhead
+                    Button { model.pasteItem() } label: { Image(systemName: "doc.on.clipboard") }
+                        .transition(.scale.combined(with: .opacity))
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 PhotosPicker(selection: $pickerItem, matching: .videos) {
@@ -260,6 +269,24 @@ struct EditorView: View {
 
 // MARK: - Clip action bar (shown when a timeline clip is selected)
 
+/// One reusable copy/cut/duplicate/paste menu — dropped into every selection bar
+/// so the action set is identical for clips and bricks.
+private struct ItemActionsMenu: View {
+    @ObservedObject var model: EditorModel
+    let id: String
+    var body: some View {
+        Menu {
+            Button { model.copyItem(id) }      label: { Label("Copy", systemImage: "doc.on.doc") }
+            Button { model.cutItem(id) }       label: { Label("Cut", systemImage: "scissors") }
+            Button { model.duplicateItem(id) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+            Button { model.pasteItem() }       label: { Label("Paste", systemImage: "doc.on.clipboard") }
+                .disabled(model.clipboard == nil)
+        } label: {
+            Image(systemName: "ellipsis.circle").font(.system(size: 16)).foregroundStyle(Theme.txtBody)
+        }
+    }
+}
+
 private struct ClipActionBar: View {
     @ObservedObject var model: EditorModel
     let clip: Clip
@@ -267,21 +294,26 @@ private struct ClipActionBar: View {
     @State private var fadeIn = 0.0
     @State private var fadeOut = 0.0
 
+    private var isVideo: Bool { model.trackKind(ofClip: clip.id) == .video }
+
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 12) {
+                ItemActionsMenu(model: model, id: clip.id)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(clip.label).font(.label(10)).tracking(0.5).foregroundStyle(Theme.txt).lineLimit(1)
                     Text(String(format: "%.1fs", clip.duration)).font(.num(9)).foregroundStyle(Theme.txtMuted)
                 }
                 Spacer(minLength: 8)
-                Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { showFade.toggle() } } label: {
-                    Label("Fade", systemImage: "circle.righthalf.filled").font(.label(11)).tracking(0.5)
-                }.tint(showFade || fadeIn > 0 || fadeOut > 0 ? Theme.accent : Theme.txtBody)
+                if isVideo {   // fade is a video effect (Core Image); no-op on audio
+                    Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { showFade.toggle() } } label: {
+                        Label("Fade", systemImage: "circle.righthalf.filled").font(.label(11)).tracking(0.5)
+                    }.tint(showFade || fadeIn > 0 || fadeOut > 0 ? Theme.accent : Theme.txtBody)
+                }
                 Button { model.splitAtPlayhead() } label: {
                     Label("Split", systemImage: "scissors").font(.label(11)).tracking(0.5)
                 }.tint(Theme.txtBody)
-                Button(role: .destructive) { model.deleteSelectedClip() } label: {
+                Button(role: .destructive) { model.deleteSelected() } label: {
                     Label("Delete", systemImage: "trash").font(.label(11)).tracking(0.5)
                 }.tint(Color(red: 1, green: 0.5, blue: 0.5))
             }
@@ -327,6 +359,7 @@ private struct LyricEditBar: View {
                 .focused($focused)
                 .onChange(of: text) { _, v in model.setClipText(clip.id, v) }
                 .onSubmit { model.selectedID = nil }   // Return commits + deselects
+            ItemActionsMenu(model: model, id: clip.id)
             Button { model.splitAtPlayhead() } label: {
                 Image(systemName: "scissors").font(.system(size: 14))
             }.tint(Theme.txtBody)

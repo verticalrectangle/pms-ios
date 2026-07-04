@@ -57,8 +57,17 @@ struct Track: Identifiable {
     var locked = false
 }
 
-struct Clip: Identifiable {
-    let id: String
+/// A geometry lens over any timeline item (clip or brick) — lets one set of
+/// move/trim/split/copy ops treat both uniformly without changing either struct.
+protocol TimelineItem: Identifiable {
+    var id: String { get set }
+    var start: Double { get set }
+    var duration: Double { get set }
+    var end: Double { get }
+}
+
+struct Clip: Identifiable, TimelineItem {
+    var id: String                 // var so copy/paste can regenerate it
     var label: String
     var start: Double
     var duration: Double
@@ -83,8 +92,8 @@ enum BrickKind {
     case audioFX      // add_audio_multifx_brick → LIVE audio chain, auto-welds to clip
 }
 
-struct Brick: Identifiable {
-    let id: String
+struct Brick: Identifiable, TimelineItem {
+    var id: String                 // var so copy/paste can regenerate it
     var kind: BrickKind
     var start: Double
     var duration: Double

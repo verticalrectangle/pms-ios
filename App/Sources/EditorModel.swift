@@ -350,6 +350,118 @@ final class EditorModel: ObservableObject {
         )
     }
 
+    // MARK: - Universal item ops (one address + one clipboard for clips AND bricks)
+
+    enum ItemKind { case clip, brick }
+    /// The address of a timeline item. Resolve-on-demand — never store across a
+    /// mutation (indices shift when arrays change).
+    struct ItemRef { let id: String; let track: Int; let index: Int; let kind: ItemKind }
+
+    func locate(_ id: String) -> ItemRef? {
+        for (ti, tr) in tracks.enumerated() {
+            if let ci = tr.clips.firstIndex(where: { $0.id == id })  { return ItemRef(id: id, track: ti, index: ci, kind: .clip) }
+            if let bi = tr.bricks.firstIndex(where: { $0.id == id }) { return ItemRef(id: id, track: ti, index: bi, kind: .brick) }
+        }
+        return nil
+    }
+    var selectedRef: ItemRef? { selectedID.flatMap(locate) }
+
+    /// Which action bar the current selection routes to — the ONE resolver that
+    /// replaces the three clip-privileged ones (fixes the audio-clip dead end:
+    /// an audio clip now routes to .clip → ClipActionBar).
+    enum SelectionBar { case none; case clip(Clip); case lyric(Clip); case brick(Brick) }
+    var selectedBar: SelectionBar {
+        guard let r = selectedRef else { return .none }
+        switch r.kind {
+        case .clip:  let c = tracks[r.track].clips[r.index]
+                     return tracks[r.track].kind == .lyric ? .lyric(c) : .clip(c)
+        case .brick: return .brick(tracks[r.track].bricks[r.index])
+        }
+    }
+
+    struct ClipboardItem { enum Payload { case clip(Clip); case brick(Brick) }; let payload: Payload; let trackKind: TrackKind }
+    @Published var clipboard: ClipboardItem?
+
+    private func regenID(_ old: String) -> String { "\(old.prefix(4))_\(UUID().uuidString.prefix(6))" }
+
+    func copyItem(_ id: String? = nil) {
+        guard let r = (id ?? selectedID).flatMap(locate) else { return }
+        let kind = tracks[r.track].kind
+        clipboard = r.kind == .clip
+            ? ClipboardItem(payload: .clip(tracks[r.track].clips[r.index]),  trackKind: kind)
+            : ClipboardItem(payload: .brick(tracks[r.track].bricks[r.index]), trackKind: kind)
+    }
+    func cutItem(_ id: String? = nil) {
+        guard let r = (id ?? selectedID).flatMap(locate) else { return }
+        copyItem(r.id); deleteSelected(r.id)     // deleteSelected snapshots → one undo step
+    }
+    /// Paste lands at the PLAYHEAD (NLE convention).
+    func pasteItem() {
+        guard let cb = clipboard else { return }
+        switch cb.payload {
+        case .clip(let c):  insertClipCopy(c,  ofKind: cb.trackKind, at: playhead)
+        case .brick(let b): insertBrickCopy(b, ofKind: cb.trackKind, at: playhead, keepBinding: false)
+        }
+    }
+    /// Duplicate lands right AFTER the original (desktop duplicate).
+    func duplicateItem(_ id: String? = nil) {
+        guard let r = (id ?? selectedID).flatMap(locate) else { return }
+        if r.kind == .clip { let c = tracks[r.track].clips[r.index]
+                             insertClipCopy(c, ofKind: tracks[r.track].kind, at: c.end) }
+        else               { let b = tracks[r.track].bricks[r.index]
+                             insertBrickCopy(b, ofKind: tracks[r.track].kind, at: b.end, keepBinding: true) }
+    }
+
+    /// First start ≥ preferred with no same-track clip overlap (clips can't stack).
+    private func firstFreeStart(onTrack ti: Int, preferred: Double, duration: Double) -> Double {
+        var start = max(0, preferred), moved = true
+        while moved { moved = false
+            for o in tracks[ti].clips where start < o.end && start + duration > o.start { start = o.end; moved = true }
+        }
+        return start
+    }
+
+    private func insertClipCopy(_ src: Clip, ofKind kind: TrackKind, at t: Double) {
+        guard let ti = tracks.firstIndex(where: { $0.kind == kind }) else { return }
+        snapshot()
+        var c = src; c.id = regenID(src.id)
+        c.start = firstFreeStart(onTrack: ti, preferred: t, duration: c.duration)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            tracks[ti].clips.append(c)
+            if kind == .video { renumberLabels() }   // text keeps its words
+            selectedID = c.id
+        }
+        if kind == .video { Task { await rebuildVideo() } }   // composition must include it
+    }
+
+    private func insertBrickCopy(_ src: Brick, ofKind kind: TrackKind, at t: Double, keepBinding: Bool) {
+        guard let ti = tracks.firstIndex(where: { $0.kind == kind }) else { return }
+        snapshot()
+        var b = src; b.id = regenID(src.id); b.start = t   // bricks may overlap → exact playhead
+        if !keepBinding { b.boundClipID = nil }            // paste = free brick; engine re-welds
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            tracks[ti].bricks.append(b); selectedID = b.id
+        }
+    }
+
+    /// Universal delete — any clip (with video teardown) or brick.
+    func deleteSelected(_ id: String? = nil) {
+        guard let r = (id ?? selectedID).flatMap(locate) else { return }
+        snapshot()
+        let ti = r.track, wasVideo = tracks[ti].kind == .video && r.kind == .clip
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            if r.kind == .clip { tracks[ti].clips.removeAll { $0.id == r.id } }
+            else               { tracks[ti].bricks.removeAll { $0.id == r.id } }
+            if selectedID == r.id { selectedID = nil }
+        }
+        if wasVideo {
+            if tracks[ti].clips.isEmpty {
+                video?.stop(); video = nil
+                videoLoaded = false; videoDuration = nil; playhead = 0; isPlaying = false
+            } else { renumberLabels(); Task { await rebuildVideo() } }
+        }
+    }
+
     // MARK: Transport (levers)
 
     func togglePlay() {
