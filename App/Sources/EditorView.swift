@@ -199,6 +199,14 @@ private struct ClipActionBar: View {
                 Text(String(format: "%.1fs", clip.duration)).font(.num(9)).foregroundStyle(Theme.txtMuted)
             }
             Spacer(minLength: 8)
+            if model.videoClipCount > 1, let idx = model.selectedClipIndex {
+                Button { model.nudgeSelectedClip(-1) } label: {
+                    Image(systemName: "arrow.left").font(.system(size: 13, weight: .semibold))
+                }.tint(Theme.txtBody).disabled(idx == 0)
+                Button { model.nudgeSelectedClip(1) } label: {
+                    Image(systemName: "arrow.right").font(.system(size: 13, weight: .semibold))
+                }.tint(Theme.txtBody).disabled(idx == model.videoClipCount - 1)
+            }
             Button { model.splitAtPlayhead() } label: {
                 Label("Split", systemImage: "scissors").font(.label(11)).tracking(0.5)
             }.tint(Theme.txtBody)
