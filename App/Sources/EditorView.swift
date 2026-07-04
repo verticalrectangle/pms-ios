@@ -66,7 +66,7 @@ struct EditorView: View {
     /// Largest aspect-correct canvas box that fits ~half the screen height and
     /// the available width (minus padding).
     private func canvasBox(in size: CGSize) -> CGSize {
-        let maxH = size.height * 0.50
+        let maxH = size.height * 0.44
         let maxW = size.width - 28
         let h = min(maxH, maxW / model.format.aspect)
         return CGSize(width: h * model.format.aspect, height: h)
