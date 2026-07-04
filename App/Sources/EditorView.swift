@@ -21,33 +21,29 @@ struct EditorView: View {
     private var t: Double { engine.playing ? engine.playhead : model.localSeek }
 
     var body: some View {
-        GeometryReader { geo in
-            // Explicit sizes off the (clean) safe-area geometry — flex-sizing
-            // collapses in this VStack, so the canvas is sized directly: the
-            // largest 9:16 box that fits ~44% of the height. AtmosphereView is
-            // a .background (not a ZStack sibling) so its ignoresSafeArea does
-            // not corrupt the geometry the column measures against.
-            ZStack {
-                VStack(spacing: 10) {
-                    topBar
-                    canvas(box: canvasBox(in: geo.size))
-                    TransportBar(model: model, engine: engine).padding(.horizontal, 16)
-                    timeline
-                    bottomStack
-                    Spacer(minLength: 0)
-                }
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+        // Canvas is sized from UIScreen (absolute) — nested GeometryReader/
+        // flex-sizing proved unreliable here (EditorView lives inside RootView's
+        // ZStack). The column fills with maxHeight:.infinity + top alignment.
+        ZStack {
+            VStack(spacing: 10) {
+                topBar
+                canvas(box: canvasBox())
+                TransportBar(model: model, engine: engine).padding(.horizontal, 16)
+                timeline
+                bottomStack
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                VStack {
-                    BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 56)
-                    Spacer()
-                }
-                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.busy?.label)
+            VStack {
+                BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 56)
+                Spacer()
+            }
+            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.busy?.label)
 
-                if fullscreen {
-                    FullscreenPlayer(engine: engine, model: model, isPresented: $fullscreen)
-                        .zIndex(50)
-                }
+            if fullscreen {
+                FullscreenPlayer(engine: engine, model: model, isPresented: $fullscreen)
+                    .zIndex(50)
             }
         }
         .background(AtmosphereView().ignoresSafeArea())
@@ -63,11 +59,12 @@ struct EditorView: View {
         .onAppear { engine.startMockMeters() }
     }
 
-    /// Largest aspect-correct canvas box that fits ~half the screen height and
-    /// the available width (minus padding).
-    private func canvasBox(in size: CGSize) -> CGSize {
-        let maxH = size.height * 0.44
-        let maxW = size.width - 28
+    /// Largest aspect-correct canvas box that fits ~42% of the screen height
+    /// and the available width (minus padding).
+    private func canvasBox() -> CGSize {
+        let screen = UIScreen.main.bounds.size
+        let maxH = screen.height * 0.42
+        let maxW = screen.width - 28
         let h = min(maxH, maxW / model.format.aspect)
         return CGSize(width: h * model.format.aspect, height: h)
     }
