@@ -11,17 +11,21 @@ struct TransportBar: View {
     private var t: Double { engine.playing ? engine.playhead : model.localSeek }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(fullTC(t)).font(.num(17, .bold)).foregroundStyle(Theme.accent)
+                // Compact M:SS in the transport (frames live in the inspector /
+                // fullscreen player where there's room) — the full MM:SS:FF is
+                // ~95pt and overflowed the bar.
+                Text(String(format: "%d:%02d", Int(t) / 60, Int(t) % 60))
+                    .font(.num(17, .bold)).foregroundStyle(Theme.accent)
                     .shadow(color: Theme.accentA(0.5), radius: 4)
                 Text("\(Int(model.bpm)) BPM").font(.label(8)).tracking(1.2).foregroundStyle(Theme.txtMuted)
             }
-            .frame(width: 90, alignment: .leading)
+            .frame(width: 64, alignment: .leading)
 
-            Spacer()
+            Spacer(minLength: 4)
 
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 TransportButton(system: "gobackward.5", size: 20) { model.seek(t - 5) }
                 Button { model.togglePlay() } label: {
                     Image(systemName: engine.playing ? "pause.fill" : "play.fill")
@@ -31,10 +35,10 @@ struct TransportBar: View {
                 TransportButton(system: "goforward.5", size: 20) { model.seek(t + 5) }
             }
 
-            Spacer()
+            Spacer(minLength: 4)
 
             LufsMeter(lufs: engine.masterLufs)
-                .frame(width: 90, alignment: .trailing)
+                .frame(width: 64, alignment: .trailing)
         }
         .padding(.horizontal, 4)
     }
