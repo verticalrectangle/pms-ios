@@ -98,6 +98,11 @@ struct EditorView: View {
             .padding(.top, 6)
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedID)
             .ignoresSafeArea(.keyboard, edges: .bottom)   // the UI stays put; only the text bar floats up
+            // The editor recedes (shrinks, blurs, fades) as the preview expands.
+            .scaleEffect(fullscreen ? 0.92 : 1)
+            .blur(radius: fullscreen ? 8 : 0)
+            .opacity(fullscreen ? 0 : 1)
+            .animation(.spring(response: 0.46, dampingFraction: 0.62), value: fullscreen)
 
             VStack {
                 BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 8)
@@ -121,6 +126,7 @@ struct EditorView: View {
 
             if fullscreen {
                 FullscreenPlayer(engine: engine, model: model, isPresented: $fullscreen)
+                    .transition(.scale(scale: 0.86).combined(with: .opacity))   // bouncy glass pop
                     .zIndex(50)
             }
         }
@@ -131,9 +137,10 @@ struct EditorView: View {
         .onTapGesture { if model.selectedLyricClip != nil { model.selectedID = nil } }
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
-        // Hide the tool dock while editing a title so the edit bar owns the
-        // bottom cleanly (nothing to float over).
-        .toolbar(model.selectedLyricClip != nil ? .hidden : .visible, for: .bottomBar)
+        // Native bars step aside as the preview expands to fullscreen; the dock
+        // also hides while editing a title so the edit bar owns the bottom.
+        .toolbar(fullscreen ? .hidden : .visible, for: .navigationBar)
+        .toolbar(fullscreen || model.selectedLyricClip != nil ? .hidden : .visible, for: .bottomBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }
@@ -226,7 +233,7 @@ struct EditorView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 if model.selectedLyricClip != nil { model.selectedID = nil }   // commit text edit
-                else { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
+                else { withAnimation(.spring(response: 0.46, dampingFraction: 0.62)) { fullscreen = true } }
             }
     }
 
@@ -356,7 +363,7 @@ private struct FullscreenPlayer: View {
                 .onChanged { drag = max(0, $0.translation.height) }
                 .onEnded { v in
                     if v.translation.height > 120 || v.predictedEndTranslation.height > 300 {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { isPresented = false }
+                        withAnimation(.spring(response: 0.46, dampingFraction: 0.62)) { isPresented = false }
                     } else { withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { drag = 0 } }
                 }
         )
