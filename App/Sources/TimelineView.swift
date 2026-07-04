@@ -226,12 +226,13 @@ private struct TrimHandles: View {
     private func handle(leading: Bool) -> some View {
         RoundedRectangle(cornerRadius: 4)
             .fill(Theme.accent)
-            .frame(width: 16, height: height)
+            .frame(width: 18, height: height)
             .overlay(Capsule().fill(.white.opacity(0.85)).frame(width: 2.5, height: height * 0.4))
-            .padding(.horizontal, 10)          // widen the grab area (~36pt)
             .contentShape(Rectangle())
             .highPriorityGesture(
-                DragGesture(minimumDistance: 2)
+                // GLOBAL coordinate space: translation stays stable even as the
+                // handle moves with the resizing clip — kills the jitter.
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
                     .onChanged { g in
                         if orig == nil { model.beginTrim(); orig = (clip.sourceStart, clip.duration, clip.sourceDuration) }
                         guard let o = orig else { return }

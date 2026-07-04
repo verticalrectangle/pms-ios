@@ -145,15 +145,15 @@ final class EditorModel: ObservableObject {
     // MARK: Trim (drag the clip edges)
 
     func beginTrim() { snapshot() }
-    func endTrim() { Task { await rebuildVideo() } }
+    func endTrim() { relayoutVideoClips(); Task { await rebuildVideo() } }
 
     /// Set a clip's in-point + length absolutely (the trim handle computes these
-    /// from the drag). Positions re-lay out; the composition rebuilds on end.
+    /// from the drag). No relayout during the drag (that churns every frame and
+    /// jitters); positions settle + the composition rebuilds on endTrim.
     func setTrim(_ id: String, sourceStart: Double, duration: Double) {
         guard let ti = videoTrackIndex, let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
         tracks[ti].clips[ci].sourceStart = sourceStart
         tracks[ti].clips[ci].duration = duration
-        relayoutVideoClips()
     }
 
     /// Delete the selected clip; remaining clips close the gap.
