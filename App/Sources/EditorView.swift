@@ -28,9 +28,9 @@ struct EditorView: View {
             // child can push the VStack wider than the screen and the whole
             // editor spills off both edges.
             GeometryReader { geo in
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     topBar
-                    canvas
+                    canvas.layoutPriority(1)   // canvas claims the extra height → fills the screen
                     TransportBar(model: model, engine: engine).padding(.horizontal, 16)
                     timeline
                     bottomStack
@@ -94,7 +94,7 @@ struct EditorView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
         }
-        .frame(maxHeight: .infinity)   // canvas takes the flexible remaining height
+        .frame(maxWidth: .infinity, maxHeight: .infinity)   // canvas takes the flexible remaining height
         .padding(.horizontal, 14)
     }
 
