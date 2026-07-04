@@ -157,32 +157,27 @@ struct AtmosphereView: View {
     private static let cpur = Color(red: 0.66, green: 0.36, blue: 1.0)
 
     // Depth cue: bigger = closer (sharp, front), smaller = further (blurred, back).
-    // Dark: lavender / blue / ember glossy spheres.
+    // GEOMETRY IS IDENTICAL to lightOrbs — only the colors differ — so a theme
+    // switch changes hue IN PLACE; the balls never shift position.
     private let orbs: [Orb] = [
-        // NEAR — big + sharp (hero balls, peeking from the edges)
-        Orb(nx: 0.90, ny: 0.15, size: 168, blur: 2, opacity: 0.95, dx:  16, dy:  24, core: lav, halo: lav),
-        Orb(nx: 0.08, ny: 0.70, size: 150, blur: 3, opacity: 0.93, dx: -14, dy: -20, core: blu, halo: blu),
-        // MID
-        Orb(nx: 0.74, ny: 0.86, size: 120, blur: 9,  opacity: 0.78, dx:  18, dy: -16, core: emb, halo: emb),
-        Orb(nx: 0.30, ny: 0.28, size: 96,  blur: 7,  opacity: 0.72, dx: -16, dy:  18, core: lav, halo: lav),
-        // FAR — small + blurred (deep background bokeh)
-        Orb(nx: 0.52, ny: 0.52, size: 68,  blur: 30, opacity: 0.55, dx:  22, dy:  22, core: blu, halo: blu),
-        Orb(nx: 0.86, ny: 0.52, size: 54,  blur: 34, opacity: 0.5,  dx: -20, dy:  16, core: lav, halo: lav),
-        Orb(nx: 0.20, ny: 0.16, size: 58,  blur: 30, opacity: 0.5,  dx:  18, dy: -14, core: emb, halo: emb),
+        Orb(nx: 0.91, ny: 0.16, size: 172, blur: 2,  opacity: 0.95, dx:  16, dy:  24, core: lav, halo: lav),
+        Orb(nx: 0.08, ny: 0.71, size: 152, blur: 3,  opacity: 0.93, dx: -14, dy: -20, core: blu, halo: blu),
+        Orb(nx: 0.74, ny: 0.87, size: 124, blur: 8,  opacity: 0.79, dx:  18, dy: -16, core: emb, halo: emb),
+        Orb(nx: 0.29, ny: 0.29, size: 98,  blur: 7,  opacity: 0.75, dx: -16, dy:  18, core: lav, halo: lav),
+        Orb(nx: 0.52, ny: 0.51, size: 70,  blur: 30, opacity: 0.55, dx:  22, dy:  22, core: blu, halo: blu),
+        Orb(nx: 0.86, ny: 0.50, size: 56,  blur: 34, opacity: 0.51, dx: -20, dy:  16, core: lav, halo: lav),
+        Orb(nx: 0.20, ny: 0.16, size: 59,  blur: 30, opacity: 0.51, dx:  18, dy: -14, core: emb, halo: emb),
     ]
 
-    // SOPHIE light: punchy glossy candy spheres — big sharp heroes + small soft bokeh.
+    // SOPHIE light: same geometry as `orbs`, candy hues (pink / cyan-blue / purple).
     private let lightOrbs: [Orb] = [
-        // NEAR — big + sharp
-        Orb(nx: 0.92, ny: 0.17, size: 176, blur: 2, opacity: 0.97, dx:  16, dy:  24, core: pink, halo: pink),
-        Orb(nx: 0.07, ny: 0.72, size: 156, blur: 3, opacity: 0.95, dx: -14, dy: -20, core: cblu, halo: cblu),
-        // MID
-        Orb(nx: 0.74, ny: 0.88, size: 128, blur: 8,  opacity: 0.82, dx:  18, dy: -16, core: cpur, halo: cpur),
-        Orb(nx: 0.28, ny: 0.29, size: 100, blur: 7,  opacity: 0.80, dx: -16, dy:  18, core: pink, halo: pink),
-        // FAR — small + blurred
-        Orb(nx: 0.52, ny: 0.50, size: 72,  blur: 30, opacity: 0.55, dx:  22, dy:  22, core: cblu, halo: cblu),
-        Orb(nx: 0.86, ny: 0.48, size: 58,  blur: 34, opacity: 0.52, dx: -20, dy:  16, core: cpur, halo: cpur),
-        Orb(nx: 0.20, ny: 0.15, size: 60,  blur: 30, opacity: 0.52, dx:  18, dy: -14, core: pink, halo: pink),
+        Orb(nx: 0.91, ny: 0.16, size: 172, blur: 2,  opacity: 0.96, dx:  16, dy:  24, core: pink, halo: pink),
+        Orb(nx: 0.08, ny: 0.71, size: 152, blur: 3,  opacity: 0.94, dx: -14, dy: -20, core: cblu, halo: cblu),
+        Orb(nx: 0.74, ny: 0.87, size: 124, blur: 8,  opacity: 0.81, dx:  18, dy: -16, core: cpur, halo: cpur),
+        Orb(nx: 0.29, ny: 0.29, size: 98,  blur: 7,  opacity: 0.79, dx: -16, dy:  18, core: pink, halo: pink),
+        Orb(nx: 0.52, ny: 0.51, size: 70,  blur: 30, opacity: 0.55, dx:  22, dy:  22, core: cblu, halo: cblu),
+        Orb(nx: 0.86, ny: 0.50, size: 56,  blur: 34, opacity: 0.51, dx: -20, dy:  16, core: cpur, halo: cpur),
+        Orb(nx: 0.20, ny: 0.16, size: 59,  blur: 30, opacity: 0.51, dx:  18, dy: -14, core: pink, halo: pink),
     ]
 
     // A glossy 3D sphere: lit top-left (bright desaturated highlight → body → dark
@@ -232,7 +227,9 @@ struct AtmosphereView: View {
                         .animation(.easeInOut(duration: 21 + Double(i) * 2.6)
                             .repeatForever(autoreverses: true), value: driftX)
                 }
-                .id(lightMode)   // swap the whole sphere set on mode flip — cut, don't blur-morph
+                // No .id here: keeping each orb's identity across the mode flip lets
+                // its drift continue and its hue change IN PLACE (geometry is identical
+                // in both sets), so nothing snaps or relocates during the transition.
             }
         }
         .ignoresSafeArea()
