@@ -7,6 +7,7 @@
 import SwiftUI
 import Combine
 import AVFoundation
+import UIKit
 
 @MainActor
 final class EditorModel: ObservableObject {
@@ -379,6 +380,21 @@ final class EditorModel: ObservableObject {
         let doc = ProjectDoc(name: project.name, format: format, bpm: bpm,
                              duration: duration, tracks: t, chapters: chapters)
         ProjectStore.save(doc, id: project.id)
+        Task { await writePoster() }
+    }
+
+    /// First-frame poster for the Home card.
+    private func writePoster() async {
+        guard let v = tracks.first(where: { $0.kind == .video }),
+              let c = v.clips.first, let url = c.sourceURL else { return }
+        let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        gen.appliesPreferredTrackTransform = true
+        gen.maximumSize = CGSize(width: 300, height: 400)
+        let at = CMTime(seconds: c.sourceStart + 0.1, preferredTimescale: 600)
+        if let cg = try? await gen.image(at: at).image,
+           let data = UIImage(cgImage: cg).jpegData(compressionQuality: 0.72) {
+            ProjectStore.writePoster(data, id: project.id)
+        }
     }
 
     var duration: Double { videoDuration ?? project.duration }

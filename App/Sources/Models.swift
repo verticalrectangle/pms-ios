@@ -20,6 +20,7 @@ struct Project: Identifiable, Hashable {
     var live: Bool = false
     let thumbSeed: String       // deterministic picsum seed
     var isNew: Bool = false     // a fresh, empty project (no mock demo content)
+    var posterURL: URL? = nil   // local first-frame poster for saved projects
 
     var thumbURL: URL { URL(string: "https://picsum.photos/seed/\(thumbSeed)/240/320")! }
 

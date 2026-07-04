@@ -91,6 +91,12 @@ enum ProjectStore {
 
     static func delete(_ id: String) { try? fm.removeItem(at: dir(id)) }
 
+    static func rename(_ id: String, _ name: String) {
+        guard var doc = load(id) else { return }
+        doc.name = name
+        save(doc, id: id)
+    }
+
     /// Scan Documents/Projects for saved projects, newest first.
     static func list() -> [ProjectMeta] {
         guard let ids = try? fm.contentsOfDirectory(atPath: root.path) else { return [] }

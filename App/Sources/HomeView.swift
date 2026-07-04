@@ -18,6 +18,8 @@ struct HomeView: View {
     enum Sort: String, CaseIterable { case recent = "Recent", name = "Name", duration = "Duration", fx = "FX" }
 
     @State private var metas: [ProjectMeta] = []   // real saved projects, scanned from disk
+    @State private var renameID: String?
+    @State private var renameText = ""
 
     private var sortedMetas: [ProjectMeta] {
         switch sort {
@@ -32,7 +34,7 @@ struct HomeView: View {
         Project(id: m.id, name: m.name, sub: "\(m.clipCount) clips · \(m.fxCount) FX",
                 duration: m.duration, format: m.format, clipCount: m.clipCount, fxCount: m.fxCount,
                 updated: Self.relative.localizedString(for: m.updated, relativeTo: Date()),
-                thumbSeed: m.id, isNew: false)
+                thumbSeed: m.id, isNew: false, posterURL: m.posterURL)
     }
     private static let relative = RelativeDateTimeFormatter()
 
@@ -65,7 +67,14 @@ struct HomeView: View {
                 } else {
                     LazyVStack(spacing: 11) {
                         ForEach(sortedMetas) { m in
-                            Button { onOpen(projectFor(m)) } label: { ProjectCard(project: projectFor(m)) }.pressable()
+                            Button { onOpen(projectFor(m)) } label: { ProjectCard(project: projectFor(m)) }
+                                .pressable()
+                                .contextMenu {
+                                    Button { renameID = m.id; renameText = m.name } label: { Label("Rename", systemImage: "pencil") }
+                                    Button(role: .destructive) {
+                                        ProjectStore.delete(m.id); metas = ProjectStore.list()
+                                    } label: { Label("Delete", systemImage: "trash") }
+                                }
                         }
                     }
                 }
@@ -78,6 +87,14 @@ struct HomeView: View {
         .background(AtmosphereView().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)   // Home has its own big title
         .onAppear { metas = ProjectStore.list() }   // refresh the saved-project list
+        .alert("Rename Project", isPresented: Binding(get: { renameID != nil }, set: { if !$0 { renameID = nil } })) {
+            TextField("Name", text: $renameText)
+            Button("Cancel", role: .cancel) { renameID = nil }
+            Button("Save") {
+                if let id = renameID { ProjectStore.rename(id, renameText.isEmpty ? "Untitled" : renameText); metas = ProjectStore.list() }
+                renameID = nil
+            }
+        }
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 10) {
                 Button { toggleTheme() } label: {
@@ -239,9 +256,17 @@ struct ProjectCard: View {
     let project: Project
     var body: some View {
         HStack(spacing: 13) {
-            AsyncImage(url: project.thumbURL) { img in
-                img.resizable().scaledToFill()
-            } placeholder: { Theme.line }
+            Group {
+                if let poster = project.posterURL, let ui = UIImage(contentsOfFile: poster.path) {
+                    Image(uiImage: ui).resizable().scaledToFill()
+                } else {
+                    ZStack {
+                        LinearGradient(colors: [Theme.accentA(0.28), Theme.accentA(0.05)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                        Image(systemName: "film").font(.system(size: 17)).foregroundStyle(Theme.txtGhost)
+                    }
+                }
+            }
             .frame(width: 52, height: 70)
             .clipShape(RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.line))
