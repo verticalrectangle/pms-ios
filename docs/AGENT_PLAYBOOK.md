@@ -109,8 +109,13 @@ packaged as an xcframework this repo links.
 > code signing. Open pms-ios/PopMakerStudio.xcodeproj in Xcode → add the
 > Apple ID (Settings→Accounts) → target Signing: automatic, Personal Team →
 > install the iOS 26.2 device platform component (Settings→Components) →
-> plug in + trust the iPhone → Run. That on-device pms_command(get_project)
-> JSON round-trip is the P2.3 proof (P2.3(e)).
+> plug in + trust the iPhone → Run.
+>
+> **PROVEN ON-DEVICE 2026-07-03:** the app runs on Alexis's iPhone
+> (iOS 26.5) — RenderView (9:16, black: the pms_render Metal stub) +
+> transport reading a live playhead from pms_command(get_project). The
+> C++ engine is alive on iOS. P2 COMPLETE; the black canvas is the
+> Phase 3 (Metal RenderSurface) entry point.
 
 2.1 **macOS build first.** In the engine repo, drive the existing CMake with
     the Xcode/clang toolchain. Expected friction, in order:
