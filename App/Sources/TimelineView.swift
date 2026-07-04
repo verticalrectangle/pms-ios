@@ -8,10 +8,11 @@ import SwiftUI
 private let PPS: CGFloat = 46          // pixels per second
 
 private extension View {
-    /// Apply a gesture only when `active` — so non-selected clips don't attach a
-    /// drag that would swallow the scrub.
-    @ViewBuilder func gestureIf<G: Gesture>(_ active: Bool, _ g: G) -> some View {
-        if active { gesture(g) } else { self }
+    /// Apply a HIGH-PRIORITY gesture only when `active`. High priority so it wins
+    /// over the timeline scrub (which has a smaller minimumDistance and would
+    /// otherwise claim the drag first); gated so non-selected clips still scrub.
+    @ViewBuilder func highPriorityGestureIf<G: Gesture>(_ active: Bool, _ g: G) -> some View {
+        if active { highPriorityGesture(g) } else { self }
     }
 }
 
@@ -147,7 +148,7 @@ private struct TrackLane: View {
                     // Reorder: once selected, drag the clip body to move it. Plain
                     // DragGesture (reliable onEnded, unlike a sequenced long-press);
                     // only on the selected clip so scrubbing still works elsewhere.
-                    .gestureIf(model.selectedID == clip.id && track.kind == .video,
+                    .highPriorityGestureIf(model.selectedID == clip.id && track.kind == .video,
                         DragGesture(minimumDistance: 8, coordinateSpace: .global)
                             .onChanged { g in
                                 if dragID != clip.id { dragID = clip.id }
