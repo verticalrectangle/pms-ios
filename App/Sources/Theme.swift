@@ -160,8 +160,8 @@ struct AtmosphereView: View {
     // Dark: lavender / blue / ember glossy spheres.
     private let orbs: [Orb] = [
         // NEAR — big + sharp (hero balls, peeking from the edges)
-        Orb(nx: 0.90, ny: 0.15, size: 200, blur: 1, opacity: 0.96, dx:  16, dy:  24, core: lav, halo: lav),
-        Orb(nx: 0.08, ny: 0.70, size: 176, blur: 2, opacity: 0.94, dx: -14, dy: -20, core: blu, halo: blu),
+        Orb(nx: 0.90, ny: 0.15, size: 168, blur: 2, opacity: 0.95, dx:  16, dy:  24, core: lav, halo: lav),
+        Orb(nx: 0.08, ny: 0.70, size: 150, blur: 3, opacity: 0.93, dx: -14, dy: -20, core: blu, halo: blu),
         // MID
         Orb(nx: 0.74, ny: 0.86, size: 120, blur: 9,  opacity: 0.78, dx:  18, dy: -16, core: emb, halo: emb),
         Orb(nx: 0.30, ny: 0.28, size: 96,  blur: 7,  opacity: 0.72, dx: -16, dy:  18, core: lav, halo: lav),
@@ -174,8 +174,8 @@ struct AtmosphereView: View {
     // SOPHIE light: punchy glossy candy spheres — big sharp heroes + small soft bokeh.
     private let lightOrbs: [Orb] = [
         // NEAR — big + sharp
-        Orb(nx: 0.92, ny: 0.17, size: 210, blur: 1, opacity: 0.98, dx:  16, dy:  24, core: pink, halo: pink),
-        Orb(nx: 0.07, ny: 0.72, size: 184, blur: 2, opacity: 0.96, dx: -14, dy: -20, core: cblu, halo: cblu),
+        Orb(nx: 0.92, ny: 0.17, size: 176, blur: 2, opacity: 0.97, dx:  16, dy:  24, core: pink, halo: pink),
+        Orb(nx: 0.07, ny: 0.72, size: 156, blur: 3, opacity: 0.95, dx: -14, dy: -20, core: cblu, halo: cblu),
         // MID
         Orb(nx: 0.74, ny: 0.88, size: 128, blur: 8,  opacity: 0.82, dx:  18, dy: -16, core: cpur, halo: cpur),
         Orb(nx: 0.28, ny: 0.29, size: 100, blur: 7,  opacity: 0.80, dx: -16, dy:  18, core: pink, halo: pink),
