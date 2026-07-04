@@ -92,7 +92,10 @@ final class VideoPlayback {
         item.add(out)
         output = out
         player.replaceCurrentItem(with: item)
-        if at.seconds > 0 { player.seek(to: CMTimeMinimum(at, CMTime(seconds: duration, preferredTimescale: 600))) }
+        if at.seconds > 0 {
+            player.seek(to: CMTimeMinimum(at, CMTime(seconds: duration, preferredTimescale: 600)),
+                        toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
+        }
         if wasPlaying { player.play() }
         pushFrame()
     }
