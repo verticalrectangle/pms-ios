@@ -52,6 +52,8 @@ struct HomeView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
+        .background(AtmosphereView().ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)   // Home has its own big title
     }
 
     private var title: some View {
@@ -153,9 +155,9 @@ struct MetaChip: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(text).font(.label(9)).tracking(1)
-            .foregroundStyle(Color.black.opacity(0.55))
+            .foregroundStyle(Theme.txtBody)   // was black-on-dark → invisible
             .padding(.horizontal, 8).padding(.vertical, 3)
-            .overlay(Capsule().strokeBorder(Color.black.opacity(0.18), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(Theme.line, lineWidth: 1))
     }
 }
 

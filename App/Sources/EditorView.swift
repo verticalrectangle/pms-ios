@@ -8,36 +8,47 @@ import SwiftUI
 struct EditorView: View {
     @StateObject private var model: EditorModel
     @ObservedObject var engine: EngineStore
-    let onBack: () -> Void
+    private let projectName: String
 
     @State private var fullscreen = false
 
-    init(project: Project, engine: EngineStore, onBack: @escaping () -> Void) {
+    init(project: Project, engine: EngineStore) {
         self.engine = engine
-        self.onBack = onBack
+        self.projectName = project.name
         _model = StateObject(wrappedValue: EditorModel(project: project, engine: engine))
     }
 
     private var t: Double { engine.playing ? engine.playhead : model.localSeek }
 
+    private let tools: [(EditorSheet, String, String)] = [
+        (.media,  "square.stack",       "Media"),
+        (.fx,     "sparkles",           "FX"),
+        (.lyrics, "textformat",         "Text"),
+        (.agent,  "brain.head.profile", "Agent"),
+    ]
+
     var body: some View {
-        // Canvas is sized from UIScreen (absolute) — nested GeometryReader/
-        // flex-sizing proved unreliable here (EditorView lives inside RootView's
-        // ZStack). The column fills with maxHeight:.infinity + top alignment.
+        // Canvas sized from UIScreen (absolute) — flex-sizing is unreliable in
+        // this VStack. The system nav bar (back + share) and bottom bar (tools)
+        // are native toolbars, so safe areas and Liquid Glass are handled by iOS.
         ZStack {
             VStack(spacing: 10) {
-                topBar
                 canvas(box: canvasBox())
                 TransportBar(model: model, engine: engine).padding(.horizontal, 16)
                 timeline
-                bottomStack
+                if let sel = model.selectedID {
+                    InspectorView(model: model, brickID: sel)
+                        .padding(.horizontal, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, 6)
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedID)
 
             VStack {
-                BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 56)
+                BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 8)
                 Spacer()
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.busy?.label)
@@ -48,6 +59,26 @@ struct EditorView: View {
             }
         }
         .background(AtmosphereView().ignoresSafeArea())
+        .navigationTitle(projectName)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { model.activeSheet = .export } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+            }
+            ToolbarItemGroup(placement: .bottomBar) {
+                ForEach(Array(tools.enumerated()), id: \.offset) { i, item in
+                    if i > 0 { Spacer() }
+                    Button {
+                        model.activeSheet = (model.activeSheet == item.0) ? nil : item.0
+                    } label: {
+                        Label(item.2, systemImage: item.1)
+                    }
+                    .tint(model.activeSheet == item.0 ? Theme.accent : Theme.txtBody)
+                }
+            }
+        }
         .sheet(item: $model.activeSheet) { sheet in
             switch sheet {
             case .media:  MediaSheet()
@@ -68,21 +99,6 @@ struct EditorView: View {
         let maxW = screen.width - 28
         let h = min(maxH, maxW / model.format.aspect)
         return CGSize(width: h * model.format.aspect, height: h)
-    }
-
-    private var topBar: some View {
-        HStack {
-            Button { onBack() } label: {
-                Image(systemName: "chevron.left").font(.system(size: 18)).foregroundStyle(Theme.txt)
-                    .frame(width: 44, height: 44).glass(22)
-            }.pressable()
-            Spacer()
-            Button { model.activeSheet = .export } label: {
-                Image(systemName: "square.and.arrow.up").font(.system(size: 18)).foregroundStyle(Theme.accent)
-                    .frame(width: 44, height: 44).glass(22)
-            }.pressable()
-        }
-        .padding(.horizontal, 14)
     }
 
     // MTKView (UIViewRepresentable) ignores .aspectRatio, so the canvas is
@@ -109,17 +125,6 @@ struct EditorView: View {
             .onTapGesture { /* tap-away handled inside */ }
     }
 
-    private var bottomStack: some View {
-        VStack(spacing: 9) {
-            if let sel = model.selectedID {
-                InspectorView(model: model, brickID: sel)
-            }
-            ToolDock(model: model)
-        }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 30)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedID)
-    }
 }
 
 // MARK: - Fullscreen player (tap-expand / swipe-down dismiss)

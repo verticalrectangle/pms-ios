@@ -25,20 +25,21 @@ struct PopMakerApp: App {
 
 struct RootView: View {
     @EnvironmentObject var engine: EngineStore
-    @State private var open: Project?
+    @State private var openProject: Project?
 
     var body: some View {
-        ZStack {
-            AtmosphereView()
-            if let project = open {
-                EditorView(project: project, engine: engine) {
-                    withAnimation(.easeInOut(duration: 0.3)) { open = nil }
+        // Native navigation: Home is the root, the editor is a pushed detail —
+        // so it gets the system nav bar (back + share) and bottom bar for free,
+        // with proper Liquid Glass + safe-area handling on iOS 26.
+        NavigationStack {
+            HomeView { p in openProject = p }
+                .navigationDestination(item: $openProject) { project in
+                    EditorView(project: project, engine: engine)
                 }
-                .transition(.opacity)
-            } else {
-                HomeView { p in withAnimation(.easeInOut(duration: 0.3)) { open = p } }
-                    .transition(.opacity)
-            }
+#if targetEnvironment(simulator)
+                .onAppear { if openProject == nil { openProject = Sample.projects[0] } }   // DEBUG sim editor
+#endif
         }
+        .tint(Theme.accent)
     }
 }
