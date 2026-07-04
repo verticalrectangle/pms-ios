@@ -4,6 +4,22 @@
 //  swipe it down to dismiss.
 
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
+
+/// A picked video, copied into our sandbox so AVFoundation can read it.
+struct PickedMovie: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { SentFile($0.url) } importing: { received in
+            let dst = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString + "." + received.file.pathExtension)
+            try? FileManager.default.removeItem(at: dst)
+            try FileManager.default.copyItem(at: received.file, to: dst)
+            return Self(url: dst)
+        }
+    }
+}
 
 struct EditorView: View {
     @StateObject private var model: EditorModel
@@ -13,6 +29,7 @@ struct EditorView: View {
     @State private var fullscreen = false
     @State private var camera: CameraCapture?
     @State private var cameraOn = false
+    @State private var pickerItem: PhotosPickerItem?
 
     private func toggleCamera() {
         if cameraOn {
@@ -74,6 +91,11 @@ struct EditorView: View {
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                PhotosPicker(selection: $pickerItem, matching: .videos) {
+                    Image(systemName: "photo.badge.plus")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { toggleCamera() } label: {
                     Image(systemName: cameraOn ? "camera.fill" : "camera")
@@ -104,6 +126,14 @@ struct EditorView: View {
             case .lyrics: LyricsSheet(model: model)
             case .agent:  AgentSheet(model: model)
             case .export: ExportSheet(model: model)
+            }
+        }
+        .onChange(of: pickerItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let movie = try? await item.loadTransferable(type: PickedMovie.self) {
+                    model.importVideo(movie.url)
+                }
             }
         }
         .onAppear { engine.startMockMeters() }

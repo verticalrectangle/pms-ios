@@ -35,6 +35,18 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         video.setSampleBufferDelegate(self, queue: videoQueue)
         session.addOutput(video)
 
+        // Output upright PORTRAIT frames (the sensor is landscape). 90° gives a
+        // 720×1280 buffer that fills the 9:16 canvas; mirror the front camera.
+        if let conn = video.connection(with: .video) {
+            if #available(iOS 17.0, *), conn.isVideoRotationAngleSupported(90) {
+                conn.videoRotationAngle = 90
+            }
+            if conn.isVideoMirroringSupported {
+                conn.automaticallyAdjustsVideoMirroring = false
+                conn.isVideoMirrored = (position == .front)
+            }
+        }
+
         let audio = AVCaptureAudioDataOutput()
         audio.setSampleBufferDelegate(self, queue: audioQueue)
         session.addOutput(audio)

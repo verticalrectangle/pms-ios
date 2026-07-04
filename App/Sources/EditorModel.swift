@@ -23,6 +23,23 @@ final class EditorModel: ObservableObject {
     // scrub mirror (engine is the source of truth via `engine.playhead`)
     @Published var localSeek: Double = 0
 
+    // Imported video (decoded through the engine's frame path).
+    var video: VideoPlayback?
+    @Published var videoLoaded = false
+    @Published var videoDuration: Double?
+
+    func importVideo(_ url: URL) {
+        activeSheet = nil
+        let v = VideoPlayback(engine: engine)
+        video = v
+        Task {
+            await v.load(url: url)
+            videoDuration = v.duration
+            videoLoaded = true
+            localSeek = 0
+        }
+    }
+
     init(project: Project, engine: EngineStore) {
         self.project = project
         self.engine = engine
@@ -33,7 +50,7 @@ final class EditorModel: ObservableObject {
         engine.command("load_project", ["path": project.id])   // stand-in
     }
 
-    var duration: Double { project.duration }
+    var duration: Double { videoDuration ?? project.duration }
 
     // MARK: Derived
 
@@ -63,10 +80,14 @@ final class EditorModel: ObservableObject {
 
     // MARK: Transport (levers)
 
-    func togglePlay() { engine.playing ? engine.command("pause") : engine.command("play") }
+    func togglePlay() {
+        if engine.playing { video?.pause() } else { video?.play() }
+        engine.playing ? engine.command("pause") : engine.command("play")
+    }
     func seek(_ t: Double) {
         let v = min(max(t, 0), duration)
         localSeek = v
+        video?.seek(v)
         engine.command("seek", ["time": v])
     }
 

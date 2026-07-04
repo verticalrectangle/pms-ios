@@ -110,6 +110,16 @@ final class EngineStore: ObservableObject {
 #endif
     }
 
+    /// Clear the composited content frame back to the empty (aurora) canvas.
+    func clearContent() {
+        guard let e = engine else { return }
+#if ENGINE_MOCK
+        _ = e
+#else
+        pms_submit_camera_frame(e, nil, 0, 0)   // null buffer → compositor clears
+#endif
+    }
+
 #if !ENGINE_MOCK
     private func pumpEvents(_ e: PMSEngineHandle) {
         guard let raw = pms_poll_events(e) else { return }
