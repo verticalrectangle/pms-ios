@@ -67,7 +67,7 @@ final class VideoPlayback {
     /// Build the AVComposition (+ orientation video composition) from the clip
     /// segments. Clips sit at their timeline `start`; an empty range fills any
     /// gap (front-trim). Composition == timeline, 1:1. Shared by playback + export.
-    static func buildComposition(_ segments: [Segment]) async -> (AVMutableComposition, AVMutableVideoComposition?) {
+    static func buildComposition(_ segments: [Segment], titles: [Clip] = []) async -> (AVMutableComposition, AVMutableVideoComposition?) {
         let comp = AVMutableComposition()
         let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
@@ -90,25 +90,41 @@ final class VideoPlayback {
             }
             cursor = CMTimeAdd(clipStart, range.duration)
         }
-        // If any clip fades, apply it per-frame via Core Image (handles orientation,
-        // works in preview + export). Otherwise the plain orientation composition.
-        if segments.contains(where: { $0.fadeIn > 0 || $0.fadeOut > 0 }) {
+        // The UNIFIED composite: fold every layer (video base → fades → titles)
+        // through ONE Core Image handler, shared by preview + export, in track
+        // order. Only engaged when there's something to composite.
+        let hasFade = segments.contains { $0.fadeIn > 0 || $0.fadeOut > 0 }
+        if hasFade || !titles.isEmpty {
+            // Precompute title CIImages at the render size (on the main actor, safe).
+            var size = CGSize(width: 1080, height: 1920)
+            if let v = try? await comp.loadTracks(withMediaType: .video).first,
+               let n = try? await v.load(.naturalSize), let tf = try? await v.load(.preferredTransform) {
+                let r = n.applying(tf); size = CGSize(width: abs(r.width), height: abs(r.height))
+            }
+            let titleLayers: [(clip: Clip, image: CIImage)] = titles.compactMap { c in
+                TextRasterizer.image(for: c, size: size).map { (c, $0) }
+            }
             let segs = segments
             let vc = AVMutableVideoComposition(asset: comp, applyingCIFiltersWithHandler: { req in
                 let t = req.compositionTime.seconds
-                var img = req.sourceImage
+                let extent = req.sourceImage.extent
+                var acc = req.sourceImage                       // BASE = the video track
                 if let s = segs.first(where: { $0.start <= t && t < $0.start + $0.duration }) {
                     let o = fadeOpacity(s, at: t)
                     if o < 0.999 {
-                        img = img.applyingFilter("CIColorMatrix", parameters: [
+                        acc = acc.applyingFilter("CIColorMatrix", parameters: [
                             "inputRVector": CIVector(x: o, y: 0, z: 0, w: 0),
                             "inputGVector": CIVector(x: 0, y: o, z: 0, w: 0),
                             "inputBVector": CIVector(x: 0, y: 0, z: o, w: 0),
                             "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-                        ]).cropped(to: req.sourceImage.extent)
+                        ]).cropped(to: extent)
                     }
                 }
-                req.finish(with: img, context: nil)
+                // Title layers composite OVER the video (the text track sits above it).
+                for (clip, img) in titleLayers where t >= clip.start && t < clip.end {
+                    acc = img.composited(over: acc)
+                }
+                req.finish(with: acc.cropped(to: extent), context: nil)
             })
             return (comp, vc)
         }
@@ -127,12 +143,12 @@ final class VideoPlayback {
 
     /// (Re)build the playable timeline from the ordered clip segments — every
     /// edit (trim/split/delete) calls this. Preserves the play position.
-    func load(segments: [Segment], seekTo: Double? = nil) async {
+    func load(segments: [Segment], titles: [Clip] = [], seekTo: Double? = nil) async {
         let wasPlaying = player.rate > 0
         let at = seekTo.map { CMTime(seconds: $0, preferredTimescale: 600) } ?? player.currentTime()
         suppressTicks = true   // swallow the item-swap's transient 0 until the seek lands
 
-        let (comp, vc) = await Self.buildComposition(segments)
+        let (comp, vc) = await Self.buildComposition(segments, titles: titles)
         duration = comp.duration.seconds
 
         let item = AVPlayerItem(asset: comp)
@@ -195,16 +211,52 @@ final class VideoPlayback {
     }
 }
 
+// MARK: - Text as a composite layer
+
+/// Rasterizes a title clip into a full-frame CIImage (transparent elsewhere) so
+/// it composites in the layer fold — identical in preview and export. Cached
+/// (static per clip); built on the main actor by buildComposition.
+@MainActor
+enum TextRasterizer {
+    private static var cache: [String: CIImage] = [:]
+
+    static func image(for clip: Clip, size: CGSize) -> CIImage? {
+        guard !clip.label.isEmpty, size.width > 1 else { return nil }
+        let key = "\(clip.id)|\(clip.label)|\(Int(size.width))x\(Int(size.height))"
+        if let c = cache[key] { return c }
+        let root = CALayer(); root.frame = CGRect(origin: .zero, size: size); root.isGeometryFlipped = true
+        let para = NSMutableParagraphStyle(); para.alignment = .center
+        let text = CATextLayer()
+        text.contentsScale = 3; text.isWrapped = true; text.alignmentMode = .center
+        text.string = NSAttributedString(string: clip.label, attributes: [
+            .font: UIFont.systemFont(ofSize: size.width * 0.12, weight: .black),
+            .foregroundColor: UIColor.white, .paragraphStyle: para,
+            .shadow: { let s = NSShadow(); s.shadowColor = UIColor.black.withAlphaComponent(0.55)
+                       s.shadowBlurRadius = size.width * 0.02; s.shadowOffset = .zero; return s }(),
+        ])
+        let h = size.height * 0.25
+        text.frame = CGRect(x: size.width * 0.06, y: (size.height - h) / 2, width: size.width * 0.88, height: h)
+        root.addSublayer(text)
+        let cg = UIGraphicsImageRenderer(size: size).image { ctx in root.render(in: ctx.cgContext) }.cgImage
+        guard let cg else { return nil }
+        let img = CIImage(cgImage: cg)
+        cache[key] = img
+        return img
+    }
+    static func invalidate() { cache.removeAll() }
+}
+
 // MARK: - Export
 
 /// Renders the timeline's AVComposition to an .mp4 the user can save or share.
 @MainActor
 enum VideoExporter {
     /// Returns the written file URL, or nil on failure. `progress` is 0…1.
-    /// `titles` are the text/lyric clips to bake in (via a Core Animation overlay).
+    /// Titles fold into the SAME Core Image handler as fades (buildComposition),
+    /// so preview and export are pixel-identical — no separate animationTool.
     static func export(_ segments: [VideoPlayback.Segment], titles: [Clip] = [],
                        progress: @escaping (Double) -> Void) async -> URL? {
-        let (comp, vc) = await VideoPlayback.buildComposition(segments)
+        let (comp, vc) = await VideoPlayback.buildComposition(segments, titles: titles)
         guard comp.duration.seconds > 0,
               let session = AVAssetExportSession(asset: comp, presetName: AVAssetExportPresetHighestQuality)
         else { return nil }
@@ -214,10 +266,7 @@ enum VideoExporter {
         try? FileManager.default.removeItem(at: out)
         session.outputURL = out
         session.outputFileType = .mp4
-        if let vc {
-            if !titles.isEmpty { bakeTitles(into: vc, clips: titles, total: comp.duration.seconds) }
-            session.videoComposition = vc
-        }
+        if let vc { session.videoComposition = vc }
 
         let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             progress(Double(session.progress))
@@ -228,47 +277,5 @@ enum VideoExporter {
         timer.invalidate()
         progress(1)
         return session.status == .completed ? out : nil
-    }
-
-    /// Bake the title clips as a Core Animation overlay, timed to each clip's span.
-    /// Matches the SwiftUI preview: bold, white, centered, ~12% of the width.
-    private static func bakeTitles(into vc: AVMutableVideoComposition, clips: [Clip], total: Double) {
-        let size = vc.renderSize
-        guard size.width > 0, total > 0 else { return }
-        let parent = CALayer(); parent.frame = CGRect(origin: .zero, size: size)
-        let videoLayer = CALayer(); videoLayer.frame = parent.frame
-        parent.addSublayer(videoLayer)
-
-        let para = NSMutableParagraphStyle(); para.alignment = .center
-        for clip in clips where !clip.label.isEmpty {
-            let t = CATextLayer()
-            t.contentsScale = 3
-            t.isWrapped = true
-            t.alignmentMode = .center
-            t.string = NSAttributedString(string: clip.label, attributes: [
-                .font: UIFont.systemFont(ofSize: size.width * 0.12, weight: .black),
-                .foregroundColor: UIColor.white,
-                .paragraphStyle: para,
-                .shadow: { let s = NSShadow(); s.shadowColor = UIColor.black.withAlphaComponent(0.55)
-                           s.shadowBlurRadius = size.width * 0.02; return s }(),
-            ])
-            let h = size.height * 0.25
-            t.frame = CGRect(x: size.width * 0.06, y: (size.height - h) / 2, width: size.width * 0.88, height: h)
-
-            // opacity ON only during [start, end] (discrete keyframes over the whole clip)
-            let s = min(max(clip.start / total, 0), 1), e = min(max(clip.end / total, 0), 1)
-            let anim = CAKeyframeAnimation(keyPath: "opacity")
-            anim.calculationMode = .discrete
-            anim.duration = total
-            anim.beginTime = AVCoreAnimationBeginTimeAtZero
-            anim.isRemovedOnCompletion = false
-            anim.fillMode = .forwards
-            if s <= 0.001 { anim.keyTimes = [0, NSNumber(value: e)]; anim.values = [1, 0] }
-            else          { anim.keyTimes = [0, NSNumber(value: s), NSNumber(value: e)]; anim.values = [0, 1, 0] }
-            t.opacity = 0
-            t.add(anim, forKey: "vis")
-            parent.addSublayer(t)
-        }
-        vc.animationTool = AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
     }
 }

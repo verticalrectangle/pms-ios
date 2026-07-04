@@ -237,9 +237,16 @@ enum Sample {
         .init(id: "p10", name: "PRISM GATE",   sub: "epsilver — remix",            duration: 213, format: .portrait,  clipCount: 26, fxCount: 17, updated: "Last month",  thumbSeed: "prismgate"),
     ]
 
+    // Track ORDER == layer z-order: index 0 = frontmost. FX rail on top, then
+    // text (over video), video, audio base.
     static let tracks: [Track] = [
         Track(id: "GFX", kind: .fxRail, name: "FX", clips: [], bricks: [
             Brick(id: "gb1", kind: .globalFX, start: 13.4, duration: 4.6, chain: ["glitch_block"])
+        ]),
+        Track(id: "T1", kind: .lyric, name: "T1", clips: [
+            Clip(id: "l1", label: "in the glass…",   start: 0.4,  duration: 4.6),
+            Clip(id: "l2", label: "amber bleeding…", start: 5.4,  duration: 4.8),
+            Clip(id: "l3", label: "hold the night…", start: 10.6, duration: 5.0),
         ]),
         Track(id: "V1", kind: .video, name: "V1", clips: [
             Clip(id: "c1", label: "EYE_CLOSEUP", start: 0,    duration: 6.4, seed: "eye"),
@@ -249,11 +256,6 @@ enum Sample {
             Brick(id: "gl1", kind: .glassFX,  start: 2.0, duration: 2.0, chain: ["chromatic_aberration"], boundClipID: "c1"),
             Brick(id: "gl2", kind: .multiFX,  start: 8.6, duration: 3.8, chain: ["bloom", "film_halation"], boundClipID: "c2"),
             Brick(id: "bd1", kind: .bodyFX,   start: 13.0, duration: 4.6, chain: ["rvm_matte"], boundClipID: "c3"),
-        ]),
-        Track(id: "T1", kind: .lyric, name: "T1", clips: [
-            Clip(id: "l1", label: "in the glass…",   start: 0.4,  duration: 4.6),
-            Clip(id: "l2", label: "amber bleeding…", start: 5.4,  duration: 4.8),
-            Clip(id: "l3", label: "hold the night…", start: 10.6, duration: 5.0),
         ]),
         Track(id: "A1", kind: .audio, name: "A1", clips: [
             Clip(id: "a1", label: "glass_drown_master.wav", start: 0, duration: 18),

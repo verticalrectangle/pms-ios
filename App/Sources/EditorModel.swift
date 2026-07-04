@@ -313,7 +313,9 @@ final class EditorModel: ObservableObject {
         if let ti = tracks.firstIndex(where: { $0.kind == .lyric }) {
             tracks[ti].clips.append(clip)
         } else {
-            tracks.append(Track(id: "TXT", kind: .lyric, name: "TEXT", clips: [clip]))
+            // Text track sits ABOVE video (lower index = frontmost layer).
+            tracks.insert(Track(id: "TXT", kind: .lyric, name: "TEXT", clips: [clip]),
+                          at: videoTrackIndex ?? tracks.count)
         }
         selectedID = clip.id
         focusNewText = true   // just created → open the keyboard; selecting later won't
