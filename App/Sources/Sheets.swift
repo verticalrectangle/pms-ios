@@ -4,6 +4,7 @@
 //  to a real lever from LEVERS.md.
 
 import SwiftUI
+import UIKit
 
 // MARK: - Shared sheet chrome
 
@@ -215,6 +216,7 @@ struct ExportSheet: View {
     @State private var pct = 0.0
     @State private var outURL: URL?
     @State private var failed = false
+    @State private var saved = false
     enum Phase { case idle, rendering, done }
 
     init(model: EditorModel) { self.model = model }
@@ -249,13 +251,20 @@ struct ExportSheet: View {
                         }.padding(16).glass(15, flat: true)
                     case .done:
                         VStack(spacing: 14) {
-                            Image(systemName: "checkmark.circle").font(.system(size: 34)).foregroundStyle(Theme.accent)
-                            Text("Export complete").font(.disp(18)).foregroundStyle(.white)
+                            Image(systemName: saved ? "checkmark.seal.fill" : "exclamationmark.triangle")
+                                .font(.system(size: 34)).foregroundStyle(saved ? Theme.accent : Color(red: 1, green: 0.7, blue: 0.4))
+                            Text(saved ? "Saved to Photos" : "Exported (not saved)").font(.disp(18)).foregroundStyle(Theme.txt)
                             if let outURL {
                                 Text(sizeString(outURL)).font(.num(12)).foregroundStyle(Theme.txtMuted)
-                                ShareLink(item: outURL) {
-                                    HStack(spacing: 10) { Image(systemName: "square.and.arrow.up"); Text("Save / Share").font(.disp(15)) }
-                                        .foregroundStyle(Theme.accent).frame(maxWidth: .infinity).padding(.vertical, 13).glass(15, active: true)
+                                HStack(spacing: 10) {
+                                    ShareLink(item: outURL) {
+                                        HStack(spacing: 8) { Image(systemName: "square.and.arrow.up"); Text("Share").font(.disp(15)) }
+                                            .foregroundStyle(Theme.accent).frame(maxWidth: .infinity).padding(.vertical, 13).glass(15, active: true)
+                                    }
+                                    Button { openGallery() } label: {
+                                        HStack(spacing: 8) { Image(systemName: "photo.on.rectangle.angled"); Text("Open Gallery").font(.disp(15)) }
+                                            .foregroundStyle(Theme.txt).frame(maxWidth: .infinity).padding(.vertical, 13).glass(15)
+                                    }
                                 }
                                 Button { phase = .idle } label: {
                                     Text("Export again").font(.label(11)).foregroundStyle(Theme.txtMuted)
@@ -280,8 +289,14 @@ struct ExportSheet: View {
         let titles = model.titleClips
         Task {
             let url = await VideoExporter.export(segments, titles: titles) { p in pct = p }
-            if let url { outURL = url; phase = .done }
-            else { failed = true; phase = .idle }
+            guard let url else { failed = true; phase = .idle; return }
+            outURL = url
+            saved = await VideoExporter.saveToPhotos(url)   // auto-save to gallery
+            phase = .done
         }
+    }
+
+    private func openGallery() {
+        if let u = URL(string: "photos-redirect://") { UIApplication.shared.open(u) }
     }
 }

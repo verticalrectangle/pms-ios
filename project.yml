@@ -36,6 +36,7 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: App/PMS-Bridging-Header.h
         INFOPLIST_KEY_NSCameraUsageDescription: "Record video takes with live filters."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Record audio takes."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Save your exported videos to Photos."
         # Simulator builds the mock engine (fast design loop, no engine deps).
         "SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=iphonesimulator*]": ENGINE_MOCK
         # Device links the real engine (C++ → needs libc++) + ORT framework.
@@ -52,6 +53,7 @@ targets:
       - sdk: Metal.framework
       - sdk: MetalKit.framework
       - sdk: AVFoundation.framework
+      - sdk: Photos.framework
       - sdk: AudioToolbox.framework
       - sdk: CoreAudio.framework
       - sdk: CoreML.framework

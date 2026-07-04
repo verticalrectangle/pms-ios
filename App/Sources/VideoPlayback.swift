@@ -6,6 +6,7 @@ import AVFoundation
 import QuartzCore
 import UIKit
 import CoreImage
+import Photos
 
 extension VideoPlayback {
     /// A filmstrip of `count` evenly-spaced JPEG frames written to temp files —
@@ -280,5 +281,19 @@ enum VideoExporter {
         timer.invalidate()
         progress(1)
         return session.status == .completed ? out : nil
+    }
+
+    /// Save a finished export into the Photos library (add-only permission).
+    static func saveToPhotos(_ url: URL) async -> Bool {
+        let status = await withCheckedContinuation { (c: CheckedContinuation<PHAuthorizationStatus, Never>) in
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { c.resume(returning: $0) }
+        }
+        guard status == .authorized || status == .limited else { return false }
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetCreationRequest.creationRequestForAssetFromVideo(atFileURL: url)
+            }
+            return true
+        } catch { return false }
     }
 }
