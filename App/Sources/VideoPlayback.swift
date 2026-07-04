@@ -37,6 +37,7 @@ final class VideoPlayback {
     private var output: AVPlayerItemVideoOutput?
     private var link: CADisplayLink?
     private var timeObserver: Any?
+    private var suppressTicks = false   // ignore the transient 0 during a reload
     private weak var engine: EngineStore?
     private(set) var duration: Double = 0
 
@@ -53,7 +54,7 @@ final class VideoPlayback {
         // AVPlayer clock → the transport (~30 Hz). Added once; survives reloads.
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
-            guard let self else { return }
+            guard let self, !self.suppressTicks else { return }
             self.onTick?(time.seconds, self.player.rate > 0)
         }
         startLink()
@@ -64,6 +65,7 @@ final class VideoPlayback {
     func load(segments: [Segment], seekTo: Double? = nil) async {
         let wasPlaying = player.rate > 0
         let at = seekTo.map { CMTime(seconds: $0, preferredTimescale: 600) } ?? player.currentTime()
+        suppressTicks = true   // swallow the item-swap's transient 0 until the seek lands
 
         let comp = AVMutableComposition()
         let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
@@ -103,7 +105,12 @@ final class VideoPlayback {
         player.replaceCurrentItem(with: item)
         if seekTo != nil || at.seconds > 0 {
             player.seek(to: CMTimeMinimum(at, CMTime(seconds: duration, preferredTimescale: 600)),
-                        toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
+                        toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+                self?.suppressTicks = false   // resume ticking only once we're back at `at`
+                self?.pushFrame()
+            }
+        } else {
+            suppressTicks = false
         }
         if wasPlaying { player.play() }
         pushFrame()
