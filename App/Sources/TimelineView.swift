@@ -7,6 +7,14 @@ import SwiftUI
 
 private let PPS: CGFloat = 46          // pixels per second
 
+private extension View {
+    /// Apply a gesture only when `active` — so non-selected clips don't attach a
+    /// drag that would swallow the scrub.
+    @ViewBuilder func gestureIf<G: Gesture>(_ active: Bool, _ g: G) -> some View {
+        if active { gesture(g) } else { self }
+    }
+}
+
 struct TimelineView: View {
     @ObservedObject var model: EditorModel
     @ObservedObject var engine: EngineStore
@@ -136,22 +144,17 @@ private struct TrackLane: View {
                     .shadow(color: dragging ? Theme.accentA(0.55) : .clear, radius: 12)
                     .offset(x: CGFloat(clip.start) * PPS + (dragging ? dragDX : 0))
                     .zIndex(dragging ? 2 : (model.selectedID == clip.id ? 1 : 0))
-                    .gesture(
-                        // Long-press to pick up, THEN drag to reorder. A quick drag
-                        // falls through to the scrub; a tap still selects.
-                        LongPressGesture(minimumDuration: 0.28)
-                            .sequenced(before: DragGesture(coordinateSpace: .global))
-                            .onChanged { value in
-                                guard track.kind == .video, case .second(true, let drag?) = value else { return }
+                    // Reorder: once selected, drag the clip body to move it. Plain
+                    // DragGesture (reliable onEnded, unlike a sequenced long-press);
+                    // only on the selected clip so scrubbing still works elsewhere.
+                    .gestureIf(model.selectedID == clip.id && track.kind == .video,
+                        DragGesture(minimumDistance: 8, coordinateSpace: .global)
+                            .onChanged { g in
                                 if dragID != clip.id { dragID = clip.id }
-                                dragDX = drag.translation.width
+                                dragDX = g.translation.width
                             }
-                            .onEnded { _ in
-                                // Use the tracked dragDX — the sequenced gesture's
-                                // end value drops the drag payload (comes back nil).
-                                if track.kind == .video, dragID == clip.id {
-                                    model.moveClip(clip.id, toIndex: reorderTarget(clip, dx: dragDX))
-                                }
+                            .onEnded { g in
+                                model.moveClip(clip.id, toIndex: reorderTarget(clip, dx: g.translation.width))
                                 dragID = nil; dragDX = 0
                             }
                     )
