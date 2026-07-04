@@ -43,7 +43,7 @@ final class VideoPlayback {
     /// (currentTime, isPlaying) — the AVPlayer clock, for the transport.
     var onTick: ((Double, Bool) -> Void)?
 
-    struct Segment { let url: URL; let sourceStart: Double; let duration: Double }
+    struct Segment { let url: URL; let start: Double; let sourceStart: Double; let duration: Double }
 
     init(engine: EngineStore) {
         self.engine = engine
@@ -69,17 +69,26 @@ final class VideoPlayback {
         let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
         var cursor = CMTime.zero
-        for seg in segments {
+        // Clips are placed at their timeline `start` — a front-trimmed first clip
+        // sits past 0, so an empty range fills the gap. Composition == timeline,
+        // 1:1, so the playhead stays aligned with no offset tricks.
+        for seg in segments.sorted(by: { $0.start < $1.start }) {
+            let clipStart = CMTime(seconds: seg.start, preferredTimescale: 600)
+            if CMTimeCompare(clipStart, cursor) > 0 {
+                let gap = CMTimeRange(start: cursor, duration: CMTimeSubtract(clipStart, cursor))
+                vTrack?.insertEmptyTimeRange(gap)
+                aTrack?.insertEmptyTimeRange(gap)
+            }
             let asset = AVURLAsset(url: seg.url)
             let range = CMTimeRange(start: CMTime(seconds: seg.sourceStart, preferredTimescale: 600),
                                     duration: CMTime(seconds: seg.duration, preferredTimescale: 600))
             if let sv = try? await asset.loadTracks(withMediaType: .video).first {
-                try? vTrack?.insertTimeRange(range, of: sv, at: cursor)
+                try? vTrack?.insertTimeRange(range, of: sv, at: clipStart)
             }
             if let sa = try? await asset.loadTracks(withMediaType: .audio).first {
-                try? aTrack?.insertTimeRange(range, of: sa, at: cursor)
+                try? aTrack?.insertTimeRange(range, of: sa, at: clipStart)
             }
-            cursor = CMTimeAdd(cursor, range.duration)
+            cursor = CMTimeAdd(clipStart, range.duration)
         }
         duration = cursor.seconds
 
