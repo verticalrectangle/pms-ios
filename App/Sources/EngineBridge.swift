@@ -93,7 +93,7 @@ final class EngineStore: ObservableObject {
         _ = e   // MetalRenderView clears; the engine composite arrives with P3
 #else
         _ = pms_render(e, Unmanaged.passUnretained(texture).toOpaque(),
-                       texture.width, texture.height)
+                       Int32(texture.width), Int32(texture.height))
 #endif
     }
 
