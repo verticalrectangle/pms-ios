@@ -243,6 +243,20 @@ sources — prefer linking ORT properly from the start (it's low-friction).
 
 ## Phase 3 — Metal renderer (RenderSurface seam)
 
+> **STATUS 2026-07-03: RenderSurface FOUNDATION done + verified.**
+> src/metal_render.mm implements pms_render on Apple: pms_create captures
+> the MTLDevice → command queue + pipeline; pms_render encodes a render
+> pass into the app's drawable texture each frame. Verified with an
+> offscreen PNG harness (tools/metal_render_test.mm, macOS host — no
+> sim/device needed): renders a lavender aurora, correct pixels. Builds
+> + links for arm64 device. This is the plumbing everything hangs on.
+> NEXT increments (swap into the fragment/compositor, verify via the PNG
+> harness each step): (1) procedural backgrounds from the transpiled MSL
+> registry (Shaders/msl/ + params_manifest), (2) textured-quad compositor
+> = the 'over' operator (backgrounds/video/text all become quads), (3)
+> text via imgui_impl_metal (lyric/title clips — real content, no media),
+> (4) the generated FX passes, (5) hand passes (beauty/warp/makeup/chroma).
+
 **Goal:** `pms_render(engine, mtl_texture, w, h)` composites a frame with
 pixel parity against desktop GL.
 
