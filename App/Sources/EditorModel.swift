@@ -126,12 +126,12 @@ final class EditorModel: ObservableObject {
         snapshot()
         let c = tracks[ti].clips[ci]
         let off = playhead - c.start
-        // Slice the filmstrip so each part shows its own frames.
-        let cut = max(0, min(c.thumbs.count, Int((Double(c.thumbs.count) * off / c.duration).rounded())))
-        var a = c; a.duration = off; a.thumbs = Array(c.thumbs.prefix(cut))
+        // Both halves keep the FULL source filmstrip — ContentClipView crops it
+        // to each clip's [sourceStart, sourceStart+duration] range by source time.
+        var a = c; a.duration = off
         let b = Clip(id: c.id + "_s\(Int(playhead * 1000))", label: c.label,
                      start: playhead, duration: c.duration - off, seed: c.seed,
-                     thumbs: Array(c.thumbs.suffix(c.thumbs.count - cut)),
+                     thumbs: c.thumbs,
                      sourceURL: c.sourceURL, sourceStart: c.sourceStart + off,
                      sourceDuration: c.sourceDuration)
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
@@ -145,13 +145,18 @@ final class EditorModel: ObservableObject {
     // MARK: Trim (drag the clip edges)
 
     func beginTrim() { snapshot() }
-    func endTrim() { relayoutVideoClips(); Task { await rebuildVideo() } }
+    func endTrim() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { relayoutVideoClips() }
+        Task { await rebuildVideo() }
+    }
 
-    /// Set a clip's in-point + length absolutely (the trim handle computes these
-    /// from the drag). No relayout during the drag (that churns every frame and
-    /// jitters); positions settle + the composition rebuilds on endTrim.
-    func setTrim(_ id: String, sourceStart: Double, duration: Double) {
+    /// Set a clip's timeline position + in-point + length (the trim handle
+    /// computes these). Left-trim moves `start` so the left edge follows the
+    /// finger (right edge fixed); right-trim keeps `start`. No relayout during
+    /// the drag (that jitters); positions settle + composition rebuilds on end.
+    func setTrim(_ id: String, start: Double, sourceStart: Double, duration: Double) {
         guard let ti = videoTrackIndex, let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
+        tracks[ti].clips[ci].start = start
         tracks[ti].clips[ci].sourceStart = sourceStart
         tracks[ti].clips[ci].duration = duration
     }

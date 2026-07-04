@@ -148,10 +148,21 @@ private struct ContentClipView: View {
                     AsyncImage(url: URL(string: "https://picsum.photos/seed/\(clip.seed)cl/240/120")) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                         .opacity(0.5).clipped()
                 } else {
-                    HStack(spacing: 0) {   // filmstrip: sampled frames tiled across the clip
-                        ForEach(clip.thumbs, id: \.self) { u in
+                    // Filmstrip: each frame is placed by its SOURCE time within
+                    // the clip's [sourceStart, sourceStart+duration] window — so
+                    // trimming crops the strip (frames slide off) instead of
+                    // squashing it.
+                    GeometryReader { geo in
+                        let n = clip.thumbs.count
+                        let srcDur = max(clip.sourceDuration, 0.001)
+                        let dur = max(clip.duration, 0.001)
+                        let tw = geo.size.width * (srcDur / Double(n)) / dur
+                        ForEach(Array(clip.thumbs.enumerated()), id: \.offset) { i, u in
+                            let tau = (Double(i) + 0.5) / Double(n) * srcDur
                             AsyncImage(url: u) { $0.resizable().scaledToFill() } placeholder: { Color.white.opacity(0.04) }
-                                .frame(maxWidth: .infinity).frame(height: height).clipped()
+                                .frame(width: tw, height: geo.size.height).clipped()
+                                .position(x: (tau - clip.sourceStart) / dur * geo.size.width,
+                                          y: geo.size.height / 2)
                         }
                     }
                     .opacity(0.62)
@@ -213,7 +224,7 @@ private struct TrimHandles: View {
     let clip: Clip
     @ObservedObject var model: EditorModel
     let height: CGFloat
-    @State private var orig: (start: Double, dur: Double, srcDur: Double)?
+    @State private var orig: (tlStart: Double, srcStart: Double, dur: Double, srcDur: Double)?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -234,15 +245,18 @@ private struct TrimHandles: View {
                 // handle moves with the resizing clip — kills the jitter.
                 DragGesture(minimumDistance: 2, coordinateSpace: .global)
                     .onChanged { g in
-                        if orig == nil { model.beginTrim(); orig = (clip.sourceStart, clip.duration, clip.sourceDuration) }
+                        if orig == nil { model.beginTrim(); orig = (clip.start, clip.sourceStart, clip.duration, clip.sourceDuration) }
                         guard let o = orig else { return }
                         let dx = Double(g.translation.width / PPS)
                         if leading {
-                            let ns = min(max(o.start + dx, 0), o.start + o.dur - 0.3)
-                            model.setTrim(clip.id, sourceStart: ns, duration: o.dur - (ns - o.start))
+                            // move the in-point; left edge (start) follows, right edge fixed
+                            let ns = min(max(o.srcStart + dx, 0), o.srcStart + o.dur - 0.3)
+                            let change = ns - o.srcStart
+                            model.setTrim(clip.id, start: o.tlStart + change, sourceStart: ns, duration: o.dur - change)
                         } else {
-                            let nd = min(max(o.dur + dx, 0.3), o.srcDur - o.start)
-                            model.setTrim(clip.id, sourceStart: o.start, duration: nd)
+                            // move the out-point; start + in-point fixed
+                            let nd = min(max(o.dur + dx, 0.3), o.srcDur - o.srcStart)
+                            model.setTrim(clip.id, start: o.tlStart, sourceStart: o.srcStart, duration: nd)
                         }
                     }
                     .onEnded { _ in orig = nil; model.endTrim() }
