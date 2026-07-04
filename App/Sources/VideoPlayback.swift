@@ -166,7 +166,8 @@ final class VideoPlayback {
 @MainActor
 enum VideoExporter {
     /// Returns the written file URL, or nil on failure. `progress` is 0…1.
-    static func export(_ segments: [VideoPlayback.Segment],
+    /// `titles` are the text/lyric clips to bake in (via a Core Animation overlay).
+    static func export(_ segments: [VideoPlayback.Segment], titles: [Clip] = [],
                        progress: @escaping (Double) -> Void) async -> URL? {
         let (comp, vc) = await VideoPlayback.buildComposition(segments)
         guard comp.duration.seconds > 0,
@@ -178,7 +179,10 @@ enum VideoExporter {
         try? FileManager.default.removeItem(at: out)
         session.outputURL = out
         session.outputFileType = .mp4
-        if let vc { session.videoComposition = vc }
+        if let vc {
+            if !titles.isEmpty { bakeTitles(into: vc, clips: titles, total: comp.duration.seconds) }
+            session.videoComposition = vc
+        }
 
         let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             progress(Double(session.progress))
@@ -189,5 +193,47 @@ enum VideoExporter {
         timer.invalidate()
         progress(1)
         return session.status == .completed ? out : nil
+    }
+
+    /// Bake the title clips as a Core Animation overlay, timed to each clip's span.
+    /// Matches the SwiftUI preview: bold, white, centered, ~12% of the width.
+    private static func bakeTitles(into vc: AVMutableVideoComposition, clips: [Clip], total: Double) {
+        let size = vc.renderSize
+        guard size.width > 0, total > 0 else { return }
+        let parent = CALayer(); parent.frame = CGRect(origin: .zero, size: size)
+        let videoLayer = CALayer(); videoLayer.frame = parent.frame
+        parent.addSublayer(videoLayer)
+
+        let para = NSMutableParagraphStyle(); para.alignment = .center
+        for clip in clips where !clip.label.isEmpty {
+            let t = CATextLayer()
+            t.contentsScale = 3
+            t.isWrapped = true
+            t.alignmentMode = .center
+            t.string = NSAttributedString(string: clip.label, attributes: [
+                .font: UIFont.systemFont(ofSize: size.width * 0.12, weight: .black),
+                .foregroundColor: UIColor.white,
+                .paragraphStyle: para,
+                .shadow: { let s = NSShadow(); s.shadowColor = UIColor.black.withAlphaComponent(0.55)
+                           s.shadowBlurRadius = size.width * 0.02; return s }(),
+            ])
+            let h = size.height * 0.25
+            t.frame = CGRect(x: size.width * 0.06, y: (size.height - h) / 2, width: size.width * 0.88, height: h)
+
+            // opacity ON only during [start, end] (discrete keyframes over the whole clip)
+            let s = min(max(clip.start / total, 0), 1), e = min(max(clip.end / total, 0), 1)
+            let anim = CAKeyframeAnimation(keyPath: "opacity")
+            anim.calculationMode = .discrete
+            anim.duration = total
+            anim.beginTime = AVCoreAnimationBeginTimeAtZero
+            anim.isRemovedOnCompletion = false
+            anim.fillMode = .forwards
+            if s <= 0.001 { anim.keyTimes = [0, NSNumber(value: e)]; anim.values = [1, 0] }
+            else          { anim.keyTimes = [0, NSNumber(value: s), NSNumber(value: e)]; anim.values = [0, 1, 0] }
+            t.opacity = 0
+            t.add(anim, forKey: "vis")
+            parent.addSublayer(t)
+        }
+        vc.animationTool = AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
     }
 }

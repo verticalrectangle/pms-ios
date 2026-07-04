@@ -122,6 +122,9 @@ final class EditorModel: ObservableObject {
         return tracks[ti].clips.first { $0.id == selectedID }
     }
 
+    /// Title/lyric clips to bake into the export overlay.
+    var titleClips: [Clip] { tracks.first { $0.kind == .lyric }?.clips ?? [] }
+
     /// The current video clips as export/playback segments.
     var videoSegments: [VideoPlayback.Segment] {
         (tracks.first { $0.kind == .video }?.clips ?? []).compactMap { c in
