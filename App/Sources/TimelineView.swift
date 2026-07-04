@@ -145,10 +145,10 @@ private struct TrackLane: View {
                     .shadow(color: dragging ? Theme.accentA(0.55) : .clear, radius: 12)
                     .offset(x: CGFloat(clip.start) * PPS + (dragging ? dragDX : 0))
                     .zIndex(dragging ? 2 : (model.selectedID == clip.id ? 1 : 0))
-                    // Reorder: once selected, drag the clip body to move it. Plain
-                    // DragGesture (reliable onEnded, unlike a sequenced long-press);
-                    // only on the selected clip so scrubbing still works elsewhere.
-                    .highPriorityGestureIf(model.selectedID == clip.id && track.kind == .video,
+                    // Reorder: drag ANY video clip to move it (no need to select
+                    // first). High-priority so it beats the timeline scrub; scrub
+                    // lives on the ruler row now. Plain DragGesture = reliable onEnded.
+                    .highPriorityGestureIf(track.kind == .video,
                         DragGesture(minimumDistance: 8, coordinateSpace: .global)
                             .onChanged { g in
                                 if dragID != clip.id { dragID = clip.id }
