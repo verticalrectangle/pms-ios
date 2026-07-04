@@ -327,6 +327,10 @@ private struct LyricEditBar: View {
                 .focused($focused)
                 .onChange(of: text) { _, v in model.setClipText(clip.id, v) }
                 .onSubmit { model.selectedID = nil }   // Return commits + deselects
+            Button { model.splitAtPlayhead() } label: {
+                Image(systemName: "scissors").font(.system(size: 14))
+            }.tint(Theme.txtBody)
+            .disabled(!(model.playhead > clip.start + 0.1 && model.playhead < clip.end - 0.1))
             Button(role: .destructive) { model.deleteClipAnywhere(clip.id) } label: {
                 Image(systemName: "trash").font(.system(size: 14))
             }.tint(Color(red: 1, green: 0.5, blue: 0.5))
@@ -336,6 +340,7 @@ private struct LyricEditBar: View {
         // Keyboard only right after CREATING the title; selecting it later just
         // shows the bar (tap the field to edit) so the timeline stays free to move it.
         .onAppear { text = clip.label; if model.focusNewText { focused = true; model.focusNewText = false } }
+        .onChange(of: clip.id) { _, _ in text = clip.label }   // resync when the clip changes (e.g. after a split)
     }
 }
 

@@ -149,9 +149,10 @@ final class EditorModel: ObservableObject {
         for i in tracks[ti].clips.indices { tracks[ti].clips[i].label = "CLIP \(i + 1)" }
     }
 
-    /// Split the clip under the playhead into two (structural — same footage).
+    /// Split the SELECTED clip's track under the playhead into two (structural —
+    /// same footage / same text). Works for any track kind (video or text).
     func splitAtPlayhead() {
-        guard let ti = videoTrackIndex,
+        guard let id = selectedID, let ti = trackIndex(ofClip: id),
               let ci = tracks[ti].clips.firstIndex(where: { playhead > $0.start + 0.1 && playhead < $0.end - 0.1 })
         else { return }
         snapshot()
@@ -159,18 +160,19 @@ final class EditorModel: ObservableObject {
         let off = playhead - c.start
         // Both halves keep the FULL source filmstrip — ContentClipView crops it
         // to each clip's [sourceStart, sourceStart+duration] range by source time.
-        var a = c; a.duration = off
-        let b = Clip(id: c.id + "_s\(Int(playhead * 1000))", label: c.label,
+        var a = c; a.duration = off; a.fadeOut = 0        // fade-out belongs to the tail now
+        var b = Clip(id: c.id + "_s\(Int(playhead * 1000))", label: c.label,
                      start: playhead, duration: c.duration - off, seed: c.seed,
                      thumbs: c.thumbs,
                      sourceURL: c.sourceURL, sourceStart: c.sourceStart + off * c.speed,
                      sourceDuration: c.sourceDuration, speed: c.speed)
+        b.fadeIn = 0; b.fadeOut = c.fadeOut               // fade-in stayed with the head
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             tracks[ti].clips.replaceSubrange(ci...ci, with: [a, b])   // a+b occupy c's exact span
-            renumberLabels()              // labels only — nothing moves
+            if tracks[ti].kind == .video { renumberLabels() }         // text keeps its words
             selectedID = b.id
         }
-        // composition unchanged (a+b == original) → no reload needed
+        // composition unchanged (a+b == original span & net fade) → no reload needed
     }
 
     // MARK: Free-position drag (the desktop model: free start/end, implicit
