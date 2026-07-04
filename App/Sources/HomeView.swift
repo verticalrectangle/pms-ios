@@ -68,7 +68,7 @@ struct HomeView: View {
 
     private var newProjectButton: some View {
         Button {
-            onOpen(Sample.projects[0])
+            onOpen(Project.blank())
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: "plus")

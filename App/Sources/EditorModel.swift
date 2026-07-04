@@ -250,11 +250,13 @@ final class EditorModel: ObservableObject {
     init(project: Project, engine: EngineStore) {
         self.project = project
         self.engine = engine
-        self.tracks = Sample.tracks
-        self.chapters = Sample.chapters
+        // A new project starts genuinely empty; existing (demo) projects show the
+        // Sample timeline until real .pms persistence lands.
+        self.tracks = project.isNew ? [] : Sample.tracks
+        self.chapters = project.isNew ? [] : Sample.chapters
         self.format = project.format
         self.bpm = Sample.bpm
-        engine.command("load_project", ["path": project.id])   // stand-in
+        if !project.isNew { engine.command("load_project", ["path": project.id]) }   // stand-in
     }
 
     var duration: Double { videoDuration ?? project.duration }
@@ -267,8 +269,8 @@ final class EditorModel: ObservableObject {
     }
 
     func activeVideoLabel(at t: Double) -> String {
-        guard let v = tracks.first(where: { $0.kind == .video }) else { return "CLIP" }
-        return (v.clips.first { t >= $0.start && t < $0.end } ?? v.clips.last)?.label ?? "CLIP"
+        guard let v = tracks.first(where: { $0.kind == .video }), !v.clips.isEmpty else { return "" }
+        return (v.clips.first { t >= $0.start && t < $0.end } ?? v.clips.last)?.label ?? ""
     }
 
     // MARK: Text / lyric clips (rendered as canvas overlays; preview now, bake later)

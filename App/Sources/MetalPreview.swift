@@ -55,13 +55,15 @@ struct CanvasChrome: View {
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [.clear, .black.opacity(0.35)], startPoint: .center, endPoint: .bottom)
                 .allowsHitTesting(false)
-            HStack {
-                Text("\(clipLabel).MP4")
-                    .font(.label(9)).tracking(1.4)
-                    .foregroundStyle(Theme.txtLabel)
-                Spacer()
+            if !clipLabel.isEmpty {
+                HStack {
+                    Text("\(clipLabel).MP4")
+                        .font(.label(9)).tracking(1.4)
+                        .foregroundStyle(Theme.txtLabel)
+                    Spacer()
+                }
+                .padding(10)
             }
-            .padding(10)
 
             VStack(alignment: .trailing, spacing: 4) {
                 ForEach(activeBricks.prefix(3)) { b in

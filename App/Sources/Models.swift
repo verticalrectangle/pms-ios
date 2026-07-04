@@ -19,8 +19,16 @@ struct Project: Identifiable, Hashable {
     let updated: String
     var live: Bool = false
     let thumbSeed: String       // deterministic picsum seed
+    var isNew: Bool = false     // a fresh, empty project (no mock demo content)
 
     var thumbURL: URL { URL(string: "https://picsum.photos/seed/\(thumbSeed)/240/320")! }
+
+    /// A genuinely clean project — empty timeline, ready to import.
+    static func blank() -> Project {
+        Project(id: "new-\(UUID().uuidString.prefix(6))", name: "Untitled", sub: "New project",
+                duration: 0, format: .portrait, clipCount: 0, fxCount: 0, updated: "now",
+                thumbSeed: "new", isNew: true)
+    }
 }
 
 enum Format: String, CaseIterable, Hashable {

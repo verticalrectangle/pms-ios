@@ -177,6 +177,16 @@ struct EditorView: View {
             .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
                                   activeBricks: model.activeBricks(at: t)))
             .overlay(LyricOverlay(clips: model.activeLyrics(at: t), width: box.width))
+            .overlay {
+                if !model.videoLoaded {
+                    VStack(spacing: 12) {
+                        Image(systemName: "photo.badge.plus").font(.system(size: 34, weight: .light))
+                        Text("Tap ＋ to add a clip").font(.label(11)).tracking(1.4)
+                    }
+                    .foregroundStyle(Theme.txtMuted)
+                    .allowsHitTesting(false)
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
             .overlay(RoundedRectangle(cornerRadius: Theme.rCard).strokeBorder(Theme.line))
             .frame(maxWidth: .infinity)   // centre horizontally
