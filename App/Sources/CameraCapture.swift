@@ -56,8 +56,11 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
-        // Engine bridge calls stubbed until the engine lib lands (Phase 2/4):
-        // video: pms_submit_camera_frame(engine, pixelBuffer, rotation, hostTime)
-        // audio: pms_submit_mic_block(engine, floatData, frames, sampleRate)
+        // Video frames → the engine's Metal compositor (live canvas preview).
+        // Audio (pms_submit_mic_block) lands with the record path.
+        guard output is AVCaptureVideoDataOutput,
+              let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let host = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
+        engine?.submitCameraFrame(pb, rotation: Int32(rotationQuarterTurns), hostTime: host)
     }
 }

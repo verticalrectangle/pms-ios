@@ -6,6 +6,7 @@ import Foundation
 import Metal
 import Combine
 import QuartzCore   // CADisplayLink
+import CoreVideo    // CVPixelBuffer (camera/decoded frames)
 
 // ENGINE_MOCK (set in project.yml until pms_engine.xcframework exists):
 // screens develop against a stub engine — same observable surface, canned
@@ -94,6 +95,18 @@ final class EngineStore: ObservableObject {
 #else
         _ = pms_render(e, Unmanaged.passUnretained(texture).toOpaque(),
                        Int32(texture.width), Int32(texture.height))
+#endif
+    }
+
+    /// Push a captured/decoded frame (CVPixelBuffer, 32BGRA) to the engine — it
+    /// composites it into the canvas via pms_render. Called off the camera queue.
+    func submitCameraFrame(_ pixelBuffer: CVPixelBuffer, rotation: Int32, hostTime: Double) {
+        guard let e = engine else { return }
+#if ENGINE_MOCK
+        _ = e
+#else
+        pms_submit_camera_frame(e, Unmanaged.passUnretained(pixelBuffer).toOpaque(),
+                                rotation, hostTime)
 #endif
     }
 

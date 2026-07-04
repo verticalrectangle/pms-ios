@@ -11,6 +11,18 @@ struct EditorView: View {
     private let projectName: String
 
     @State private var fullscreen = false
+    @State private var camera: CameraCapture?
+    @State private var cameraOn = false
+
+    private func toggleCamera() {
+        if cameraOn {
+            camera?.stop(); camera = nil; cameraOn = false
+        } else {
+            let c = CameraCapture(engine: engine)
+            try? c.start(position: .back)
+            camera = c; cameraOn = true
+        }
+    }
 
     init(project: Project, engine: EngineStore) {
         self.engine = engine
@@ -62,6 +74,12 @@ struct EditorView: View {
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { toggleCamera() } label: {
+                    Image(systemName: cameraOn ? "camera.fill" : "camera")
+                }
+                .tint(cameraOn ? Theme.accent : Theme.txtBody)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { model.activeSheet = .export } label: {
                     Image(systemName: "square.and.arrow.up")
