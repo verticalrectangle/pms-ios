@@ -6,6 +6,23 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
+import UIKit
+
+/// Publishes the on-screen keyboard height so a bar can be lifted by exactly
+/// that amount (the rest of the UI stays put).
+final class KeyboardObserver: ObservableObject {
+    @Published var height: CGFloat = 0
+    init() {
+        let c = NotificationCenter.default
+        c.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main) { [weak self] n in
+            guard let f = n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            self?.height = max(0, UIScreen.main.bounds.height - f.minY)
+        }
+        c.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.height = 0
+        }
+    }
+}
 
 /// A picked video, copied into our sandbox so AVFoundation can read it.
 struct PickedMovie: Transferable {
@@ -30,6 +47,7 @@ struct EditorView: View {
     @State private var camera: CameraCapture?
     @State private var cameraOn = false
     @State private var pickerItem: PhotosPickerItem?
+    @StateObject private var keyboard = KeyboardObserver()
 
     private func toggleCamera() {
         if cameraOn {
@@ -92,9 +110,11 @@ struct EditorView: View {
             if let lyric = model.selectedLyricClip {
                 VStack {
                     Spacer()
-                    LyricEditBar(model: model, clip: lyric)
-                        .padding(.horizontal, 12).padding(.bottom, 8)
+                    LyricEditBar(model: model, clip: lyric).padding(.horizontal, 12)
                 }
+                .padding(.bottom, keyboard.height > 0 ? keyboard.height + 10 : 12)
+                .ignoresSafeArea(.keyboard, edges: .bottom)   // we lift it ourselves
+                .animation(.easeOut(duration: 0.22), value: keyboard.height)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(20)
             }
