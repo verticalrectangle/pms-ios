@@ -19,6 +19,7 @@ targets:
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
         HEADER_SEARCH_PATHS: Engine/include
+        SWIFT_OBJC_BRIDGING_HEADER: App/PMS-Bridging-Header.h
         INFOPLIST_KEY_NSCameraUsageDescription: "Record video takes with live filters."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Record audio takes."
     dependencies:
