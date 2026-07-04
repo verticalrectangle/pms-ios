@@ -24,15 +24,19 @@ struct EditorView: View {
         ZStack {
             AtmosphereView()
 
-            VStack(spacing: 8) {
-                topBar
-                canvas
-                TransportBar(model: model, engine: engine).border(Color.green, width: 4).padding(.horizontal, 16)
-                timeline
-                bottomStack
+            // Hard-cap the column to the available width — otherwise a greedy
+            // child can push the VStack wider than the screen and the whole
+            // editor spills off both edges.
+            GeometryReader { geo in
+                VStack(spacing: 8) {
+                    topBar
+                    canvas
+                    TransportBar(model: model, engine: engine).padding(.horizontal, 16)
+                    timeline
+                    bottomStack
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
-            .padding(.top, 60)
-            .border(Color(red:1,green:0,blue:1), width: 6)   // DEBUG VStack bounds
 
             VStack {
                 BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 56)
@@ -78,9 +82,7 @@ struct EditorView: View {
         // explicitly from the geometry — otherwise it fills full width and
         // drags the whole layout off both screen edges.
         GeometryReader { geo in
-            let maxH = geo.size.height
-            let availW = geo.size.width
-            let h = min(maxH, availW / model.format.aspect)
+            let h = min(geo.size.height, geo.size.width / model.format.aspect)
             let w = h * model.format.aspect
             MetalPreview(store: engine)
                 .frame(width: w, height: h)
@@ -92,16 +94,15 @@ struct EditorView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
         }
-        .frame(maxHeight: 380)
-        .border(Color.red, width: 4)
+        .frame(maxHeight: .infinity)   // canvas takes the flexible remaining height
         .padding(.horizontal, 14)
     }
 
     private var timeline: some View {
         TimelineView(model: model, engine: engine)
-            .border(Color.blue, width: 4)
             .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
+            .frame(height: 132)          // fixed — was maxHeight:.infinity, which crushed the canvas
             .glass(18, flat: true)
             .padding(.horizontal, 8)
             .onTapGesture { /* tap-away handled inside */ }
@@ -114,7 +115,6 @@ struct EditorView: View {
             }
             ToolDock(model: model)
         }
-        .border(Color.orange, width: 4)
         .padding(.horizontal, 12)
         .padding(.bottom, 30)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedID)
