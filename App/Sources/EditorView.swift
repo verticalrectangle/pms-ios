@@ -98,11 +98,12 @@ struct EditorView: View {
             .padding(.top, 6)
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedID)
             .ignoresSafeArea(.keyboard, edges: .bottom)   // the UI stays put; only the text bar floats up
-            // The editor recedes (shrinks, blurs, fades) as the preview expands.
+            // The editor recedes (shrinks + fades) as the preview expands. Its
+            // canvas MTKView is paused while fullscreen (see canvas()), so this
+            // is a cacheable compositor animation of a frozen buffer — buttery.
             .scaleEffect(fullscreen ? 0.92 : 1)
-            .blur(radius: fullscreen ? 8 : 0)
             .opacity(fullscreen ? 0 : 1)
-            .animation(.spring(response: 0.46, dampingFraction: 0.62), value: fullscreen)
+            .animation(.bouncy(duration: 0.45, extraBounce: 0.2), value: fullscreen)
 
             VStack {
                 BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 8)
@@ -212,7 +213,7 @@ struct EditorView: View {
     // MTKView (UIViewRepresentable) ignores .aspectRatio, so the canvas is
     // sized explicitly (box computed from the root geometry).
     private func canvas(box: CGSize) -> some View {
-        MetalPreview(store: engine)
+        MetalPreview(store: engine, paused: fullscreen)   // freeze while the fullscreen player owns the live view
             .frame(width: box.width, height: box.height)
             .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
                                   activeBricks: model.activeBricks(at: t)))
@@ -233,7 +234,7 @@ struct EditorView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 if model.selectedLyricClip != nil { model.selectedID = nil }   // commit text edit
-                else { withAnimation(.spring(response: 0.46, dampingFraction: 0.62)) { fullscreen = true } }
+                else { withAnimation(.bouncy(duration: 0.45, extraBounce: 0.2)) { fullscreen = true } }
             }
     }
 
@@ -363,7 +364,7 @@ private struct FullscreenPlayer: View {
                 .onChanged { drag = max(0, $0.translation.height) }
                 .onEnded { v in
                     if v.translation.height > 120 || v.predictedEndTranslation.height > 300 {
-                        withAnimation(.spring(response: 0.46, dampingFraction: 0.62)) { isPresented = false }
+                        withAnimation(.bouncy(duration: 0.45, extraBounce: 0.2)) { isPresented = false }
                     } else { withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { drag = 0 } }
                 }
         )

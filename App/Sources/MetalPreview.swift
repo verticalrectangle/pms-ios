@@ -9,6 +9,7 @@ import MetalKit
 
 struct MetalPreview: UIViewRepresentable {
     @ObservedObject var store: EngineStore
+    var paused: Bool = false   // freeze on last drawable (e.g. while fullscreen owns the live view)
 
     func makeCoordinator() -> Coordinator { Coordinator(store: store) }
 
@@ -17,7 +18,7 @@ struct MetalPreview: UIViewRepresentable {
         view.delegate = context.coordinator
         view.framebufferOnly = false                 // engine writes into the texture
         view.colorPixelFormat = .bgra8Unorm
-        view.isPaused = false
+        view.isPaused = paused
         view.enableSetNeedsDisplay = false
         view.preferredFramesPerSecond = 60
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
@@ -32,6 +33,7 @@ struct MetalPreview: UIViewRepresentable {
 
     func updateUIView(_ view: MTKView, context: Context) {
         context.coordinator.store = store
+        view.isPaused = paused   // freeze/resume when fullscreen toggles
     }
 
     final class Coordinator: NSObject, MTKViewDelegate {
