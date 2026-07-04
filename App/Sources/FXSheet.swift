@@ -116,7 +116,7 @@ private struct EffectCard: View {
                     .background(RoundedRectangle(cornerRadius: 9).fill(.white.opacity(0.03)))
                     .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.lineStrong))
                 Spacer()
-                Text(effect.category.uppercased()).font(.label(8)).tracking(1).foregroundStyle(Theme.txtGhost)
+                Text(effect.category.uppercased()).font(.label(8)).foregroundStyle(Theme.txtGhost)
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(effect.name).font(.disp(14)).textCase(.uppercase).foregroundStyle(.white)

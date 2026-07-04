@@ -12,7 +12,7 @@ enum Theme {
     // ── Theme mode. Dark = goth-glass (default). Light = SOPHIE hyperpop. ──
     // All tokens are computed off Palette so a mode/accent change re-tints the
     // whole UI reactively (Observation tracks the access through these getters).
-    static var light: Bool { Palette.shared.light }
+    static var light: Bool { Palette.shared.resolvedLight }
 
     // ── Accent — user-selectable, persisted. ──
     static var accent     : Color { Palette.shared.accent }
@@ -75,7 +75,7 @@ struct Glass: ViewModifier {
                 ZStack {
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .fill(.ultraThinMaterial)
-                        .opacity(sheer ? 0.5 : 1.0)   // a pane you look THROUGH, not a wall
+                        .opacity(sheer ? 0.28 : 1.0)   // thin the frost so the bokeh reads through
                     // wet top-third reflection
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .fill(

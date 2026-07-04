@@ -30,7 +30,7 @@ struct TransportBar: View {
                     Text(String(format: "%d:%02d", Int(t) / 60, Int(t) % 60))
                         .font(.num(17, .bold)).foregroundStyle(Theme.accent)
                         .shadow(color: Theme.accentA(0.5), radius: 4)
-                    Text("\(Int(model.bpm)) BPM").font(.label(8)).tracking(1.2).foregroundStyle(Theme.txtMuted)
+                    Text("\(Int(model.bpm)) BPM").font(.label(8)).foregroundStyle(Theme.txtMuted)
                 }
                 .fixedSize()
                 Spacer(minLength: 8)
@@ -97,7 +97,7 @@ struct ToolDock: View {
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: item.1).font(.system(size: 20))
-                        Text(item.2).font(.label(8.5)).tracking(1)
+                        Text(item.2).font(.label(8.5))
                     }
                     .foregroundStyle(on ? Theme.accent : Theme.txtBody)
                     .frame(minWidth: 56).padding(.vertical, 6).padding(.horizontal, 12)
@@ -120,7 +120,7 @@ struct BusyBar: View {
         if let busy {
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small).tint(Theme.accent)
-                Text(busy.label.uppercased()).font(.label(9)).tracking(1).foregroundStyle(Theme.accent)
+                Text(busy.label.uppercased()).font(.label(9)).foregroundStyle(Theme.accent)
                 Spacer()
                 Text("\(Int(busy.progress * 100))%").font(.num(11)).foregroundStyle(Theme.accent)
             }

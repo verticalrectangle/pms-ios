@@ -21,7 +21,7 @@ struct GlassSheet<Content: View>: View {
                 Capsule().fill(Theme.lineStrong).frame(width: 38, height: 5).padding(.top, 9)
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 4) {
-                        if let eyebrow { Text(eyebrow).font(.label(9)).tracking(2).foregroundStyle(Theme.accent) }
+                        if let eyebrow { Text(eyebrow).font(.label(9)).foregroundStyle(Theme.accent) }
                         Text(title).font(.disp(24)).textCase(.uppercase).foregroundStyle(.white)
                     }
                     Spacer()
@@ -48,13 +48,13 @@ struct AgentSheet: View {
     var body: some View {
         GlassSheet(title: "Agent", eyebrow: "MCP · 83 LEVERS · ON-DEVICE", full: true) {
             VStack(alignment: .leading, spacing: 16) {
-                Text("On-device actions").font(.label(9)).tracking(2).foregroundStyle(Theme.txtMuted)
+                Text("On-device actions").font(.label(9)).foregroundStyle(Theme.txtMuted)
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                     ForEach(AIActions.all) { action in
                         Button { model.run(action) } label: { AIActionCard(action: action) }.pressable()
                     }
                 }
-                Text("Transcript").font(.label(9)).tracking(2).foregroundStyle(Theme.txtMuted)
+                Text("Transcript").font(.label(9)).foregroundStyle(Theme.txtMuted)
                 ChatTranscript()
             }
         }
@@ -172,14 +172,14 @@ struct LyricsSheet: View {
                     Text("Pipeline ready · MDX-Net stems · transcript aligned").font(.label(9)).tracking(0.6).foregroundStyle(Theme.txtBody)
                     Spacer()
                     Button { model.engine.command("trigger_pipeline"); model.engine.simulateBusy(label: "Separating stems…") } label: {
-                        Text("Re-run").font(.label(9)).tracking(1).foregroundStyle(Theme.accent)
+                        Text("Re-run").font(.label(9)).foregroundStyle(Theme.accent)
                             .padding(.horizontal, 10).padding(.vertical, 6)
                             .overlay(Capsule().strokeBorder(Theme.accentA(0.5)))
                     }
                 }
                 .padding(11).glass(12, flat: true)
 
-                Text("Typography preset").font(.label(9)).tracking(2).foregroundStyle(Theme.txtMuted)
+                Text("Typography preset").font(.label(9)).foregroundStyle(Theme.txtMuted)
                 HStack(spacing: 8) {
                     ForEach(presets, id: \.0) { p in
                         Button {
@@ -198,7 +198,7 @@ struct LyricsSheet: View {
                     }
                 }
 
-                Text("Animation").font(.label(9)).tracking(2).foregroundStyle(Theme.txtMuted)
+                Text("Animation").font(.label(9)).foregroundStyle(Theme.txtMuted)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 7) { ForEach(anims, id: \.self) { Chip(text: $0, on: $0 == "Typewriter") {} } }
                 }

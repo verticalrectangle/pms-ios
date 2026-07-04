@@ -10,9 +10,13 @@ import UIKit
 final class Palette {
     static let shared = Palette()
 
+    enum Mode: String, CaseIterable { case system, light, dark }
+
     var accent: Color { didSet { Self.persist(accent) } }
-    /// Light = SOPHIE hyperpop (white, glossy candy). Dark = goth-glass (default).
-    var light: Bool { didSet { UserDefaults.standard.set(light, forKey: Self.modeKey) } }
+    /// Theme mode. Default = follow the system. Light = SOPHIE hyperpop, Dark = goth-glass.
+    var mode: Mode { didSet { UserDefaults.standard.set(mode.rawValue, forKey: Self.modeKey) } }
+    /// The live system appearance, mirrored from the environment by the root view.
+    var systemDark: Bool
 
     private init() {
         if let d = UserDefaults.standard.array(forKey: Self.key) as? [Double], d.count == 3 {
@@ -20,7 +24,17 @@ final class Palette {
         } else {
             accent = Palette.lavender
         }
-        light = UserDefaults.standard.bool(forKey: Self.modeKey)   // defaults false (dark)
+        mode = Mode(rawValue: UserDefaults.standard.string(forKey: Self.modeKey) ?? "") ?? .system
+        systemDark = UITraitCollection.current.userInterfaceStyle != .light
+    }
+
+    /// Is the effective theme light? (system mode resolves via `systemDark`)
+    var resolvedLight: Bool {
+        switch mode { case .light: return true; case .dark: return false; case .system: return !systemDark }
+    }
+    /// Forced color scheme, or nil in system mode (let iOS drive).
+    var scheme: ColorScheme? {
+        switch mode { case .light: return .light; case .dark: return .dark; case .system: return nil }
     }
 
     static let lavender = Color(red: 0.710, green: 0.659, blue: 1.0)   // #B5A8FF (default)

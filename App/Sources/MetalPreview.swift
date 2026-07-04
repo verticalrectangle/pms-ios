@@ -60,7 +60,7 @@ struct CanvasChrome: View {
             if !clipLabel.isEmpty {
                 HStack {
                     Text("\(clipLabel).MP4")
-                        .font(.label(9)).tracking(1.4)
+                        .font(.label(9))
                         .foregroundStyle(Theme.txtLabel)
                     Spacer()
                 }

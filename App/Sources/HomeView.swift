@@ -29,7 +29,7 @@ struct HomeView: View {
                     .padding(.top, 22)
 
                 HStack {
-                    Text("Recent projects").font(.label(9)).tracking(2).foregroundStyle(Theme.txtMuted)
+                    Text("Recent projects").font(.label(13)).foregroundStyle(Theme.txtMuted)
                     Spacer()
                     Text("\(Sample.projects.count)").font(.num(13)).foregroundStyle(Theme.txtMuted)
                 }
@@ -56,11 +56,21 @@ struct HomeView: View {
         .background(AtmosphereView().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)   // Home has its own big title
         .overlay(alignment: .topTrailing) {
-            Button { showSettings = true } label: {
-                Image(systemName: "gearshape.fill").font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Theme.txtBody).frame(width: 44, height: 44).glass(14)
+            HStack(spacing: 10) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        Palette.shared.mode = Theme.light ? .dark : .light
+                    }
+                } label: {
+                    Image(systemName: Theme.light ? "sun.max.fill" : "moon.stars.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.txtBody).frame(width: 44, height: 44).glass(14)
+                }.pressable()
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape.fill").font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.txtBody).frame(width: 44, height: 44).glass(14)
+                }.pressable()
             }
-            .pressable()
             .padding(.trailing, 18).padding(.top, 4)
         }
         .sheet(isPresented: $showSettings) { SettingsSheet() }
@@ -72,7 +82,7 @@ struct HomeView: View {
                 .font(.disp(52)).tracking(-1).textCase(.uppercase)
                 .foregroundStyle(Theme.txt).lineSpacing(-4)
             Text("Vertical Rectangle")
-                .font(.label(10)).tracking(1.8).textCase(.uppercase).foregroundStyle(Theme.txt)
+                .font(.label(15)).textCase(.uppercase).foregroundStyle(Theme.txt)
         }
     }
 
@@ -110,9 +120,10 @@ struct SettingsSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     section("THEME") {
-                        Picker("", selection: $palette.light) {
-                            Text("Dark").tag(false)
-                            Text("Light").tag(true)
+                        Picker("", selection: $palette.mode) {
+                            Text("System").tag(Palette.Mode.system)
+                            Text("Light").tag(Palette.Mode.light)
+                            Text("Dark").tag(Palette.Mode.dark)
                         }
                         .pickerStyle(.segmented)
                     }
@@ -140,12 +151,12 @@ struct SettingsSheet: View {
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }
         .presentationDetents([.medium, .large])
-        .preferredColorScheme(palette.light ? .light : .dark)
+        .preferredColorScheme(palette.scheme)
     }
 
     @ViewBuilder private func section(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.label(10)).tracking(2).foregroundStyle(Theme.txtMuted)
+            Text(title).font(.label(10)).foregroundStyle(Theme.txtMuted)
             content()
         }
     }
@@ -204,7 +215,7 @@ struct Chip: View {
     let text: String; var on: Bool; var action: () -> Void
     var body: some View {
         Button(action: action) {
-            Text(text).font(.label(10)).tracking(1.2)
+            Text(text).font(.label(10))
                 .foregroundStyle(on ? Theme.accent : Color.black.opacity(0.55))
                 .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(Capsule().fill(on ? Theme.accentA(0.08) : .clear))
@@ -217,7 +228,7 @@ struct MetaChip: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
-        Text(text).font(.label(9)).tracking(1)
+        Text(text).font(.label(9))
             .foregroundStyle(Theme.txtBody)   // was black-on-dark → invisible
             .padding(.horizontal, 8).padding(.vertical, 3)
             .overlay(Capsule().strokeBorder(Theme.line, lineWidth: 1))

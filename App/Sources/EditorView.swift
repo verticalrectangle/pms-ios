@@ -412,7 +412,7 @@ private struct FullscreenPlayer: View {
         ZStack {
             VStack {
                 Image(systemName: "chevron.compact.up").foregroundStyle(.white.opacity(0.5))
-                Text("SWIPE DOWN TO CLOSE").font(.label(9)).tracking(1.4).foregroundStyle(.white.opacity(0.55))
+                Text("SWIPE DOWN TO CLOSE").font(.label(9)).foregroundStyle(.white.opacity(0.55))
                 Spacer()
             }.padding(.top, 24)
 

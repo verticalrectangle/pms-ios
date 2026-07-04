@@ -23,6 +23,7 @@ struct PopMakerApp: App {
 
 struct RootView: View {
     @EnvironmentObject var engine: EngineStore
+    @Environment(\.colorScheme) private var colorScheme
     @State private var openProject: Project?
 
     var body: some View {
@@ -36,6 +37,8 @@ struct RootView: View {
                 }
         }
         .tint(Theme.accent)
-        .preferredColorScheme(Palette.shared.light ? .light : .dark)   // reactive: SOPHIE ↔ goth
+        .preferredColorScheme(Palette.shared.scheme)   // nil in system mode → iOS drives
+        .onAppear { Palette.shared.systemDark = colorScheme == .dark }
+        .onChange(of: colorScheme) { _, s in Palette.shared.systemDark = s == .dark }
     }
 }
