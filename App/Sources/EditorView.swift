@@ -22,34 +22,35 @@ struct EditorView: View {
 
     var body: some View {
         GeometryReader { geo in
-        ZStack {
-            AtmosphereView()
+            // Explicit sizes off the (clean) safe-area geometry — flex-sizing
+            // collapses in this VStack, so the canvas is sized directly: the
+            // largest 9:16 box that fits ~44% of the height. AtmosphereView is
+            // a .background (not a ZStack sibling) so its ignoresSafeArea does
+            // not corrupt the geometry the column measures against.
+            ZStack {
+                VStack(spacing: 10) {
+                    topBar
+                    canvas(box: canvasBox(in: geo.size))
+                    TransportBar(model: model, engine: engine).padding(.horizontal, 16)
+                    timeline
+                    bottomStack
+                    Spacer(minLength: 0)
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
 
-            // Explicit sizes off the root geometry — flex-sizing (GeometryReader
-            // / aspectRatio / maxHeight) collapses in this VStack, so the canvas
-            // is sized directly: the largest 9:16 box that fits ~half the height.
-            VStack(spacing: 10) {
-                topBar
-                canvas(box: canvasBox(in: geo.size))
-                TransportBar(model: model, engine: engine).padding(.horizontal, 16)
-                timeline
-                bottomStack
-                Spacer(minLength: 0)
-            }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-            .padding(.top, 8)
+                VStack {
+                    BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 56)
+                    Spacer()
+                }
+                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.busy?.label)
 
-            VStack {
-                BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 56)
-                Spacer()
-            }
-            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.busy?.label)
-
-            if fullscreen {
-                FullscreenPlayer(engine: engine, model: model, isPresented: $fullscreen)
-                    .zIndex(50)
+                if fullscreen {
+                    FullscreenPlayer(engine: engine, model: model, isPresented: $fullscreen)
+                        .zIndex(50)
+                }
             }
         }
+        .background(AtmosphereView().ignoresSafeArea())
         .sheet(item: $model.activeSheet) { sheet in
             switch sheet {
             case .media:  MediaSheet()
@@ -60,7 +61,6 @@ struct EditorView: View {
             }
         }
         .onAppear { engine.startMockMeters() }
-        }   // GeometryReader
     }
 
     /// Largest aspect-correct canvas box that fits ~half the screen height and
