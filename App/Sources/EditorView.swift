@@ -72,14 +72,27 @@ struct EditorView: View {
     }
 
     private var canvas: some View {
-        MetalPreview(store: engine)
-            .aspectRatio(model.format.aspect, contentMode: .fit)
-            .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t), activeBricks: model.activeBricks(at: t)))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
-            .overlay(RoundedRectangle(cornerRadius: Theme.rCard).strokeBorder(Theme.line))
-            .frame(maxHeight: 300)
-            .padding(.horizontal, 14)
-            .onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
+        // Portrait/landscape/square all fit within the available box, centered.
+        // MTKView (a UIViewRepresentable) ignores .aspectRatio, so we size it
+        // explicitly from the geometry — otherwise it fills full width and
+        // drags the whole layout off both screen edges.
+        GeometryReader { geo in
+            let maxH = geo.size.height
+            let availW = geo.size.width
+            let h = min(maxH, availW / model.format.aspect)
+            let w = h * model.format.aspect
+            MetalPreview(store: engine)
+                .frame(width: w, height: h)
+                .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
+                                      activeBricks: model.activeBricks(at: t)))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
+                .overlay(RoundedRectangle(cornerRadius: Theme.rCard).strokeBorder(Theme.line))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)   // center in the box
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { fullscreen = true } }
+        }
+        .frame(maxHeight: 380)
+        .padding(.horizontal, 14)
     }
 
     private var timeline: some View {

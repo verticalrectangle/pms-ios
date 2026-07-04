@@ -22,6 +22,11 @@ struct MetalPreview: UIViewRepresentable {
         view.preferredFramesPerSecond = 60
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         view.layer.isOpaque = true
+        // Render at the display's native pixel density — the drawable is
+        // bounds × scale, so the canvas is crisp (retina), not point-resolution.
+        view.autoResizeDrawable = true
+        view.contentScaleFactor = view.window?.screen.scale ?? UIScreen.main.scale
+        view.layer.contentsScale = view.contentScaleFactor
         return view
     }
 
