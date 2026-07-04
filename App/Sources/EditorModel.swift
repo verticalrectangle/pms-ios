@@ -198,10 +198,13 @@ final class EditorModel: ObservableObject {
     func beginEdit() { snapshot() }                 // one undo step per drag
     func endEdit(_ id: String) { if trackKind(ofClip: id) == .video { Task { await rebuildVideo() } } }
 
-    /// Lines a dragged edge snaps to: playhead, 0, every OTHER clip's edges.
+    /// Lines a dragged edge snaps to: playhead, 0, every OTHER clip's AND brick's edges.
     private func snapCandidates(excluding id: String) -> [Double] {
         var c: [Double] = [playhead, 0]
-        for tr in tracks { for cl in tr.clips where cl.id != id { c.append(cl.start); c.append(cl.end) } }
+        for tr in tracks {
+            for cl in tr.clips  where cl.id != id { c.append(cl.start); c.append(cl.end) }
+            for b  in tr.bricks where b.id  != id { c.append(b.start);  c.append(b.end) }
+        }
         return c
     }
     /// Snap a single edge to the nearest candidate within the radius.
@@ -237,6 +240,41 @@ final class EditorModel: ObservableObject {
         tracks[ti].clips[ci].start = max(0, start)
         tracks[ti].clips[ci].sourceStart = max(0, sourceStart)
         tracks[ti].clips[ci].duration = max(0.3, duration)
+    }
+
+    // MARK: Brick drag — no source in/out, no composition rebuild. Bricks can't
+    // overlap OTHER BRICKS on the same track (they may coexist with clips).
+
+    func setBrickStart(_ id: String, _ start: Double) {
+        guard let r = locate(id), r.kind == .brick else { return }
+        tracks[r.track].bricks[r.index].start = max(0, start)
+    }
+    func setBrickTrim(_ id: String, start: Double, duration: Double) {
+        guard let r = locate(id), r.kind == .brick else { return }
+        tracks[r.track].bricks[r.index].start = max(0, start)
+        tracks[r.track].bricks[r.index].duration = max(0.15, duration)
+    }
+    /// Same-track brick-vs-brick overlap (half-open).
+    func brickConflicts(_ id: String) -> Bool {
+        guard let r = locate(id), r.kind == .brick else { return false }
+        let b = tracks[r.track].bricks[r.index]
+        return tracks[r.track].bricks.contains { $0.id != id && b.start < $0.end && b.end > $0.start }
+    }
+    /// Trim walls from same-track neighbour BRICKS (a brick edge can't cross one).
+    func brickTrimWalls(_ id: String, origStart: Double, origEnd: Double) -> (floor: Double, ceil: Double) {
+        guard let r = locate(id), r.kind == .brick else { return (0, .greatestFiniteMagnitude) }
+        var floor = 0.0, ceil = Double.greatestFiniteMagnitude
+        for ob in tracks[r.track].bricks where ob.id != id {
+            if ob.end   <= origStart + 0.001 { floor = max(floor, ob.end) }
+            if ob.start >= origEnd   - 0.001 { ceil  = min(ceil, ob.start) }
+        }
+        return (floor, ceil)
+    }
+    /// Release: bounce back to the origin if the brick overlaps a same-track brick.
+    func endBrickMove(_ id: String, originStart: Double) {
+        if brickConflicts(id) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { setBrickStart(id, originStart) }
+        }
     }
 
     // MARK: Fades (live value; rebuild the composition on release)

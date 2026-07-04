@@ -196,6 +196,51 @@ private struct TrackLane: View {
             }
     }
 
+    /// Same zone-dispatch as clips, minus the source in/out: move sets a free start
+    /// (snap) and bounces on same-track brick overlap; trim moves an edge, walled by
+    /// neighbour bricks. No composition rebuild (bricks don't drive the AVComposition).
+    private func brickDrag(_ brick: Brick) -> some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .named("lane"))
+            .onChanged { g in
+                if drag == nil {
+                    let localX = g.startLocation.x - CGFloat(brick.start) * PPS
+                    let w = CGFloat(brick.duration) * PPS
+                    let edge: CGFloat = 20
+                    let zone: ClipDrag.Zone =
+                        (w > 2 * edge && localX <= edge)      ? .trimLeft :
+                        (w > 2 * edge && localX >= w - edge)  ? .trimRight : .move
+                    var d = ClipDrag(id: brick.id, zone: zone, start: brick.start,
+                                     srcStart: 0, dur: brick.duration, srcDur: 0, speed: 1)
+                    if zone != .move {
+                        let walls = model.brickTrimWalls(brick.id, origStart: brick.start, origEnd: brick.end)
+                        d.floor = walls.floor; d.ceil = walls.ceil
+                    }
+                    model.beginEdit()
+                    drag = d
+                }
+                guard let d = drag, d.id == brick.id else { return }
+                let dxSec = Double(g.translation.width / PPS)
+                switch d.zone {
+                case .trimLeft:
+                    var ns = model.snapEdge(d.start + dxSec, excluding: brick.id)
+                    ns = max(d.floor, max(0, min(ns, (d.start + d.dur) - 0.2)))
+                    model.setBrickTrim(brick.id, start: ns, duration: d.dur - (ns - d.start))
+                case .trimRight:
+                    var end = min(model.snapEdge((d.start + d.dur) + dxSec, excluding: brick.id), d.ceil)
+                    end = max(end, d.start + 0.2)
+                    model.setBrickTrim(brick.id, start: d.start, duration: end - d.start)
+                case .move:
+                    let snapped = model.snapStart(d.start + dxSec, excluding: brick.id, duration: d.dur)
+                    model.setBrickStart(brick.id, max(0, snapped))
+                }
+            }
+            .onEnded { _ in
+                defer { drag = nil }
+                guard let d = drag, d.id == brick.id, d.zone == .move else { return }
+                model.endBrickMove(brick.id, originStart: d.start)   // bounce on overlap
+            }
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             if track.kind == .fxRail && track.bricks.isEmpty {
@@ -221,12 +266,20 @@ private struct TrackLane: View {
                     .onTapGesture { model.selectedID = (model.selectedID == clip.id) ? nil : clip.id }
             }
             ForEach(track.bricks) { brick in
+                let moving = drag?.id == brick.id && drag?.zone == .move
                 BrickView(brick: brick, laneHeight: laneHeight,
                           selected: model.selectedID == brick.id)
                     .frame(width: CGFloat(brick.duration) * PPS)
+                    .overlay {
+                        if model.selectedID == brick.id { TrimHandles(height: laneHeight) }
+                    }
                     .contentShape(Rectangle())
-                    .onTapGesture { model.selectedID = brick.id }
+                    .scaleEffect(moving ? 1.05 : 1)
+                    .shadow(color: moving ? Theme.accentA(0.5) : .clear, radius: 10)
                     .offset(x: CGFloat(brick.start) * PPS)
+                    .zIndex(moving ? 2 : (model.selectedID == brick.id ? 1 : 0))
+                    .highPriorityGesture(brickDrag(brick))
+                    .onTapGesture { model.selectedID = (model.selectedID == brick.id) ? nil : brick.id }
             }
         }
         // Full content width so every offset clip is inside the lane's
