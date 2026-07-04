@@ -56,6 +56,8 @@ struct Clip: Identifiable {
     var duration: Double
     var seed: String = "g1"
     var thumbs: [URL] = []      // filmstrip of sampled frames for imported clips
+    var sourceURL: URL? = nil   // the video file this clip plays from
+    var sourceStart: Double = 0 // in-point within the source (for trim/split)
     var end: Double { start + duration }
 }
 

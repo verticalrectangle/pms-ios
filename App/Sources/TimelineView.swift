@@ -110,6 +110,9 @@ private struct TrackLane: View {
                 ContentClipView(clip: clip, kind: track.kind, selected: model.selectedID == clip.id, height: laneHeight)
                     .frame(width: CGFloat(clip.duration) * PPS)
                     .offset(x: CGFloat(clip.start) * PPS)
+                    .onTapGesture {
+                        model.selectedID = (model.selectedID == clip.id) ? nil : clip.id
+                    }
             }
             ForEach(track.bricks) { brick in
                 BrickView(brick: brick, laneHeight: laneHeight,

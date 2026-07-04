@@ -6,6 +6,7 @@
 
 import SwiftUI
 import Combine
+import AVFoundation
 
 @MainActor
 final class EditorModel: ObservableObject {
@@ -32,27 +33,93 @@ final class EditorModel: ObservableObject {
 
     func importVideo(_ url: URL) {
         activeSheet = nil
-        let v = VideoPlayback(engine: engine)
-        v.onTick = { [weak self] time, playing in
-            self?.playhead = time
-            self?.isPlaying = playing
+        if video == nil {
+            let v = VideoPlayback(engine: engine)
+            v.onTick = { [weak self] time, playing in
+                self?.playhead = time
+                self?.isPlaying = playing
+            }
+            video = v
         }
-        video = v
         Task {
-            await v.load(url: url)
-            videoDuration = v.duration
+            let dur = (try? await AVURLAsset(url: url).load(.duration))?.seconds ?? 0
+            guard dur > 0 else { return }
             playhead = 0
-            // Replace the mock scene with the imported video as a real clip.
             let name = url.deletingPathExtension().lastPathComponent.uppercased() + ".MP4"
-            let n = max(1, min(24, Int(v.duration / 1.5)))   // ~1 frame / 1.5s, capped
+            let n = max(1, min(24, Int(dur / 1.5)))   // ~1 frame / 1.5s, capped
             let strip = await VideoPlayback.filmstrip(for: url, count: n)
-            let clip = Clip(id: "vclip", label: name, start: 0, duration: v.duration, thumbs: strip)
+            let clip = Clip(id: "vclip", label: name, start: 0, duration: dur,
+                            thumbs: strip, sourceURL: url, sourceStart: 0)
             tracks = [
                 Track(id: "GFX", kind: .fxRail, name: "FX", clips: []),
                 Track(id: "V1", kind: .video, name: "V1", clips: [clip]),
             ]
             selectedID = nil
+            videoDuration = dur
             videoLoaded = true
+            await rebuildVideo()
+        }
+    }
+
+    // MARK: Clip editing (structural — rebuilds the AVComposition)
+
+    private var videoTrackIndex: Int? { tracks.firstIndex { $0.kind == .video } }
+    var selectedClip: Clip? {
+        guard let ti = videoTrackIndex else { return nil }
+        return tracks[ti].clips.first { $0.id == selectedID }
+    }
+
+    /// Rebuild the player timeline from the current video clips.
+    func rebuildVideo() async {
+        guard let ti = videoTrackIndex else { return }
+        let segs = tracks[ti].clips.compactMap { c in
+            c.sourceURL.map { VideoPlayback.Segment(url: $0, sourceStart: c.sourceStart, duration: c.duration) }
+        }
+        await video?.load(segments: segs)
+        videoDuration = video?.duration
+    }
+
+    /// Lay the video clips end-to-end (no gaps).
+    private func relayoutVideoClips() {
+        guard let ti = videoTrackIndex else { return }
+        var cursor = 0.0
+        for i in tracks[ti].clips.indices {
+            tracks[ti].clips[i].start = cursor
+            cursor += tracks[ti].clips[i].duration
+        }
+    }
+
+    /// Split the clip under the playhead into two (structural — same footage).
+    func splitAtPlayhead() {
+        guard let ti = videoTrackIndex,
+              let ci = tracks[ti].clips.firstIndex(where: { playhead > $0.start + 0.1 && playhead < $0.end - 0.1 })
+        else { return }
+        let c = tracks[ti].clips[ci]
+        let off = playhead - c.start
+        var a = c; a.duration = off
+        var b = c
+        b.id = c.id + "_s\(Int(playhead * 1000))"
+        b.start = playhead; b.duration = c.duration - off; b.sourceStart = c.sourceStart + off
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            tracks[ti].clips.replaceSubrange(ci...ci, with: [a, b])
+            selectedID = b.id
+        }
+        // composition unchanged (a+b == original) → no reload needed
+    }
+
+    /// Delete the selected clip; remaining clips close the gap.
+    func deleteSelectedClip() {
+        guard let ti = videoTrackIndex, let id = selectedID else { return }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            tracks[ti].clips.removeAll { $0.id == id }
+            selectedID = nil
+        }
+        if tracks[ti].clips.isEmpty {
+            video?.stop(); video = nil
+            videoLoaded = false; videoDuration = nil; playhead = 0; isPlaying = false
+        } else {
+            relayoutVideoClips()
+            Task { await rebuildVideo() }
         }
     }
 

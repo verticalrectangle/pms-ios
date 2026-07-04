@@ -65,7 +65,11 @@ struct EditorView: View {
                 canvas(box: canvasBox())
                 TransportBar(model: model, engine: engine).padding(.horizontal, 16)
                 timeline
-                if let sel = model.selectedID {
+                if let clip = model.selectedClip {
+                    ClipActionBar(model: model, clip: clip)
+                        .padding(.horizontal, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if let sel = model.selectedID {
                     InspectorView(model: model, brickID: sel)
                         .padding(.horizontal, 12)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -173,6 +177,30 @@ struct EditorView: View {
             .onTapGesture { /* tap-away handled inside */ }
     }
 
+}
+
+// MARK: - Clip action bar (shown when a timeline clip is selected)
+
+private struct ClipActionBar: View {
+    @ObservedObject var model: EditorModel
+    let clip: Clip
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(clip.label).font(.label(10)).tracking(0.5).foregroundStyle(Theme.txt).lineLimit(1)
+                Text(String(format: "%.1fs", clip.duration)).font(.num(9)).foregroundStyle(Theme.txtMuted)
+            }
+            Spacer(minLength: 8)
+            Button { model.splitAtPlayhead() } label: {
+                Label("Split", systemImage: "scissors").font(.label(11)).tracking(0.5)
+            }.tint(Theme.txtBody)
+            Button(role: .destructive) { model.deleteSelectedClip() } label: {
+                Label("Delete", systemImage: "trash").font(.label(11)).tracking(0.5)
+            }.tint(Color(red: 1, green: 0.5, blue: 0.5))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .glass(16)
+    }
 }
 
 // MARK: - Fullscreen player (tap-expand / swipe-down dismiss)

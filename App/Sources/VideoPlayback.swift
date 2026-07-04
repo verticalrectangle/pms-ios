@@ -43,33 +43,58 @@ final class VideoPlayback {
     /// (currentTime, isPlaying) — the AVPlayer clock, for the transport.
     var onTick: ((Double, Bool) -> Void)?
 
-    init(engine: EngineStore) { self.engine = engine }
+    struct Segment { let url: URL; let sourceStart: Double; let duration: Double }
 
-    func load(url: URL) async {
+    init(engine: EngineStore) {
+        self.engine = engine
         // Route audio to the speaker even on silent mode.
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
-
-        let asset = AVURLAsset(url: url)
-        let item = AVPlayerItem(asset: asset)
-        if let comp = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset) {
-            item.videoComposition = comp   // bake in the display orientation
-        }
-        let out = AVPlayerItemVideoOutput(pixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        item.add(out)
-        output = out
-        player.replaceCurrentItem(with: item)
-        duration = (try? await asset.load(.duration))?.seconds ?? 0
-
-        // The AVPlayer clock → the transport (~30 Hz).
+        // AVPlayer clock → the transport (~30 Hz). Added once; survives reloads.
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
             guard let self else { return }
             self.onTick?(time.seconds, self.player.rate > 0)
         }
         startLink()
-        pushFrame()   // first frame (paused)
+    }
+
+    /// (Re)build the playable timeline from the ordered clip segments — every
+    /// edit (trim/split/delete) calls this. Preserves the play position.
+    func load(segments: [Segment]) async {
+        let wasPlaying = player.rate > 0
+        let at = player.currentTime()
+
+        let comp = AVMutableComposition()
+        let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+        let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+        var cursor = CMTime.zero
+        for seg in segments {
+            let asset = AVURLAsset(url: seg.url)
+            let range = CMTimeRange(start: CMTime(seconds: seg.sourceStart, preferredTimescale: 600),
+                                    duration: CMTime(seconds: seg.duration, preferredTimescale: 600))
+            if let sv = try? await asset.loadTracks(withMediaType: .video).first {
+                try? vTrack?.insertTimeRange(range, of: sv, at: cursor)
+            }
+            if let sa = try? await asset.loadTracks(withMediaType: .audio).first {
+                try? aTrack?.insertTimeRange(range, of: sa, at: cursor)
+            }
+            cursor = CMTimeAdd(cursor, range.duration)
+        }
+        duration = cursor.seconds
+
+        let item = AVPlayerItem(asset: comp)
+        if let vc = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: comp) {
+            item.videoComposition = vc   // bake in orientation
+        }
+        let out = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        item.add(out)
+        output = out
+        player.replaceCurrentItem(with: item)
+        if at.seconds > 0 { player.seek(to: CMTimeMinimum(at, CMTime(seconds: duration, preferredTimescale: 600))) }
+        if wasPlaying { player.play() }
+        pushFrame()
     }
 
     func play()  { player.play() }
