@@ -43,7 +43,7 @@ struct EditorView: View {
 
     init(project: Project, engine: EngineStore) {
         self.engine = engine
-        self.projectName = project.name
+        self.projectName = project.isNew ? "" : project.name   // unnamed until saved with a title
         _model = StateObject(wrappedValue: EditorModel(project: project, engine: engine))
     }
 
@@ -181,7 +181,7 @@ struct EditorView: View {
                 if !model.videoLoaded {
                     VStack(spacing: 12) {
                         Image(systemName: "photo.badge.plus").font(.system(size: 34, weight: .light))
-                        Text("Tap ＋ to add a clip").font(.label(11)).tracking(1.4)
+                        Text("Tap ＋ to add a clip").font(.system(size: 13, weight: .medium))
                     }
                     .foregroundStyle(Theme.txtMuted)
                     .allowsHitTesting(false)
