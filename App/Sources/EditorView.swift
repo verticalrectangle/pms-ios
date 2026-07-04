@@ -34,6 +34,7 @@ struct EditorView: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.top, 6)
 
             VStack {
                 BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 56)
@@ -63,7 +64,7 @@ struct EditorView: View {
     /// and the available width (minus padding).
     private func canvasBox() -> CGSize {
         let screen = UIScreen.main.bounds.size
-        let maxH = screen.height * 0.42
+        let maxH = screen.height * 0.40
         let maxW = screen.width - 28
         let h = min(maxH, maxW / model.format.aspect)
         return CGSize(width: h * model.format.aspect, height: h)
