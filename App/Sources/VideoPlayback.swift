@@ -94,42 +94,39 @@ final class VideoPlayback {
         // The UNIFIED composite: fold every layer (video base → fades → titles)
         // through ONE Core Image handler, shared by preview + export, in track
         // order. Only engaged when there's something to composite.
-        let hasFade = segments.contains { $0.fadeIn > 0 || $0.fadeOut > 0 }
-        if hasFade || !titles.isEmpty {
-            // Precompute title CIImages at the render size (on the main actor, safe).
-            var size = CGSize(width: 1080, height: 1920)
-            if let v = try? await comp.loadTracks(withMediaType: .video).first,
-               let n = try? await v.load(.naturalSize), let tf = try? await v.load(.preferredTransform) {
-                let r = n.applying(tf); size = CGSize(width: abs(r.width), height: abs(r.height))
-            }
-            let titleLayers: [(clip: Clip, image: CIImage)] = titles.compactMap { c in
-                TextRasterizer.image(for: c, size: size).map { (c, $0) }
-            }
-            let segs = segments
-            let vc = AVMutableVideoComposition(asset: comp, applyingCIFiltersWithHandler: { req in
-                let t = req.compositionTime.seconds
-                let extent = req.sourceImage.extent
-                var acc = req.sourceImage                       // BASE = the video track
-                if let s = segs.first(where: { $0.start <= t && t < $0.start + $0.duration }) {
-                    let o = fadeOpacity(s, at: t)
-                    if o < 0.999 {
-                        acc = acc.applyingFilter("CIColorMatrix", parameters: [
-                            "inputRVector": CIVector(x: o, y: 0, z: 0, w: 0),
-                            "inputGVector": CIVector(x: 0, y: o, z: 0, w: 0),
-                            "inputBVector": CIVector(x: 0, y: 0, z: o, w: 0),
-                            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-                        ]).cropped(to: extent)
-                    }
-                }
-                // Title layers composite OVER the video (the text track sits above it).
-                for (clip, img) in titleLayers where t >= clip.start && t < clip.end {
-                    acc = img.composited(over: acc)
-                }
-                req.finish(with: acc.cropped(to: extent), context: nil)
-            })
-            return (comp, vc)
+        // ALWAYS composite through the Core Image handler: req.sourceImage is
+        // correctly ORIENTED (the auto videoComposition mishandles the phone's
+        // rotation transform → sideways), and it's where fades + titles apply.
+        // For a plain clip the handler is a pass-through.
+        var size = CGSize(width: 1080, height: 1920)
+        if let v = try? await comp.loadTracks(withMediaType: .video).first,
+           let n = try? await v.load(.naturalSize), let tf = try? await v.load(.preferredTransform) {
+            let r = n.applying(tf); size = CGSize(width: abs(r.width), height: abs(r.height))
         }
-        let vc = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: comp)
+        let titleLayers: [(clip: Clip, image: CIImage)] = titles.compactMap { c in
+            TextRasterizer.image(for: c, size: size).map { (c, $0) }
+        }
+        let segs = segments
+        let vc = AVMutableVideoComposition(asset: comp, applyingCIFiltersWithHandler: { req in
+            let t = req.compositionTime.seconds
+            let extent = req.sourceImage.extent
+            var acc = req.sourceImage                       // BASE = the video track (oriented)
+            if let s = segs.first(where: { $0.start <= t && t < $0.start + $0.duration }) {
+                let o = fadeOpacity(s, at: t)
+                if o < 0.999 {
+                    acc = acc.applyingFilter("CIColorMatrix", parameters: [
+                        "inputRVector": CIVector(x: o, y: 0, z: 0, w: 0),
+                        "inputGVector": CIVector(x: 0, y: o, z: 0, w: 0),
+                        "inputBVector": CIVector(x: 0, y: 0, z: o, w: 0),
+                        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+                    ]).cropped(to: extent)
+                }
+            }
+            for (clip, img) in titleLayers where t >= clip.start && t < clip.end {
+                acc = img.composited(over: acc)                 // titles over the video
+            }
+            req.finish(with: acc.cropped(to: extent), context: nil)
+        })
         return (comp, vc)
     }
 
