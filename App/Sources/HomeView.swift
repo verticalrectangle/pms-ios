@@ -231,7 +231,6 @@ struct SettingsSheet: View {
                         ColorPicker("Custom color", selection: $palette.accent, supportsOpacity: false)
                             .font(.disp(15)).foregroundStyle(Theme.txt).padding(.top, 8)
                     }
-                    #if DEBUG
                     section("DEV") {
                         HStack {
                             Text("IPC server").font(.label(9)).foregroundStyle(Theme.txtMuted)
@@ -240,7 +239,6 @@ struct SettingsSheet: View {
                                 .textSelection(.enabled)
                         }
                     }
-                    #endif
                 }
                 .padding(22)
             }

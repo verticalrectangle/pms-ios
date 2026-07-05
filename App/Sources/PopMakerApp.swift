@@ -18,9 +18,7 @@ struct PopMakerApp: App {
                 .environmentObject(engine)
                 .onAppear {
                     engine.start()
-                    #if DEBUG
                     IPCServer.shared.start(engine: engine)   // dev/agent command server
-                    #endif
                 }
         }
     }
