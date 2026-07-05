@@ -290,9 +290,11 @@ struct ExportSheet: View {
         model.syncLiveFX()                    // engine holds the current FX stack
         model.exporting = true                // suspend the live canvas → export owns the engine
         model.video?.suspended = true
+        model.engine.setTicksPaused(true)     // stop the engine tick too (exclusive access)
         Task {
             let url = await VideoExporter.export(segments, titles: titles,
                                                  engine: model.engine, size: model.format.pixelSize) { p in pct = p }
+            model.engine.setTicksPaused(false)
             model.video?.suspended = false
             model.exporting = false
             guard let url else { failed = true; phase = .idle; return }

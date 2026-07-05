@@ -65,6 +65,10 @@ final class EngineStore: ObservableObject {
         // Rendering happens in MetalRenderView's draw, which pulls from here.
     }
 
+    /// Pause the engine tick — offline export takes exclusive engine access (with the
+    /// canvas MTKView paused + frame-push suspended, no one else touches the engine).
+    func setTicksPaused(_ paused: Bool) { displayLink?.isPaused = paused }
+
     /// The single lever chokepoint. Returns the engine's JSON reply.
     @discardableResult
     func command(_ method: String, _ params: [String: Any] = [:]) -> [String: Any] {

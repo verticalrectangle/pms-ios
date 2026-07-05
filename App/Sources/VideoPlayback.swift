@@ -286,7 +286,7 @@ enum VideoExporter {
         var aout: AVAssetReaderAudioMixOutput?
         if !atracks.isEmpty {
             let a = AVAssetReaderAudioMixOutput(audioTracks: atracks, audioSettings: [
-                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 44100,
+                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000,
                 AVNumberOfChannelsKey: 2, AVLinearPCMBitDepthKey: 16,
                 AVLinearPCMIsFloatKey: false, AVLinearPCMIsNonInterleaved: false,
                 AVLinearPCMIsBigEndianKey: false])
@@ -315,7 +315,7 @@ enum VideoExporter {
         if aout != nil {
             let a = AVAssetWriterInput(mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVNumberOfChannelsKey: 2,
-                AVSampleRateKey: 44100, AVEncoderBitRateKey: 160_000])
+                AVSampleRateKey: 48000, AVEncoderBitRateKey: 160_000])
             a.expectsMediaDataInRealTime = false
             if writer.canAdd(a) { writer.add(a); ain = a }
         }
@@ -328,7 +328,23 @@ enum VideoExporter {
 
         return await withCheckedContinuation { (cont: CheckedContinuation<URL?, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
-                while reader.status == .reading, let sb = rout.copyNextSampleBuffer() {
+                var pendingAudio: CMSampleBuffer?      // pulled-but-not-yet-due (PTS-gated drain)
+                var audioDone = (aout == nil)
+                // Append audio whose PTS <= t so both reader outputs advance together —
+                // bounds reader buffering to ~one frame of lookahead. Without this the AAC
+                // encoder stays ready and pulls the whole song on frame 0 → the reader
+                // buffers the entire timeline → jetsam on long exports.
+                func drainAudio(upTo t: Double) {
+                    guard let ain, let aout, !audioDone else { return }
+                    while ain.isReadyForMoreMediaData {
+                        guard let asb = pendingAudio ?? aout.copyNextSampleBuffer() else { audioDone = true; return }
+                        pendingAudio = nil
+                        if CMSampleBufferGetPresentationTimeStamp(asb).seconds <= t { ain.append(asb) }
+                        else { pendingAudio = asb; return }      // not due yet — hold for a later frame
+                    }
+                }
+                while reader.status == .reading, writer.status == .writing,
+                      let sb = rout.copyNextSampleBuffer() {
                     guard let ipb = CMSampleBufferGetImageBuffer(sb) else { continue }
                     let pt = CMSampleBufferGetPresentationTimeStamp(sb)
                     engine.submitCameraFrame(ipb, rotation: 0, hostTime: pt.seconds)  // frame + its time
@@ -342,27 +358,32 @@ enum VideoExporter {
                     guard let opb, let ctex, let otex = CVMetalTextureGetTexture(ctex) else { continue }
                     engine.render(into: otex)        // engine FX chain, windowed to the frame time
                     engine.renderWait()
-                    while !win.isReadyForMoreMediaData { usleep(4000) }
+                    while !win.isReadyForMoreMediaData, writer.status == .writing { usleep(4000) }  // status escape → no wedge on disk-full
                     adaptor.append(opb, withPresentationTime: pt)
-                    if let ain, let aout {            // interleave audio, paced by backpressure
-                        while ain.isReadyForMoreMediaData, let asb = aout.copyNextSampleBuffer() {
-                            ain.append(asb)
-                        }
-                    }
+                    drainAudio(upTo: pt.seconds)
                     let p = min(0.99, pt.seconds / duration)
                     DispatchQueue.main.async { progress(p) }
                 }
                 if let ain, let aout {               // flush the audio tail
-                    while let asb = aout.copyNextSampleBuffer() {
-                        while !ain.isReadyForMoreMediaData { usleep(2000) }
+                    if let p = pendingAudio, writer.status == .writing { ain.append(p) }
+                    pendingAudio = nil
+                    while !audioDone, writer.status == .writing, let asb = aout.copyNextSampleBuffer() {
+                        while !ain.isReadyForMoreMediaData, writer.status == .writing { usleep(2000) }
                         ain.append(asb)
                     }
-                    ain.markAsFinished()
                 }
-                win.markAsFinished()
-                writer.finishWriting {
+                // Reader/writer failure (e.g. disk full) → cancel, never hand back a truncated file as success.
+                let ok = reader.status != .failed && writer.status == .writing
+                if ok {
+                    ain?.markAsFinished(); win.markAsFinished()
+                    writer.finishWriting {
+                        DispatchQueue.main.async { progress(1) }
+                        cont.resume(returning: writer.status == .completed ? out : nil)
+                    }
+                } else {
+                    writer.cancelWriting()
                     DispatchQueue.main.async { progress(1) }
-                    cont.resume(returning: writer.status == .completed ? out : nil)
+                    cont.resume(returning: nil)
                 }
             }
         }
