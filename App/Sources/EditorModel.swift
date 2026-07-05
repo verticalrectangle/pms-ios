@@ -628,6 +628,21 @@ final class EditorModel: ObservableObject {
             weld(effect.id, intoBrick: brickID)
         }
         _ = params
+        syncLiveFX()
+    }
+
+    /// Push the current video-FX stack to the engine — the Metal backend applies
+    /// these to the submitted frame at render time (the real GPU FX path). First
+    /// increment: not time-windowed (applies to the whole preview); the engine
+    /// currently renders chromatic_aberration, others are no-ops until the
+    /// transpiled shader library lands.
+    func syncLiveFX() {
+        let stack: [[String: Any]] = tracks
+            .flatMap { $0.bricks }
+            .filter { $0.kind == .glassFX || $0.kind == .multiFX || $0.kind == .globalFX }
+            .sorted { $0.start < $1.start }
+            .flatMap { b in b.chain.map { ["fx_type": $0, "params": b.params] as [String: Any] } }
+        engine.command("set_live_fx", ["fx": stack])
     }
 
     /// Weld an effect into an existing brick → Multi-FX chain (add_multifx_brick semantics).
@@ -637,6 +652,7 @@ final class EditorModel: ObservableObject {
         if b.wrappedValue.kind == .glassFX { b.wrappedValue.kind = .multiFX }
         engine.command("add_multifx_brick", ["brick": brickID, "effects": b.wrappedValue.chain])
         selectedID = brickID
+        syncLiveFX()
     }
 
     /// Decouple a welded brick back to a free-floating glass brick.
@@ -650,12 +666,14 @@ final class EditorModel: ObservableObject {
         guard let b = binding(forBrick: id) else { return }
         b.wrappedValue.params[key] = value
         engine.command("set_clip_fx", ["brick": id, "params": [key: value]])
+        syncLiveFX()   // live slider → re-push the stack so the shader updates in real time
     }
 
     func deleteBrick(_ id: String) {
         for i in tracks.indices { tracks[i].bricks.removeAll { $0.id == id } }
         engine.command("delete_clip", ["clip": id])
         if selectedID == id { selectedID = nil }
+        syncLiveFX()
     }
 
     // MARK: AI actions (each is one lever + a local model; drives the busy bar)
