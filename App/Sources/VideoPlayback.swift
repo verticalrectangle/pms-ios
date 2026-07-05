@@ -280,9 +280,30 @@ enum VideoExporter {
         guard reader.canAdd(rout) else { return nil }
         reader.add(rout)
 
+        // Audio: pass the composition's audio through (decode to LPCM here, re-encode
+        // AAC on the writer) so exports carry sound — the FX bake is video-only.
+        let atracks = (try? await comp.loadTracks(withMediaType: .audio)) ?? []
+        var aout: AVAssetReaderAudioMixOutput?
+        if !atracks.isEmpty {
+            let a = AVAssetReaderAudioMixOutput(audioTracks: atracks, audioSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 44100,
+                AVNumberOfChannelsKey: 2, AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false, AVLinearPCMIsNonInterleaved: false,
+                AVLinearPCMIsBigEndianKey: false])
+            if reader.canAdd(a) { reader.add(a); aout = a }
+        }
+
         guard let writer = try? AVAssetWriter(outputURL: out, fileType: .mp4) else { return nil }
+        let bitrate = min(W * H * 8, 24_000_000)   // ~HighestQuality; was an unset (low) default
         let win = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: W, AVVideoHeightKey: H])
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: W, AVVideoHeightKey: H,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: bitrate,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel],
+            AVVideoColorPropertiesKey: [      // tag Rec.709 SDR (players were guessing)
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2]])
         win.expectsMediaDataInRealTime = false
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: win, sourcePixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
@@ -290,6 +311,14 @@ enum VideoExporter {
             kCVPixelBufferMetalCompatibilityKey as String: true])
         guard writer.canAdd(win) else { return nil }
         writer.add(win)
+        var ain: AVAssetWriterInput?
+        if aout != nil {
+            let a = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC, AVNumberOfChannelsKey: 2,
+                AVSampleRateKey: 44100, AVEncoderBitRateKey: 160_000])
+            a.expectsMediaDataInRealTime = false
+            if writer.canAdd(a) { writer.add(a); ain = a }
+        }
         guard reader.startReading(), writer.startWriting() else { return nil }
         writer.startSession(atSourceTime: .zero)
 
@@ -315,8 +344,20 @@ enum VideoExporter {
                     engine.renderWait()
                     while !win.isReadyForMoreMediaData { usleep(4000) }
                     adaptor.append(opb, withPresentationTime: pt)
+                    if let ain, let aout {            // interleave audio, paced by backpressure
+                        while ain.isReadyForMoreMediaData, let asb = aout.copyNextSampleBuffer() {
+                            ain.append(asb)
+                        }
+                    }
                     let p = min(0.99, pt.seconds / duration)
                     DispatchQueue.main.async { progress(p) }
+                }
+                if let ain, let aout {               // flush the audio tail
+                    while let asb = aout.copyNextSampleBuffer() {
+                        while !ain.isReadyForMoreMediaData { usleep(2000) }
+                        ain.append(asb)
+                    }
+                    ain.markAsFinished()
                 }
                 win.markAsFinished()
                 writer.finishWriting {
