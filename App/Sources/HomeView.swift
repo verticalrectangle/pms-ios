@@ -96,24 +96,24 @@ struct HomeView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            HStack(spacing: 10) {
+            // Native circular buttons, matching the editor's top toolbar buttons.
+            HStack(spacing: 12) {
                 Button { toggleTheme() } label: {
                     Image(systemName: Theme.light ? "sun.max.fill" : "moon.stars.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Theme.txtBody).frame(width: 44, height: 44).glass(14)
                 }
-                .pressable()
                 .background(GeometryReader { g in
                     Color.clear.onAppear {
                         let f = g.frame(in: .global); toggleCenter = CGPoint(x: f.midX, y: f.midY)
                     }
                 })
                 Button { showSettings = true } label: {
-                    Image(systemName: "gearshape.fill").font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Theme.txtBody).frame(width: 44, height: 44).glass(14)
-                }.pressable()
+                    Image(systemName: "gearshape.fill")
+                }
             }
-            .padding(.trailing, 18).padding(.top, 4)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .padding(.trailing, 16).padding(.top, 6)
         }
         .sheet(isPresented: $showSettings) { SettingsSheet() }
         // Circular reveal: old-theme snapshot on top, a hole growing from the
@@ -314,10 +314,10 @@ struct Chip: View {
     var body: some View {
         Button(action: action) {
             Text(text).font(.label(10))
-                .foregroundStyle(on ? Theme.accent : Color.black.opacity(0.55))
+                .foregroundStyle(on ? Theme.accent : Theme.txtBody)   // ink-based → flips with the theme
                 .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(Capsule().fill(on ? Theme.accentA(0.08) : .clear))
-                .overlay(Capsule().strokeBorder(on ? Theme.accentA(0.5) : Color.black.opacity(0.18), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(on ? Theme.accentA(0.5) : Theme.line, lineWidth: 1))
         }
     }
 }
