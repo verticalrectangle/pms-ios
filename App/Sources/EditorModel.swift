@@ -637,11 +637,15 @@ final class EditorModel: ObservableObject {
     /// currently renders chromatic_aberration, others are no-ops until the
     /// transpiled shader library lands.
     func syncLiveFX() {
-        let stack: [[String: Any]] = tracks
-            .flatMap { $0.bricks }
+        let bricks = tracks.flatMap { $0.bricks }
             .filter { $0.kind == .glassFX || $0.kind == .multiFX || $0.kind == .globalFX }
             .sorted { $0.start < $1.start }
-            .flatMap { b in b.chain.map { ["fx_type": $0, "params": b.params] as [String: Any] } }
+        var stack: [[String: Any]] = []
+        for b in bricks {
+            for fxID in b.chain {
+                stack.append(["fx_type": fxID, "params": b.params])
+            }
+        }
         engine.command("set_live_fx", ["fx": stack])
     }
 
