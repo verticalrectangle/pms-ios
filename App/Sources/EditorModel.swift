@@ -649,6 +649,8 @@ final class EditorModel: ObservableObject {
             for fxID in b.chain {
                 var entry: [String: Any] = ["fx_type": fxID]
                 entry["params"] = b.params
+                entry["start"] = b.start          // brick span → engine windows the FX to it
+                entry["end"] = b.end
                 stack.append(entry)
             }
         }
