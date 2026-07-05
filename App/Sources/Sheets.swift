@@ -287,8 +287,14 @@ struct ExportSheet: View {
         failed = false; phase = .rendering; pct = 0
         let segments = model.videoSegments
         let titles = model.titleClips
+        model.syncLiveFX()                    // engine holds the current FX stack
+        model.exporting = true                // suspend the live canvas → export owns the engine
+        model.video?.suspended = true
         Task {
-            let url = await VideoExporter.export(segments, titles: titles) { p in pct = p }
+            let url = await VideoExporter.export(segments, titles: titles,
+                                                 engine: model.engine, size: model.format.pixelSize) { p in pct = p }
+            model.video?.suspended = false
+            model.exporting = false
             guard let url else { failed = true; phase = .idle; return }
             outURL = url
             saved = await VideoExporter.saveToPhotos(url)   // auto-save to gallery

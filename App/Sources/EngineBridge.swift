@@ -112,6 +112,14 @@ final class EngineStore: ObservableObject {
 #endif
     }
 
+    /// Block until the GPU finishes the committed render — offline export readback.
+    func renderWait() {
+        guard let e = engine else { return }
+#if !ENGINE_MOCK
+        pms_render_wait(e)
+#endif
+    }
+
     /// Push a captured/decoded frame (CVPixelBuffer, 32BGRA) to the engine — it
     /// composites it into the canvas via pms_render. Called off the camera queue.
     func submitCameraFrame(_ pixelBuffer: CVPixelBuffer, rotation: Int32, hostTime: Double) {

@@ -225,7 +225,7 @@ struct EditorView: View {
     // MTKView (UIViewRepresentable) ignores .aspectRatio, so the canvas is
     // sized explicitly (box computed from the root geometry).
     private func canvas(box: CGSize) -> some View {
-        MetalPreview(store: engine, paused: fullscreen)   // freeze while the fullscreen player owns the live view
+        MetalPreview(store: engine, paused: fullscreen || model.exporting)   // freeze for the fullscreen player or while export owns the engine
             .frame(width: box.width, height: box.height)
             .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
                                   activeBricks: model.activeBricks(at: t)))

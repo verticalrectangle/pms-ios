@@ -199,8 +199,10 @@ final class VideoPlayback {
 
     @objc private func tick(_ l: CADisplayLink) { pushFrame(hostTime: l.targetTimestamp) }
 
+    var suspended = false   // export takes exclusive engine access (no live frames)
+
     private func pushFrame(hostTime: CFTimeInterval = CACurrentMediaTime()) {
-        guard let out = output else { return }
+        guard !suspended, let out = output else { return }
         let itemTime = out.itemTime(forHostTime: hostTime)
         guard out.hasNewPixelBuffer(forItemTime: itemTime),
               let pb = out.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil)
@@ -255,29 +257,74 @@ enum VideoExporter {
     /// Returns the written file URL, or nil on failure. `progress` is 0…1.
     /// Titles fold into the SAME Core Image handler as fades (buildComposition),
     /// so preview and export are pixel-identical — no separate animationTool.
-    static func export(_ segments: [VideoPlayback.Segment], titles: [Clip] = [],
-                       progress: @escaping (Double) -> Void) async -> URL? {
+    /// Export baking the engine's GPU FX in: read the composited frames (orientation
+    /// + fades + titles via the CI handler), run EACH through the engine FX runner
+    /// (same as preview → preview == export), and encode. `engine` must have
+    /// exclusive access — the caller suspends the live preview. Ported from the
+    /// verified macOS harness.
+    nonisolated static func export(_ segments: [VideoPlayback.Segment], titles: [Clip] = [],
+                                   engine: EngineStore, size: (w: Int, h: Int),
+                                   progress: @escaping (Double) -> Void) async -> URL? {
         let (comp, vc) = await VideoPlayback.buildComposition(segments, titles: titles)
-        guard comp.duration.seconds > 0,
-              let session = AVAssetExportSession(asset: comp, presetName: AVAssetExportPresetHighestQuality)
-        else { return nil }
-
-        let out = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PopMaker_\(UUID().uuidString).mp4")
+        let duration = comp.duration.seconds
+        guard duration > 0, let vc,
+              let vtracks = try? await comp.loadTracks(withMediaType: .video), !vtracks.isEmpty,
+              let reader = try? AVAssetReader(asset: comp) else { return nil }
+        let W = size.w, H = size.h
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("PopMaker_\(UUID().uuidString).mp4")
         try? FileManager.default.removeItem(at: out)
-        session.outputURL = out
-        session.outputFileType = .mp4
-        if let vc { session.videoComposition = vc }
 
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-            progress(Double(session.progress))
+        let rout = AVAssetReaderVideoCompositionOutput(videoTracks: vtracks, videoSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        rout.videoComposition = vc
+        guard reader.canAdd(rout) else { return nil }
+        reader.add(rout)
+
+        guard let writer = try? AVAssetWriter(outputURL: out, fileType: .mp4) else { return nil }
+        let win = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: W, AVVideoHeightKey: H])
+        win.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: win, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: W, kCVPixelBufferHeightKey as String: H,
+            kCVPixelBufferMetalCompatibilityKey as String: true])
+        guard writer.canAdd(win) else { return nil }
+        writer.add(win)
+        guard reader.startReading(), writer.startWriting() else { return nil }
+        writer.startSession(atSourceTime: .zero)
+
+        var cacheOut: CVMetalTextureCache?
+        CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, engine.device, nil, &cacheOut)
+        guard let cache = cacheOut, let pool = adaptor.pixelBufferPool else { return nil }
+
+        return await withCheckedContinuation { (cont: CheckedContinuation<URL?, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                while reader.status == .reading, let sb = rout.copyNextSampleBuffer() {
+                    guard let ipb = CMSampleBufferGetImageBuffer(sb) else { continue }
+                    let pt = CMSampleBufferGetPresentationTimeStamp(sb)
+                    engine.submitCameraFrame(ipb, rotation: 0, hostTime: pt.seconds)  // frame + its time
+                    var opb: CVPixelBuffer?
+                    CVPixelBufferPoolCreatePixelBuffer(nil, pool, &opb)
+                    var ctex: CVMetalTexture?
+                    if let opb {
+                        CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, cache, opb, nil,
+                                                                  .bgra8Unorm, W, H, 0, &ctex)
+                    }
+                    guard let opb, let ctex, let otex = CVMetalTextureGetTexture(ctex) else { continue }
+                    engine.render(into: otex)        // engine FX chain, windowed to the frame time
+                    engine.renderWait()
+                    while !win.isReadyForMoreMediaData { usleep(4000) }
+                    adaptor.append(opb, withPresentationTime: pt)
+                    let p = min(0.99, pt.seconds / duration)
+                    DispatchQueue.main.async { progress(p) }
+                }
+                win.markAsFinished()
+                writer.finishWriting {
+                    DispatchQueue.main.async { progress(1) }
+                    cont.resume(returning: writer.status == .completed ? out : nil)
+                }
+            }
         }
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            session.exportAsynchronously { c.resume() }
-        }
-        timer.invalidate()
-        progress(1)
-        return session.status == .completed ? out : nil
     }
 
     /// Save a finished export into the Photos library (add-only permission).

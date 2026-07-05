@@ -30,6 +30,7 @@ final class EditorModel: ObservableObject {
     // Imported video (decoded through the engine's frame path).
     var video: VideoPlayback?
     @Published var videoLoaded = false
+    @Published var exporting = false        // export owns the engine → live canvas suspended
     @Published var videoDuration: Double?
     @Published var focusNewText = false   // keyboard pops only right after CREATING a title, not on select
 

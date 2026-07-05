@@ -39,6 +39,7 @@ enum Format: String, CaseIterable, Hashable, Codable {
 
     var aspect: CGFloat { switch self { case .portrait: 9.0/16; case .landscape: 16.0/9; case .square: 1 } }
     var resolution: String { switch self { case .portrait: "1080×1920"; case .landscape: "1920×1080"; case .square: "1080×1080" } }
+    var pixelSize: (w: Int, h: Int) { switch self { case .portrait: (1080, 1920); case .landscape: (1920, 1080); case .square: (1080, 1080) } }
     var platform: String { switch self { case .portrait: "TikTok · Reels · Shorts"; case .landscape: "YouTube"; case .square: "Instagram" } }
     /// The `set_format` preset key.
     var lever: String { switch self { case .portrait: "vertical"; case .landscape: "horizontal"; case .square: "square" } }
