@@ -20,6 +20,11 @@ targets:
     platform: iOS
     sources:
       - App/Sources
+      # Transpiled MSL FX registry (msl/*.metal + params_manifest.json) — bundled
+      # as a folder reference so the engine loads them at runtime from the app bundle.
+      - path: Shaders/msl
+        type: folder
+        buildPhase: resources
     settings:
       base:
         SWIFT_VERSION: "5.10"
