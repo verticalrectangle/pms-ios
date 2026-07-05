@@ -16,7 +16,12 @@ struct PopMakerApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(engine)
-                .onAppear { engine.start() }
+                .onAppear {
+                    engine.start()
+                    #if DEBUG
+                    IPCServer.shared.start(engine: engine)   // dev/agent command server
+                    #endif
+                }
         }
     }
 }

@@ -88,6 +88,20 @@ final class EngineStore: ObservableObject {
         return obj
     }
 
+    /// Pass a full JSON envelope {id,method,params} straight to the engine and
+    /// return the raw JSON reply — the IPC/agent server's chokepoint. Call on main.
+    func rawCommand(_ json: String) -> String {
+        guard let e = engine else { return #"{"error":"engine not started"}"# }
+#if ENGINE_MOCK
+        _ = e
+        return mock_reply(json)
+#else
+        guard let raw = pms_command(e, json) else { return #"{"error":"null reply"}"# }
+        defer { pms_free(raw) }
+        return String(cString: raw)
+#endif
+    }
+
     func render(into texture: MTLTexture) {
         guard let e = engine else { return }
 #if ENGINE_MOCK
