@@ -267,7 +267,6 @@ private struct TrackLane: View {
                         }
                     }
                     .contentShape(Rectangle())
-                    .scaleEffect(moving ? 1.05 : 1)
                     .shadow(color: moving ? Theme.accentA(0.5) : .clear, radius: 10)
                     .offset(x: CGFloat(clip.start) * PPS)   // move updates clip.start live
                     .zIndex(moving ? 2 : (model.selectedID == clip.id ? 1 : 0))
@@ -283,7 +282,6 @@ private struct TrackLane: View {
                         if model.selectedID == brick.id { TrimHandles(height: laneHeight) }
                     }
                     .contentShape(Rectangle())
-                    .scaleEffect(moving ? 1.05 : 1)
                     .shadow(color: moving ? Theme.accentA(0.5) : .clear, radius: 10)
                     .offset(x: CGFloat(brick.start) * PPS)
                     .zIndex(moving ? 2 : (model.selectedID == brick.id ? 1 : 0))
