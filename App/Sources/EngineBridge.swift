@@ -233,6 +233,29 @@ final class EngineStore: ObservableObject {
 #endif
     }
 
+    /// Push a mic block (interleaved stereo Float32) into the engine's capture
+    /// injection ring. Called from the audio capture queue — the ring is SPSC.
+    func submitMicBlock(_ interleavedLR: UnsafePointer<Float>, frames: Int, sampleRate: Double) {
+        guard let e = engine, frames > 0 else { return }
+#if ENGINE_MOCK
+        _ = e
+#else
+        pms_submit_mic_block(e, interleavedLR, frames, sampleRate)
+#endif
+    }
+
+    /// Submit a Vision person matte (OneComponent8 CVPixelBuffer; nil clears).
+    /// The engine retains the buffer. Called off the Vision worker queue.
+    func submitPersonMatte(_ matte: CVPixelBuffer?, hostTime: Double) {
+        guard let e = engine else { return }
+#if ENGINE_MOCK
+        _ = e
+#else
+        pms_submit_person_matte(e, matte.map { Unmanaged.passUnretained($0).toOpaque() },
+                                hostTime)
+#endif
+    }
+
     /// Clear the composited content frame back to the empty (aurora) canvas.
     func clearContent() {
         guard let e = engine else { return }

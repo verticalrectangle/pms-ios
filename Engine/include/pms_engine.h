@@ -33,7 +33,8 @@ void pms_tick(pms_engine*, double dt_seconds);
 // void*). Returns 0 on success. STUB until the Metal RenderSurface (Phase 3).
 int pms_render(pms_engine*, void* mtl_texture, int width, int height);
 
-// Block until the GPU has finished the committed render — for offline export.
+// Block until the GPU has finished the committed render — for offline export
+// (submit a frame, render into an output texture, wait, read it back, encode).
 void pms_render_wait(pms_engine*);
 
 // Capture intake (AVFoundation feeds these). STUB until the CaptureBackend
@@ -42,6 +43,11 @@ void pms_submit_camera_frame(pms_engine*, void* cv_pixel_buffer,
                              int rotation_quarter_turns, double host_time_seconds);
 void pms_submit_mic_block(pms_engine*, const float* interleaved_lr,
                           size_t frames, double sample_rate);
+
+// Person matte from the platform segmenter (Vision on iOS): a retained
+// OneComponent8 CVPixelBufferRef bridged as void*. NULL clears the matte.
+void pms_submit_person_matte(pms_engine*, void* cv_pixel_buffer_r8,
+                             double host_time_seconds);
 
 // JSON status of model packs (bundled/absent/downloading/ready).
 char* pms_model_status(pms_engine*);
@@ -56,7 +62,7 @@ char* pms_poll_events(pms_engine*);
 
 void pms_free(char*);
 
-#define PMS_ENGINE_ABI 1
+#define PMS_ENGINE_ABI 2
 uint32_t pms_abi_version(void);
 uint32_t pms_project_version(void);
 

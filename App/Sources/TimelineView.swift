@@ -236,8 +236,17 @@ private struct TrackLane: View {
             }
             .onEnded { _ in
                 defer { drag = nil }
-                guard let d = drag, d.id == brick.id, d.zone == .move else { return }
-                model.endBrickMove(brick.id, originStart: d.start)   // bounce on overlap
+                guard let d = drag, d.id == brick.id else { return }
+                switch d.zone {
+                case .trimLeft, .trimRight:
+                    // Commit the resize — trim_clip lands it on the engine's
+                    // frame grid and the refreshed projection re-aligns the
+                    // brick. (Uncommitted, the local edge silently reverted on
+                    // the next refresh — the "handles don't stick" bug.)
+                    model.endEdit(brick.id)
+                case .move:
+                    model.endBrickMove(brick.id, originStart: d.start)   // bounce on overlap
+                }
             }
     }
 

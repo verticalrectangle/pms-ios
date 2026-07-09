@@ -5,6 +5,7 @@
 // so the engine is told rotation 0 — no second rotation from device orientation.
 import AVFoundation
 import UIKit
+import CoreMedia
 
 final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                            AVCaptureAudioDataOutputSampleBufferDelegate {
@@ -34,6 +35,19 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// True when the connection could not rotate to portrait — then (and only
     /// then) the engine is told to rotate.
     private var needsEngineRotation = false
+
+    // Mic → engine capture-injection ring (AVAudioConverter per input format).
+    private var audioConverter: AVAudioConverter?
+    private var converterInputFormat: AVAudioFormat?
+
+    // Person matte: bounded-cadence Vision segmentation on its own queue so
+    // inference never stalls frame delivery.
+    var matteEnabled = false
+    private let matteQueue = DispatchQueue(label: "pms.matte", qos: .userInitiated)
+    private let visionMatte = VisionMatte()
+    private var matteInFlight = false
+    private var lastMatteHostTime: Double = 0
+    private let matteInterval = 1.0 / 15.0   // ≤15 fps preview segmentation
 
     init(engine: EngineStore) { self.engine = engine }
 
@@ -107,18 +121,74 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     func stop() {
         videoQueue.async { self.session.stopRunning() }
+        engine?.submitPersonMatte(nil, hostTime: 0)
         engine?.clearContent()
     }
 
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
+        if output is AVCaptureAudioDataOutput {
+            submitMic(sampleBuffer)
+            return
+        }
         // Video frames → the engine's Metal compositor (live canvas preview).
-        // Mic blocks route through pms_submit_mic_block once the ABI-2 engine
-        // lands (Slice C); until then audio is captured but not injected.
         guard output is AVCaptureVideoDataOutput,
               let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let host = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
         engine?.submitCameraFrame(pb, rotation: needsEngineRotation ? 1 : 0, hostTime: host)
+        if matteEnabled { kickMatte(pb, hostTime: host) }
+    }
+
+    // MARK: mic → engine (interleaved stereo Float32 via AVAudioConverter)
+
+    private func submitMic(_ sb: CMSampleBuffer) {
+        guard let desc = CMSampleBufferGetFormatDescription(sb) else { return }
+        let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sb))
+        guard frames > 0 else { return }
+        let inFormat = AVAudioFormat(cmAudioFormatDescription: desc)
+
+        guard let inBuf = AVAudioPCMBuffer(pcmFormat: inFormat, frameCapacity: frames) else { return }
+        inBuf.frameLength = frames
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sb, at: 0, frameCount: Int32(frames),
+            into: inBuf.mutableAudioBufferList) == noErr else { return }
+
+        guard let outFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                            sampleRate: inFormat.sampleRate,
+                                            channels: 2, interleaved: true) else { return }
+        if audioConverter == nil || converterInputFormat != inFormat {
+            audioConverter = AVAudioConverter(from: inFormat, to: outFormat)
+            converterInputFormat = inFormat
+        }
+        guard let converter = audioConverter,
+              let outBuf = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: frames) else { return }
+
+        var fed = false
+        let status = converter.convert(to: outBuf, error: nil) { _, outStatus in
+            if fed { outStatus.pointee = .noDataNow; return nil }
+            fed = true
+            outStatus.pointee = .haveData
+            return inBuf
+        }
+        guard status != .error, outBuf.frameLength > 0,
+              let data = outBuf.floatChannelData?[0] else { return }
+        // Engine resamples to its 44.1 kHz internally; pass the native rate.
+        engine?.submitMicBlock(data, frames: Int(outBuf.frameLength),
+                               sampleRate: outFormat.sampleRate)
+    }
+
+    // MARK: person matte (Vision, bounded cadence, own queue)
+
+    private func kickMatte(_ frame: CVPixelBuffer, hostTime: Double) {
+        guard !matteInFlight, hostTime - lastMatteHostTime >= matteInterval else { return }
+        matteInFlight = true
+        lastMatteHostTime = hostTime
+        matteQueue.async { [weak self] in
+            guard let self else { return }
+            let matte = self.visionMatte.matte(for: frame)
+            self.engine?.submitPersonMatte(matte, hostTime: hostTime)
+            self.videoQueue.async { self.matteInFlight = false }
+        }
     }
 }

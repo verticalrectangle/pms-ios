@@ -316,6 +316,13 @@ final class EditorModel: ObservableObject {
     /// Trim released → one trim_clip (engine derives in_point from the start delta).
     func endEdit(_ id: String) {
         guard let r = locate(id) else { return }
+        // A coupled brick tracks its host clip's span (fx_coupling_tick re-snaps
+        // it every engine tick) — a trim would silently revert. Say so instead.
+        if r.kind == .brick, tracks[r.track].bricks[r.index].coupled {
+            engine.lastError = "This FX brick is welded to its clip and follows its span — Decouple it to resize freely."
+            refresh(rebuildPlayer: false)
+            return
+        }
         let (start, end): (Double, Double) = r.kind == .clip
             ? (tracks[r.track].clips[r.index].start, tracks[r.track].clips[r.index].end)
             : (tracks[r.track].bricks[r.index].start, tracks[r.track].bricks[r.index].end)
@@ -391,6 +398,11 @@ final class EditorModel: ObservableObject {
         return (floor, ceil)
     }
     func endBrickMove(_ id: String, originStart: Double) {
+        if let r = locate(id), r.kind == .brick, tracks[r.track].bricks[r.index].coupled {
+            engine.lastError = "This FX brick is welded to its clip and follows it — Decouple it to move it freely."
+            refresh(rebuildPlayer: false)
+            return
+        }
         if brickConflicts(id) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { setBrickStart(id, originStart) }
             refresh(rebuildPlayer: false)   // restore engine truth

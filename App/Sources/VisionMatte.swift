@@ -3,13 +3,19 @@
 // GPL-3.0, which is incompatible with App Store distribution. Vision is
 // native, hardware-accelerated, and costs zero bundle bytes.
 //
-// The engine's bg-remove seam receives a single-channel matte texture per
-// frame, exactly like the desktop RVM path produces — downstream compositing
-// is engine code and identical on both platforms.
+// The engine receives a single-channel (OneComponent8) matte per processed
+// frame through pms_submit_person_matte — downstream compositing is engine
+// Metal code and identical in preview and export.
+//
+// Threading: NOT thread-safe — call from one dedicated worker queue, never
+// the camera delivery queue (Vision inference would stall frame delivery).
 import Vision
 import CoreVideo
 
 final class VisionMatte {
+    // One sequence handler for the session — Vision uses it for temporal
+    // stability across frames (less matte flicker than per-frame handlers).
+    private let sequence = VNSequenceRequestHandler()
     private let request: VNGeneratePersonSegmentationRequest = {
         let r = VNGeneratePersonSegmentationRequest()
         r.qualityLevel = .balanced          // .accurate for export passes
@@ -18,14 +24,17 @@ final class VisionMatte {
     }()
 
     /// Returns an 8-bit alpha matte for the frame, or nil when no person.
-    /// Called from the engine's bg-remove worker cadence (not every frame —
-    /// same sequential/temporal strategy as the desktop RVM integration).
+    /// The returned buffer is owned by the request until the next perform —
+    /// the caller must hand it to the engine (which retains) before returning.
     func matte(for frame: CVPixelBuffer,
                quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced)
         -> CVPixelBuffer? {
         request.qualityLevel = quality
-        let handler = VNImageRequestHandler(cvPixelBuffer: frame, options: [:])
-        try? handler.perform([request])
+        do {
+            try sequence.perform([request], on: frame)
+        } catch {
+            return nil
+        }
         return request.results?.first?.pixelBuffer
     }
 }

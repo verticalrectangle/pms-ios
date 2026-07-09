@@ -60,6 +60,8 @@ struct EditorView: View {
                     engine.lastError = e.errorDescription
                 case .success:
                     let c = CameraCapture(engine: engine)
+                    // Person segmentation only when a body-FX brick wants it.
+                    c.matteEnabled = model.tracks.flatMap(\.bricks).contains { $0.kind == .bodyFX }
                     do {
                         try c.start(position: .back)
                         camera = c; cameraOn = true
