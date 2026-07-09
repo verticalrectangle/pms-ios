@@ -240,6 +240,53 @@ struct EditorView: View {
             }
         }
         .onAppear { engine.startMockMeters() }
+        // Editing a different (or no) title → rebake titles into the composition.
+        .onChange(of: model.selectedLyricClip?.id) { _, _ in
+            Task { await model.rebuildVideo() }
+        }
+        // Person segmentation follows the timeline: run it only while a
+        // body-FX brick exists.
+        .onChange(of: model.tracks.flatMap(\.bricks).contains { $0.kind == .bodyFX }) { _, has in
+            camera?.matteEnabled = has
+        }
+    }
+
+    // MARK: - Take recording (camera on → AVAssetWriter sink; engine gets the file)
+
+    @State private var recording = false
+
+    private var recordButton: some View {
+        Button {
+            guard let camera else { return }
+            if recording {
+                recording = false
+                camera.stopTake { url in
+                    guard let url else {
+                        engine.lastError = "Take failed to write."
+                        return
+                    }
+                    model.placeBinItem(url.path)   // bin + clip at the playhead
+                }
+            } else {
+                let url = ProjectStore.mediaDir(model.project.id)
+                    .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970)).mov")
+                do {
+                    try camera.startTake(to: url)
+                    recording = true
+                } catch {
+                    engine.lastError = error.localizedDescription
+                }
+            }
+        } label: {
+            ZStack {
+                Circle().strokeBorder(.white.opacity(0.9), lineWidth: 3).frame(width: 54, height: 54)
+                RoundedRectangle(cornerRadius: recording ? 5 : 22)
+                    .fill(Color(red: 1, green: 0.27, blue: 0.27))
+                    .frame(width: recording ? 24 : 44, height: recording ? 24 : 44)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: recording)
+            }
+        }
+        .pressable()
     }
 
     /// Largest aspect-correct canvas box that fits ~42% of the screen height
@@ -259,7 +306,14 @@ struct EditorView: View {
             .frame(width: box.width, height: box.height)
             .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
                                   activeBricks: model.activeBricks(at: t)))
-            .overlay(LyricOverlay(clips: model.activeLyrics(at: t), width: box.width))
+            // Titles are baked into the played composition (preview == export).
+            // Only the clip currently being text-edited draws as an overlay,
+            // so typing shows instantly without a composition rebuild.
+            .overlay(LyricOverlay(clips: model.activeLyrics(at: t).filter { $0.id == model.selectedLyricClip?.id },
+                                  width: box.width))
+            .overlay(alignment: .bottom) {
+                if cameraOn { recordButton.padding(.bottom, 14) }
+            }
             .overlay {
                 if !model.videoLoaded {
                     VStack(spacing: 12) {

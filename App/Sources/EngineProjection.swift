@@ -166,9 +166,21 @@ struct EngineProjectSnapshot {
             fontSize: num(cj["font_size"]) ?? 0,
             clipStyle: cj["clip_style"] as? String ?? "",
             fxType: cj["fx_type"] as? String,
-            fxParams: doubleDict(cj["fx_params"]),
+            fxParams: bodyAwareParams(cj),
             fxChain: chain,
             bodyFXType: cj["body_fx_type"] as? String)
+    }
+
+    /// fx_params for regular effect bricks; for body_fx clips, fold the engine's
+    /// positional body_fx_params[4] + body_fx_amount into set_clip_prop keys
+    /// (body_fx_param_i / body_fx_amount) so the inspector round-trips them.
+    private static func bodyAwareParams(_ cj: [String: Any]) -> [String: Double] {
+        var out = doubleDict(cj["fx_params"])
+        if let amount = num(cj["body_fx_amount"]) { out["body_fx_amount"] = amount }
+        if let arr = cj["body_fx_params"] as? [Any] {
+            for (i, v) in arr.enumerated() { if let d = num(v) { out["body_fx_param_\(i)"] = d } }
+        }
+        return out
     }
 
     private static func num(_ v: Any?) -> Double? {

@@ -49,6 +49,15 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var lastMatteHostTime: Double = 0
     private let matteInterval = 1.0 / 15.0   // ≤15 fps preview segmentation
 
+    // Take recording: AVAssetWriter muxes the same delegate sample buffers
+    // (video h264, mic AAC) into a .mov in the project's media dir. iOS owns
+    // muxing; the engine gets the finished file (bin + clip).
+    private let takeLock = NSLock()
+    private var takeWriter: AVAssetWriter?
+    private var takeVideoIn: AVAssetWriterInput?
+    private var takeAudioIn: AVAssetWriterInput?
+    private var takeSessionStarted = false
+
     init(engine: EngineStore) { self.engine = engine }
 
     /// Request camera + mic authorization. Completion on main.
@@ -120,9 +129,71 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     func stop() {
+        if takeWriter != nil { stopTake { _ in } }   // never leave a writer dangling
         videoQueue.async { self.session.stopRunning() }
         engine?.submitPersonMatte(nil, hostTime: 0)
         engine?.clearContent()
+    }
+
+    // MARK: take recording
+
+    func startTake(to url: URL) throws {
+        takeLock.lock(); defer { takeLock.unlock() }
+        guard takeWriter == nil else { return }
+        try? FileManager.default.removeItem(at: url)
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let video = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: 720, AVVideoHeightKey: 1280,
+            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 8_000_000],
+        ])
+        video.expectsMediaDataInRealTime = true
+        let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVNumberOfChannelsKey: 1, AVSampleRateKey: 44100,
+            AVEncoderBitRateKey: 96_000,
+        ])
+        audio.expectsMediaDataInRealTime = true
+        guard writer.canAdd(video), writer.canAdd(audio) else {
+            throw CaptureError.configuration("take writer rejected inputs")
+        }
+        writer.add(video); writer.add(audio)
+        guard writer.startWriting() else {
+            throw CaptureError.configuration("take writer: \(writer.error?.localizedDescription ?? "could not start")")
+        }
+        takeSessionStarted = false
+        takeVideoIn = video
+        takeAudioIn = audio
+        takeWriter = writer   // set last — the delegate checks this
+    }
+
+    /// Finish the take; completion (main queue) gets the file URL or nil.
+    func stopTake(completion: @escaping (URL?) -> Void) {
+        takeLock.lock()
+        guard let writer = takeWriter else { takeLock.unlock(); return completion(nil) }
+        let video = takeVideoIn, audio = takeAudioIn
+        takeWriter = nil; takeVideoIn = nil; takeAudioIn = nil
+        takeLock.unlock()
+        video?.markAsFinished()
+        audio?.markAsFinished()
+        writer.finishWriting {
+            let ok = writer.status == .completed
+            DispatchQueue.main.async { completion(ok ? writer.outputURL : nil) }
+        }
+    }
+
+    private func appendTake(_ sb: CMSampleBuffer, isVideo: Bool) {
+        takeLock.lock(); defer { takeLock.unlock() }
+        guard let writer = takeWriter, writer.status == .writing else { return }
+        // Session clock starts on the first VIDEO frame so audio never leads
+        // a black frame.
+        if !takeSessionStarted {
+            guard isVideo else { return }
+            writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sb))
+            takeSessionStarted = true
+        }
+        let input = isVideo ? takeVideoIn : takeAudioIn
+        if let input, input.isReadyForMoreMediaData { input.append(sb) }
     }
 
     func captureOutput(_ output: AVCaptureOutput,
@@ -130,6 +201,7 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                        from connection: AVCaptureConnection) {
         if output is AVCaptureAudioDataOutput {
             submitMic(sampleBuffer)
+            appendTake(sampleBuffer, isVideo: false)
             return
         }
         // Video frames → the engine's Metal compositor (live canvas preview).
@@ -137,6 +209,7 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
               let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let host = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
         engine?.submitCameraFrame(pb, rotation: needsEngineRotation ? 1 : 0, hostTime: host)
+        appendTake(sampleBuffer, isVideo: true)
         if matteEnabled { kickMatte(pb, hostTime: host) }
     }
 

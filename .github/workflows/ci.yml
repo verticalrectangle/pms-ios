@@ -42,6 +42,14 @@ jobs:
         run: |
           PMS_DESKTOP=$PWD/engine python3 tools/gen_levers.py
           git diff --exit-code docs/LEVERS.md && echo "LEVERS.md in sync"
+      - name: generator syntax
+        run: python3 -m py_compile tools/gen_levers.py tools/transpile_shaders.py tools/gen_effect_catalog.py
+      - name: effect catalog freshness
+        run: |
+          PMS_DESKTOP=$PWD/engine python3 tools/gen_effect_catalog.py
+          git diff --exit-code App/Sources/GeneratedEffectCatalog.swift && echo "catalog in sync"
+      - name: C ABI header matches the engine
+        run: diff -u engine/src/pms_engine.h Engine/include/pms_engine.h
 
   # ── macOS: Swift shell builds against the mocked engine ────────────────────
   # Free on public repos. Becomes the Phase 2 gate: once the engine's macOS

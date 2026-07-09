@@ -24,6 +24,7 @@ struct InspectorView: View {
             .padding(14)
             .glass(18)
             .transition(.move(edge: .bottom).combined(with: .opacity))
+            .onAppear { model.loadBodyEffects() }   // body sliders need the defs
         }
     }
 
@@ -81,11 +82,26 @@ struct InspectorView: View {
         }
     }
 
+    /// Slider defs for this brick. Body bricks come from the engine's
+    /// list_body_fx (positional keys body_fx_param_i + body_fx_amount);
+    /// everything else from the generated catalog by effect id.
+    private func paramDefs(_ brick: Brick) -> [EffectDef.Param] {
+        if brick.kind == .bodyFX {
+            guard let def = model.bodyDef(named: brick.bodyFXType) else { return [] }
+            var ps = def.params.enumerated().map { i, p in
+                EffectDef.Param(key: "body_fx_param_\(i)", label: p.label,
+                                min: p.min, max: p.max, def: p.def, format: p.format)
+            }
+            ps.append(.init(key: "body_fx_amount", label: "Amount",
+                            min: 0, max: 1, def: 1, format: "%.2f"))
+            return ps
+        }
+        return EffectCatalog.byID[brick.chain.last ?? ""]?.params ?? []
+    }
+
     private func paramSliders(_ brick: Brick, bind: Binding<Brick>) -> some View {
-        // parameters of the last effect in the chain (the one you just added / are tuning)
-        let def = EffectCatalog.byID[brick.chain.last ?? ""]
-        return VStack(spacing: 9) {
-            ForEach(def?.params ?? [], id: \.key) { p in
+        VStack(spacing: 9) {
+            ForEach(paramDefs(brick), id: \.key) { p in
                 let value = Binding<Double>(
                     get: { bind.wrappedValue.params[p.key] ?? p.def },
                     set: { model.setParam(p.key, $0, onBrick: brick.id) }

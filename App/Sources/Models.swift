@@ -122,6 +122,34 @@ struct Brick: Identifiable, TimelineItem {
     }
 }
 
+// MARK: - Body FX (silhouette effects — defs come from the engine's list_body_fx)
+
+struct BodyFXDef: Identifiable, Hashable {
+    let name: String        // engine BodyFXInfo name, exact (contains spaces: "Neon Outline")
+    let tagline: String
+    let category: String
+    let params: [EffectDef.Param]   // positional: params[i] edits body_fx_param_i
+    var id: String { name }
+
+    static func decode(_ e: [String: Any]) -> BodyFXDef? {
+        guard let name = e["name"] as? String else { return nil }
+        let params = (e["params"] as? [[String: Any]] ?? []).compactMap { p -> EffectDef.Param? in
+            guard let key = p["name"] as? String else { return nil }
+            func num(_ v: Any?) -> Double? { (v as? Double) ?? (v as? Int).map(Double.init) ?? (v as? NSNumber)?.doubleValue }
+            return EffectDef.Param(key: key,
+                                   label: p["label"] as? String ?? key,
+                                   min: num(p["min"]) ?? 0,
+                                   max: num(p["max"]) ?? 1,
+                                   def: num(p["default"]) ?? 0.5,
+                                   format: "%.2f")
+        }
+        return BodyFXDef(name: name,
+                         tagline: e["tagline"] as? String ?? "",
+                         category: e["category"] as? String ?? "Body",
+                         params: params)
+    }
+}
+
 // MARK: - Chapter markers (projection of engine markers)
 
 struct ChapterMarker: Identifiable {

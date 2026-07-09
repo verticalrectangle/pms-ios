@@ -13,7 +13,7 @@ struct FXSheet: View {
     @ObservedObject var model: EditorModel
     @Environment(\.dismiss) private var dismiss
 
-    enum Tab: String, CaseIterable { case video = "Video FX", audio = "Audio FX" }
+    enum Tab: String, CaseIterable { case video = "Video FX", body = "Body FX", audio = "Audio FX" }
     @State private var tab: Tab = .video
     @State private var category = "All"
     @State private var query = ""
@@ -21,7 +21,7 @@ struct FXSheet: View {
     @State private var placeError: String?
 
     private var source: [EffectDef] {
-        switch tab { case .video: EffectCatalog.video; case .audio: EffectCatalog.audio }
+        switch tab { case .video: EffectCatalog.video; case .audio: EffectCatalog.audio; case .body: [] }
     }
     private var list: [EffectDef] {
         source.filter {
@@ -47,6 +47,7 @@ struct FXSheet: View {
     private var canPlace: Bool {
         switch tab {
         case .video: return placeGlobal || videoHostClipID != nil
+        case .body:  return videoHostClipID != nil
         case .audio: return audioHostClipID != nil
         }
     }
@@ -86,15 +87,31 @@ struct FXSheet: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                    ForEach(list) { effect in
-                        Button { place(effect) } label: { EffectCard(effect: effect) }
-                            .pressable()
-                            .disabled(!canPlace)
-                            .opacity(canPlace ? 1 : 0.4)
+                    if tab == .body {
+                        ForEach(model.bodyEffects) { def in
+                            Button { placeBody(def) } label: { BodyEffectCard(def: def) }
+                                .pressable()
+                                .disabled(!canPlace)
+                                .opacity(canPlace ? 1 : 0.4)
+                        }
+                    } else {
+                        ForEach(list) { effect in
+                            Button { place(effect) } label: { EffectCard(effect: effect) }
+                                .pressable()
+                                .disabled(!canPlace)
+                                .opacity(canPlace ? 1 : 0.4)
+                        }
                     }
                 }
             }
         }
+        .onAppear { model.loadBodyEffects() }
+    }
+
+    private func placeBody(_ def: BodyFXDef) {
+        placeError = nil
+        if model.placeBodyEffect(def, at: model.playhead) { dismiss() }
+        else { placeError = model.engine.lastError ?? "The engine rejected that placement." }
     }
 
     private var placementNote: some View {
@@ -110,6 +127,22 @@ struct FXSheet: View {
                             .font(.label(9)).tracking(0.4).foregroundStyle(Theme.txtMuted)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                }
+            } else if tab == .body {
+                if model.bodyEffects.isEmpty {
+                    Label("Body FX list unavailable — engine query failed", systemImage: "person.slash")
+                        .font(.label(9)).tracking(0.4).foregroundStyle(Theme.txtMuted)
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.bodyViolet.opacity(0.08)))
+                } else {
+                    Label(videoHostClipID == nil
+                          ? "Import a video clip first — body FX ride on a clip"
+                          : "Silhouette FX — live person matte (Vision)", systemImage: "person.fill")
+                        .font(.label(9)).tracking(0.4).foregroundStyle(Theme.bodyViolet)
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.bodyViolet.opacity(0.08)))
                 }
             } else {
                 if audioHostClipID == nil {
@@ -140,6 +173,8 @@ struct FXSheet: View {
         } else {
             let target: DropTarget
             switch tab {
+            case .body:
+                return   // body placement routes through placeBody()
             case .audio:
                 guard let host = audioHostClipID else { return }
                 target = .audioClip(host)
@@ -155,6 +190,31 @@ struct FXSheet: View {
         // Dismiss only on real engine success; otherwise show the handler error.
         if placed { dismiss() }
         else { placeError = model.engine.lastError ?? "The engine rejected that placement." }
+    }
+}
+
+private struct BodyEffectCard: View {
+    let def: BodyFXDef
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Image(systemName: "person.fill")
+                    .font(.system(size: 18)).foregroundStyle(Theme.bodyViolet)
+                    .frame(width: 34, height: 34)
+                    .background(RoundedRectangle(cornerRadius: 9).fill(Theme.bodyViolet.opacity(0.08)))
+                    .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.bodyViolet.opacity(0.4)))
+                Spacer()
+                Text(def.category.uppercased()).font(.label(8)).foregroundStyle(Theme.txtGhost)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(def.name).font(.disp(14)).textCase(.uppercase).foregroundStyle(.white)
+                Text(def.tagline.isEmpty ? "\(def.params.count) params" : def.tagline)
+                    .font(.num(11)).foregroundStyle(Theme.txtMuted).lineLimit(1)
+            }
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
+        .glass(Theme.rCard)
     }
 }
 

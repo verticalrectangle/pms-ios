@@ -251,6 +251,20 @@ final class MockEngine {
         case "begin_batch", "end_batch", "abort_batch", "set_live_fx", "select_clip":
             return ok([:])
 
+        case "list_body_fx":
+            // Mirrors the engine's BodyFXInfo table shape (subset for the sim).
+            func p(_ n: String, _ l: String, _ mn: Double, _ mx: Double, _ d: Double) -> [String: Any] {
+                ["name": n, "label": l, "min": mn, "max": mx, "default": d]
+            }
+            return ok(["effects": [
+                ["name": "Neon Outline", "tagline": "glow along the silhouette", "category": "Body",
+                 "params": [p("width", "Width", 1, 8, 3), p("glow", "Glow", 0, 2, 1)]],
+                ["name": "Depth Blur", "tagline": "sharp person, blurred world", "category": "Body",
+                 "params": [p("radius", "Blur Radius", 2, 30, 12)]],
+                ["name": "Body Glitch", "tagline": "slice the silhouette", "category": "Body",
+                 "params": [p("intensity", "Intensity", 0, 1, 0.4), p("speed", "Speed", 0.1, 4, 1)]],
+            ] as [[String: Any]]])
+
         case "save_project":
             guard let path = params["path"] as? String, !path.isEmpty else { return err("no project path") }
             do {
@@ -348,6 +362,8 @@ final class MockEngine {
         case "clip_style": c.clipStyle = value as? String ?? c.clipStyle
         case "body_fx_type": c.bodyFXType = value as? String ?? c.bodyFXType
         case "body_fx_amount": c.fxParams["body_fx_amount"] = dbl(value) ?? 0
+        case "body_fx_param_0", "body_fx_param_1", "body_fx_param_2", "body_fx_param_3":
+            c.fxParams[prop] = dbl(value) ?? 0
         default: return false
         }
         return true

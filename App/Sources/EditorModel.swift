@@ -278,6 +278,13 @@ final class EditorModel: ObservableObject {
         }
     }
 
+    /// Titles baked into the played composition — preview == export. The clip
+    /// currently being text-edited is excluded (the live overlay shows it) so
+    /// typing isn't gated on a composition rebuild.
+    private var bakedTitleClips: [Clip] {
+        titleClips.filter { $0.id != selectedLyricClip?.id }
+    }
+
     /// Rebuild the player timeline from the projection.
     func rebuildVideo(seekTo: Double? = nil) async {
         let segs = videoSegments
@@ -292,7 +299,7 @@ final class EditorModel: ObservableObject {
             v.onTick = { [weak self] time, playing in self?.playerTick(time, playing) }
             video = v
         }
-        await video?.load(segments: segs, seekTo: seekTo)
+        await video?.load(segments: segs, titles: bakedTitleClips, seekTo: seekTo)
         videoDuration = video?.duration
         videoLoaded = true
     }
@@ -548,9 +555,11 @@ final class EditorModel: ObservableObject {
         }
     }
     private func commitText(_ a: EngineClipAddress, _ text: String) {
+        // rebuildPlayer: titles bake into the composition, so the committed
+        // text must reach the player (the edited clip is overlay-drawn until
+        // deselected, so this only matters for preview==export fidelity).
         _ = mutate("set_clip_prop", ["track": a.track, "clip": a.clip,
-                                     "prop": "text", "value": text],
-                   rebuildPlayer: false)
+                                     "prop": "text", "value": text])
     }
 
     // MARK: - Selection routing
@@ -713,6 +722,39 @@ final class EditorModel: ObservableObject {
         }
     }
 
+    // MARK: - Body FX (defs live in the engine; see list_body_fx)
+
+    @Published var bodyEffects: [BodyFXDef] = []
+
+    func loadBodyEffects() {
+        guard bodyEffects.isEmpty,
+              let r = try? engine.resultObject("list_body_fx"),
+              let arr = r["effects"] as? [[String: Any]] else { return }
+        bodyEffects = arr.compactMap(BodyFXDef.decode)
+    }
+    func bodyDef(named name: String?) -> BodyFXDef? {
+        guard let name else { return nil }
+        return bodyEffects.first { $0.name == name }
+    }
+
+    /// Place a body-FX brick: one body_fx clip + typed props (the doc contract —
+    /// there is no add_body_fx_brick handler).
+    @discardableResult
+    func placeBodyEffect(_ def: BodyFXDef, at t: Double) -> Bool {
+        guard let ti = tracks.firstIndex(where: { $0.kind == .video }),
+              tracks[ti].engineIndex >= 0 else { return false }
+        let et = tracks[ti].engineIndex
+        guard let r = mutate("add_clip", ["track": et, "type": "body_fx",
+                                          "start": t, "end": t + 2], rebuildPlayer: false),
+              let ci = r["clip"] as? Int else { return false }
+        _ = mutate("set_clip_props", ["ops": [
+            ["track": et, "clip": ci, "prop": "body_fx_type", "value": def.name],
+            ["track": et, "clip": ci, "prop": "body_fx_amount", "value": 1.0],
+        ]], rebuildPlayer: false)
+        selectedID = EngineClipAddress(track: et, clip: ci).idString
+        return true
+    }
+
     // MARK: - FX levers
 
     /// Drop an effect on a target. Video effects on a content track couple to
@@ -796,18 +838,28 @@ final class EditorModel: ObservableObject {
     }
 
     /// Live slider — local + shader immediately; the engine lever debounced.
+    /// Body bricks route through set_clip_prop (positional body_fx_param_i);
+    /// everything else through set_clip_fx.
     func setParam(_ key: String, _ value: Double, onBrick id: String) {
         guard let b = binding(forBrick: id) else { return }
         b.wrappedValue.params[key] = value
         syncLiveFX()
-        guard let a = address(id), let fxID = b.wrappedValue.chain.last else { return }
+        guard let a = address(id) else { return }
+        let isBody = b.wrappedValue.kind == .bodyFX
+        let fxID = b.wrappedValue.chain.last
         paramCommitTask?.cancel()
         paramCommitTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
-            _ = self?.mutate("set_clip_fx", ["track": a.track, "clip": a.clip,
-                                             "fx_id": fxID, "params": [key: value]],
-                             rebuildPlayer: false)
+            if isBody {
+                _ = self?.mutate("set_clip_prop", ["track": a.track, "clip": a.clip,
+                                                   "prop": key, "value": value],
+                                 rebuildPlayer: false)
+            } else if let fxID {
+                _ = self?.mutate("set_clip_fx", ["track": a.track, "clip": a.clip,
+                                                 "fx_id": fxID, "params": [key: value]],
+                                 rebuildPlayer: false)
+            }
         }
     }
 
@@ -819,11 +871,29 @@ final class EditorModel: ObservableObject {
     func syncLiveFX() {
         var stack: [[String: Any]] = []
         for tr in tracks {
-            for b in tr.bricks where b.kind == .glassFX || b.kind == .multiFX || b.kind == .globalFX {
-                let perFX = b.chainParams(padTo: b.chain.count)
-                for (i, fxID) in b.chain.enumerated() {
-                    stack.append(["fx_type": fxID, "params": perFX[i],
-                                  "start": b.start, "end": b.end])
+            for b in tr.bricks {
+                switch b.kind {
+                case .glassFX, .multiFX, .globalFX:
+                    let perFX = b.chainParams(padTo: b.chain.count)
+                    for (i, fxID) in b.chain.enumerated() {
+                        stack.append(["fx_type": fxID, "params": perFX[i],
+                                      "start": b.start, "end": b.end])
+                    }
+                case .bodyFX:
+                    guard let name = b.bodyFXType else { continue }
+                    // Metal body passes take the real BodyFXInfo param names;
+                    // the projection stores positional keys — map via the def.
+                    var named: [String: Double] = [:]
+                    if let def = bodyDef(named: name) {
+                        for (i, p) in def.params.enumerated() {
+                            named[p.key] = b.params["body_fx_param_\(i)"] ?? p.def
+                        }
+                    }
+                    named["amount"] = b.params["body_fx_amount"] ?? 1.0
+                    stack.append(["fx_type": "body_fx", "body_fx_type": name,
+                                  "params": named, "start": b.start, "end": b.end])
+                case .audioFX:
+                    break   // audio chains render engine-side, not in the video stack
                 }
             }
         }
