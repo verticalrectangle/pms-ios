@@ -1,30 +1,17 @@
 //  ProjectStore.swift
-//  Real .pms persistence, ported from pop-maker-studio's project.cpp design:
-//  a versioned document (monotonic version, additive + version-gated on read),
-//  Track::kind persisted while managed/transient state is not, markers-as-chapters,
-//  and media collected into a media/ folder beside the .pms (desktop collect_project).
-//  iOS twist: media is referenced by RELATIVE filename and resolved at load, because
-//  the app container's absolute path changes between launches.
+//  Project persistence = the ENGINE's binary v64 .pms (save_project /
+//  load_project). This file owns only what is explicitly not .pms: sandbox
+//  paths, media copying, the poster sidecar, and a display-name sidecar
+//  (the engine has no project-name field — the .pms stem is always
+//  "project.pms" in our layout).
+//  Home-card metadata comes from the engine's read-only get_project_summary,
+//  so the open project in the singleton engine is never disturbed.
 
 import Foundation
 
-/// The serialized project — mirrors project.cpp's top level (version, format, bpm,
-/// duration, tracks[], markers/chapters). JSON here (vs the desktop's binary blob),
-/// same additive/version-gated design so old files keep loading as fields are added.
-struct ProjectDoc: Codable {
-    static let currentVersion = 1     // monotonic; bump + gate new fields on read
-
-    var version = ProjectDoc.currentVersion
-    var name: String
-    var format: Format
-    var bpm: Double
-    var duration: Double
-    var tracks: [Track]
-    var chapters: [ChapterMarker]
-    var updated: Date = Date()
-}
-
-/// Lightweight entry for the Home list, scanned from disk.
+/// Lightweight entry for the Home list. `error` non-nil = the project exists
+/// on disk but its .pms could not be summarized (corrupt/unreadable) — shown,
+/// never silently omitted.
 struct ProjectMeta: Identifiable {
     let id: String
     let name: String
@@ -34,6 +21,7 @@ struct ProjectMeta: Identifiable {
     let fxCount: Int
     let updated: Date
     let posterURL: URL?
+    var error: String? = nil
 }
 
 enum ProjectStore {
@@ -53,34 +41,49 @@ enum ProjectStore {
     }
     static func docURL(_ id: String) -> URL { dir(id).appendingPathComponent("project.pms") }
     static func posterURL(_ id: String) -> URL { dir(id).appendingPathComponent("poster.jpg") }
+    static func nameURL(_ id: String) -> URL { dir(id).appendingPathComponent("name.txt") }
     static func exists(_ id: String) -> Bool { fm.fileExists(atPath: docURL(id).path) }
 
-    static func save(_ doc: ProjectDoc, id: String) {
-        try? fm.createDirectory(at: dir(id), withIntermediateDirectories: true)
-        var d = doc; d.updated = Date()
-        let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? enc.encode(d) { try? data.write(to: docURL(id), options: .atomic) }
+    /// Per-project cache dir (filmstrips etc.) — purgeable, never in Documents.
+    static func cacheDir(_ id: String) -> URL {
+        let d = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ProjectCache", isDirectory: true)
+            .appendingPathComponent(id, isDirectory: true)
+        try? fm.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
     }
 
-    /// Load + relink: resolve each clip's `mediaFile` to an ABSOLUTE URL under this
-    /// project's media/ dir at the CURRENT container path (the iOS relink the desktop lacks).
-    static func load(_ id: String) -> ProjectDoc? {
-        guard let data = try? Data(contentsOf: docURL(id)),
-              var doc = try? JSONDecoder().decode(ProjectDoc.self, from: data) else { return nil }
-        let media = mediaDir(id)
-        for ti in doc.tracks.indices {
-            for ci in doc.tracks[ti].clips.indices where doc.tracks[ti].clips[ci].mediaFile != nil {
-                doc.tracks[ti].clips[ci].sourceURL =
-                    media.appendingPathComponent(doc.tracks[ti].clips[ci].mediaFile!)
-            }
-        }
-        return doc
+    // MARK: engine-backed persistence
+
+    static func save(engine: EngineStore, id: String, name: String) throws {
+        try fm.createDirectory(at: dir(id), withIntermediateDirectories: true)
+        _ = try engine.result("save_project", ["path": docURL(id).path])
+        try? name.data(using: .utf8)?.write(to: nameURL(id), options: .atomic)
+    }
+
+    static func load(engine: EngineStore, id: String) throws {
+        _ = try engine.result("load_project", ["path": docURL(id).path])
+    }
+
+    static func name(_ id: String) -> String {
+        (try? String(contentsOf: nameURL(id), encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Untitled"
+    }
+
+    static func rename(_ id: String, _ name: String) {
+        try? name.data(using: .utf8)?.write(to: nameURL(id), options: .atomic)
     }
 
     /// Copy an imported movie into the project's media/ dir; return its ABSOLUTE URL.
     static func importMedia(_ src: URL, into id: String) -> URL {
-        let dst = mediaDir(id).appendingPathComponent(src.lastPathComponent)
-        if src != dst, !fm.fileExists(atPath: dst.path) { try? fm.copyItem(at: src, to: dst) }
+        var dst = mediaDir(id).appendingPathComponent(src.lastPathComponent)
+        // Never silently reuse a different file of the same name.
+        if src != dst, fm.fileExists(atPath: dst.path) {
+            let stem = src.deletingPathExtension().lastPathComponent
+            dst = mediaDir(id).appendingPathComponent(
+                "\(stem)-\(UUID().uuidString.prefix(6)).\(src.pathExtension)")
+        }
+        if src != dst { try? fm.copyItem(at: src, to: dst) }
         return dst
     }
 
@@ -89,25 +92,44 @@ enum ProjectStore {
         try? jpeg.write(to: posterURL(id), options: .atomic)
     }
 
-    static func delete(_ id: String) { try? fm.removeItem(at: dir(id)) }
-
-    static func rename(_ id: String, _ name: String) {
-        guard var doc = load(id) else { return }
-        doc.name = name
-        save(doc, id: id)
+    static func delete(_ id: String) {
+        try? fm.removeItem(at: dir(id))
+        try? fm.removeItem(at: cacheDir(id))
     }
 
-    /// Scan Documents/Projects for saved projects, newest first.
-    static func list() -> [ProjectMeta] {
+    // MARK: home list (engine read-only summaries)
+
+    /// Scan Documents/Projects and summarize each .pms through the engine's
+    /// read-only get_project_summary — the open project is not disturbed.
+    /// Corrupt projects come back with `error` set, newest first.
+    static func list(engine: EngineStore) -> [ProjectMeta] {
         guard let ids = try? fm.contentsOfDirectory(atPath: root.path) else { return [] }
         return ids.compactMap { id -> ProjectMeta? in
-            guard let doc = load(id) else { return nil }
-            let clips = doc.tracks.filter { $0.kind == .video }.reduce(0) { $0 + $1.clips.count }
-            let fx = doc.tracks.reduce(0) { $0 + $1.bricks.count }
+            let doc = docURL(id)
+            guard fm.fileExists(atPath: doc.path) else { return nil }
             let poster = posterURL(id)
-            return ProjectMeta(id: id, name: doc.name, format: doc.format, duration: doc.duration,
-                               clipCount: clips, fxCount: fx, updated: doc.updated,
-                               posterURL: fm.fileExists(atPath: poster.path) ? poster : nil)
-        }.sorted { $0.updated > $1.updated }
+            let posterOrNil = fm.fileExists(atPath: poster.path) ? poster : nil
+            let displayName = name(id)
+            do {
+                let s = try engine.resultObject("get_project_summary", ["path": doc.path])
+                return ProjectMeta(
+                    id: id,
+                    name: displayName,
+                    format: Format(engineFormat: s["format"] as? String ?? "vertical"),
+                    duration: (s["duration"] as? Double) ?? 0,
+                    clipCount: (s["clip_count"] as? Int) ?? 0,
+                    fxCount: (s["fx_count"] as? Int) ?? 0,
+                    updated: Date(timeIntervalSince1970: Double((s["modified_unix"] as? Int) ?? 0)),
+                    posterURL: posterOrNil)
+            } catch {
+                let mtime = (try? fm.attributesOfItem(atPath: doc.path)[.modificationDate] as? Date)
+                    .flatMap { $0 } ?? .distantPast
+                return ProjectMeta(id: id, name: displayName, format: .portrait,
+                                   duration: 0, clipCount: 0, fxCount: 0,
+                                   updated: mtime, posterURL: posterOrNil,
+                                   error: error.localizedDescription)
+            }
+        }
+        .sorted { $0.updated > $1.updated }
     }
 }

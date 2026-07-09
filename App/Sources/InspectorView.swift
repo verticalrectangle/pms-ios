@@ -67,7 +67,7 @@ struct InspectorView: View {
                 ForEach(Array(brick.chain.enumerated()), id: \.offset) { i, id in
                     HStack(spacing: 5) {
                         Text("\(i + 1)").font(.num(9)).foregroundStyle(Theme.txtGhost)
-                        Text((Effects.byID[id]?.name ?? id).uppercased()).font(.label(8.5)).tracking(0.4)
+                        Text((EffectCatalog.byID[id]?.name ?? id).uppercased()).font(.label(8.5)).tracking(0.4)
                             .foregroundStyle(Theme.txtBody)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 5)
@@ -83,7 +83,7 @@ struct InspectorView: View {
 
     private func paramSliders(_ brick: Brick, bind: Binding<Brick>) -> some View {
         // parameters of the last effect in the chain (the one you just added / are tuning)
-        let def = Effects.byID[brick.chain.last ?? ""]
+        let def = EffectCatalog.byID[brick.chain.last ?? ""]
         return VStack(spacing: 9) {
             ForEach(def?.params ?? [], id: \.key) { p in
                 let value = Binding<Double>(
@@ -92,7 +92,7 @@ struct InspectorView: View {
                 )
                 VStack(spacing: 2) {
                     HStack {
-                        Text(p.key.replacingOccurrences(of: "_", with: " ").uppercased())
+                        Text(p.label.uppercased())
                             .font(.label(8.5)).tracking(0.8).foregroundStyle(Theme.txtMuted)
                         Spacer()
                         Text(String(format: "%.2f", value.wrappedValue)).font(.num(10)).foregroundStyle(Theme.accent)
@@ -105,7 +105,7 @@ struct InspectorView: View {
 
     private func actions(_ brick: Brick) -> some View {
         HStack(spacing: 7) {
-            if brick.boundClipID != nil {
+            if brick.coupled {
                 inspectorButton("Decouple", tint: Theme.txt) { model.decouple(brick.id) }
             }
             inspectorButton("Add FX", tint: Theme.txt) { model.activeSheet = .fx }

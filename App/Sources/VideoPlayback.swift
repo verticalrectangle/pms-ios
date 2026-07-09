@@ -9,12 +9,18 @@ import CoreImage
 import Photos
 
 extension VideoPlayback {
-    /// A filmstrip of `count` evenly-spaced JPEG frames written to temp files —
-    /// for the timeline clip's preview. A coarse tolerance keeps it fast.
-    static func filmstrip(for url: URL, count: Int) async -> [URL] {
+    /// A filmstrip of `count` evenly-spaced JPEG frames — for the timeline
+    /// clip's preview. Frames land in the project's cache dir keyed by source
+    /// name + frame index, so re-opens reuse them instead of littering temp.
+    static func filmstrip(for url: URL, count: Int, cacheDir: URL? = nil) async -> [URL] {
         let asset = AVURLAsset(url: url)
         let dur = (try? await asset.load(.duration))?.seconds ?? 0
         guard dur > 0, count > 0 else { return [] }
+        let dir = cacheDir ?? FileManager.default.temporaryDirectory
+        let stem = url.deletingPathExtension().lastPathComponent
+        // Cache hit: all frames already on disk.
+        let expected = (0..<count).map { dir.appendingPathComponent("\(stem)-fs\($0)of\(count).jpg") }
+        if expected.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) { return expected }
         let gen = AVAssetImageGenerator(asset: asset)
         gen.appliesPreferredTrackTransform = true
         gen.maximumSize = CGSize(width: 160, height: 160)
@@ -25,7 +31,7 @@ extension VideoPlayback {
             let sec = dur * (Double(i) + 0.5) / Double(count)
             guard let cg = try? await gen.image(at: CMTime(seconds: sec, preferredTimescale: 600)).image,
                   let data = UIImage(cgImage: cg).jpegData(compressionQuality: 0.6) else { continue }
-            let dst = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+            let dst = expected[i]
             try? data.write(to: dst)
             urls.append(dst)
         }
@@ -48,6 +54,7 @@ final class VideoPlayback {
 
     struct Segment {
         let url: URL; let start: Double; let sourceStart: Double; let duration: Double
+        var speed: Double = 1        // timeline seconds consume `speed` source seconds
         var fadeIn: Double = 0; var fadeOut: Double = 0
     }
 
@@ -68,7 +75,16 @@ final class VideoPlayback {
     /// Build the AVComposition (+ orientation video composition) from the clip
     /// segments. Clips sit at their timeline `start`; an empty range fills any
     /// gap (front-trim). Composition == timeline, 1:1. Shared by playback + export.
-    static func buildComposition(_ segments: [Segment], titles: [Clip] = []) async -> (AVMutableComposition, AVMutableVideoComposition?) {
+    enum CompositionError: LocalizedError {
+        case insertFailed(String, String)
+        var errorDescription: String? {
+            switch self {
+            case .insertFailed(let file, let why): return "Could not add \(file): \(why)"
+            }
+        }
+    }
+
+    static func buildComposition(_ segments: [Segment], titles: [Clip] = []) async throws -> (AVMutableComposition, AVMutableVideoComposition?) {
         let comp = AVMutableComposition()
         let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
@@ -81,15 +97,32 @@ final class VideoPlayback {
                 aTrack?.insertEmptyTimeRange(gap)
             }
             let asset = AVURLAsset(url: seg.url)
-            let range = CMTimeRange(start: CMTime(seconds: seg.sourceStart, preferredTimescale: 600),
-                                    duration: CMTime(seconds: seg.duration, preferredTimescale: 600))
-            if let sv = try? await asset.loadTracks(withMediaType: .video).first {
-                try? vTrack?.insertTimeRange(range, of: sv, at: clipStart)
+            // Source range consumed = timeline duration × speed; the inserted
+            // range is then scaled back to the timeline duration (retime).
+            let speed = max(0.01, seg.speed)
+            let srcRange = CMTimeRange(start: CMTime(seconds: seg.sourceStart, preferredTimescale: 600),
+                                       duration: CMTime(seconds: seg.duration * speed, preferredTimescale: 600))
+            let tlDuration = CMTime(seconds: seg.duration, preferredTimescale: 600)
+            do {
+                if let sv = try await asset.loadTracks(withMediaType: .video).first {
+                    try vTrack?.insertTimeRange(srcRange, of: sv, at: clipStart)
+                    if speed != 1 {
+                        vTrack?.scaleTimeRange(CMTimeRange(start: clipStart, duration: srcRange.duration),
+                                               toDuration: tlDuration)
+                    }
+                }
+                if let sa = try await asset.loadTracks(withMediaType: .audio).first {
+                    try aTrack?.insertTimeRange(srcRange, of: sa, at: clipStart)
+                    if speed != 1 {
+                        aTrack?.scaleTimeRange(CMTimeRange(start: clipStart, duration: srcRange.duration),
+                                               toDuration: tlDuration)
+                    }
+                }
+            } catch {
+                // Propagate — a silently skipped clip reads as data loss.
+                throw CompositionError.insertFailed(seg.url.lastPathComponent, error.localizedDescription)
             }
-            if let sa = try? await asset.loadTracks(withMediaType: .audio).first {
-                try? aTrack?.insertTimeRange(range, of: sa, at: clipStart)
-            }
-            cursor = CMTimeAdd(clipStart, range.duration)
+            cursor = CMTimeAdd(clipStart, tlDuration)
         }
         // The UNIFIED composite: fold every layer (video base → fades → titles)
         // through ONE Core Image handler, shared by preview + export, in track
@@ -139,14 +172,28 @@ final class VideoPlayback {
         return max(0, min(1, o))
     }
 
+    private var loadGeneration = 0
+
     /// (Re)build the playable timeline from the ordered clip segments — every
     /// edit (trim/split/delete) calls this. Preserves the play position.
+    /// Rapid edits cancel each other: only the newest rebuild installs.
     func load(segments: [Segment], titles: [Clip] = [], seekTo: Double? = nil) async {
+        loadGeneration += 1
+        let gen = loadGeneration
         let wasPlaying = player.rate > 0
         let at = seekTo.map { CMTime(seconds: $0, preferredTimescale: 600) } ?? player.currentTime()
         suppressTicks = true   // swallow the item-swap's transient 0 until the seek lands
 
-        let (comp, vc) = await Self.buildComposition(segments, titles: titles)
+        let comp: AVMutableComposition
+        let vc: AVMutableVideoComposition?
+        do {
+            (comp, vc) = try await Self.buildComposition(segments, titles: titles)
+        } catch {
+            engine?.lastError = error.localizedDescription
+            suppressTicks = false
+            return
+        }
+        guard gen == loadGeneration else { return }   // a newer edit superseded this rebuild
         duration = comp.duration.seconds
 
         let item = AVPlayerItem(asset: comp)
@@ -222,8 +269,12 @@ enum TextRasterizer {
 
     static func image(for clip: Clip, size: CGSize) -> CIImage? {
         guard !clip.label.isEmpty, size.width > 1 else { return nil }
-        let key = "\(clip.id)|\(clip.label)|\(Int(size.width))x\(Int(size.height))"
+        // Key on CONTENT + every style input of the raster (currently text +
+        // frame size; extend when per-clip fonts/colors land). Never the clip
+        // id — projection ids change every refresh and would bloat the cache.
+        let key = "\(clip.label)|\(Int(size.width))x\(Int(size.height))"
         if let c = cache[key] { return c }
+        if cache.count > 128 { cache.removeAll() }   // crude bound; rebuilt on demand
         let root = CALayer(); root.frame = CGRect(origin: .zero, size: size)
         let para = NSMutableParagraphStyle(); para.alignment = .center
         let text = CATextLayer()
@@ -262,14 +313,35 @@ enum VideoExporter {
     /// (same as preview → preview == export), and encode. `engine` must have
     /// exclusive access — the caller suspends the live preview. Ported from the
     /// verified macOS harness.
+    enum ExportError: LocalizedError {
+        case emptyTimeline
+        case setup(String)
+        case cancelled
+        case failed(String)
+        var errorDescription: String? {
+            switch self {
+            case .emptyTimeline:   return "Nothing to export — the timeline is empty."
+            case .setup(let d):    return "Export setup failed: \(d)"
+            case .cancelled:       return "Export cancelled."
+            case .failed(let d):   return "Export failed: \(d)"
+            }
+        }
+    }
+
     nonisolated static func export(_ segments: [VideoPlayback.Segment], titles: [Clip] = [],
                                    engine: EngineStore, size: (w: Int, h: Int),
-                                   progress: @escaping (Double) -> Void) async -> URL? {
-        let (comp, vc) = await VideoPlayback.buildComposition(segments, titles: titles)
+                                   isCancelled: @escaping () -> Bool = { false },
+                                   progress: @escaping (Double) -> Void) async throws -> URL {
+        let (comp, vc0) = try await VideoPlayback.buildComposition(segments, titles: titles)
         let duration = comp.duration.seconds
-        guard duration > 0, let vc,
-              let vtracks = try? await comp.loadTracks(withMediaType: .video), !vtracks.isEmpty,
-              let reader = try? AVAssetReader(asset: comp) else { return nil }
+        guard duration > 0 else { throw ExportError.emptyTimeline }
+        guard let vc = vc0,
+              let vtracks = try? await comp.loadTracks(withMediaType: .video), !vtracks.isEmpty else {
+            throw ExportError.setup("no video tracks in the composition")
+        }
+        let reader: AVAssetReader
+        do { reader = try AVAssetReader(asset: comp) }
+        catch { throw ExportError.setup("AVAssetReader: \(error.localizedDescription)") }
         let W = size.w, H = size.h
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("PopMaker_\(UUID().uuidString).mp4")
         try? FileManager.default.removeItem(at: out)
@@ -277,7 +349,7 @@ enum VideoExporter {
         let rout = AVAssetReaderVideoCompositionOutput(videoTracks: vtracks, videoSettings: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
         rout.videoComposition = vc
-        guard reader.canAdd(rout) else { return nil }
+        guard reader.canAdd(rout) else { throw ExportError.setup("reader rejected video output") }
         reader.add(rout)
 
         // Audio: pass the composition's audio through (decode to LPCM here, re-encode
@@ -293,7 +365,9 @@ enum VideoExporter {
             if reader.canAdd(a) { reader.add(a); aout = a }
         }
 
-        guard let writer = try? AVAssetWriter(outputURL: out, fileType: .mp4) else { return nil }
+        let writer: AVAssetWriter
+        do { writer = try AVAssetWriter(outputURL: out, fileType: .mp4) }
+        catch { throw ExportError.setup("AVAssetWriter: \(error.localizedDescription)") }
         let bitrate = min(W * H * 8, 24_000_000)   // ~HighestQuality; was an unset (low) default
         let win = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: W, AVVideoHeightKey: H,
@@ -309,7 +383,7 @@ enum VideoExporter {
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey as String: W, kCVPixelBufferHeightKey as String: H,
             kCVPixelBufferMetalCompatibilityKey as String: true])
-        guard writer.canAdd(win) else { return nil }
+        guard writer.canAdd(win) else { throw ExportError.setup("writer rejected video input") }
         writer.add(win)
         var ain: AVAssetWriterInput?
         if aout != nil {
@@ -319,14 +393,21 @@ enum VideoExporter {
             a.expectsMediaDataInRealTime = false
             if writer.canAdd(a) { writer.add(a); ain = a }
         }
-        guard reader.startReading(), writer.startWriting() else { return nil }
+        guard reader.startReading() else {
+            throw ExportError.setup("reader: \(reader.error?.localizedDescription ?? "could not start")")
+        }
+        guard writer.startWriting() else {
+            throw ExportError.setup("writer: \(writer.error?.localizedDescription ?? "could not start")")
+        }
         writer.startSession(atSourceTime: .zero)
 
         var cacheOut: CVMetalTextureCache?
         CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, engine.device, nil, &cacheOut)
-        guard let cache = cacheOut, let pool = adaptor.pixelBufferPool else { return nil }
+        guard let cache = cacheOut, let pool = adaptor.pixelBufferPool else {
+            throw ExportError.setup("no Metal texture cache / pixel buffer pool")
+        }
 
-        return await withCheckedContinuation { (cont: CheckedContinuation<URL?, Never>) in
+        let result = await withCheckedContinuation { (cont: CheckedContinuation<Result<URL, ExportError>, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
                 var pendingAudio: CMSampleBuffer?      // pulled-but-not-yet-due (PTS-gated drain)
                 var audioDone = (aout == nil)
@@ -343,8 +424,10 @@ enum VideoExporter {
                         else { pendingAudio = asb; return }      // not due yet — hold for a later frame
                     }
                 }
+                var cancelled = false
                 while reader.status == .reading, writer.status == .writing,
                       let sb = rout.copyNextSampleBuffer() {
+                    if isCancelled() { cancelled = true; break }
                     guard let ipb = CMSampleBufferGetImageBuffer(sb) else { continue }
                     let pt = CMSampleBufferGetPresentationTimeStamp(sb)
                     engine.submitCameraFrame(ipb, rotation: 0, hostTime: pt.seconds)  // frame + its time
@@ -373,20 +456,31 @@ enum VideoExporter {
                     }
                 }
                 // Reader/writer failure (e.g. disk full) → cancel, never hand back a truncated file as success.
-                let ok = reader.status != .failed && writer.status == .writing
+                let ok = !cancelled && reader.status != .failed && writer.status == .writing
                 if ok {
                     ain?.markAsFinished(); win.markAsFinished()
                     writer.finishWriting {
                         DispatchQueue.main.async { progress(1) }
-                        cont.resume(returning: writer.status == .completed ? out : nil)
+                        if writer.status == .completed {
+                            cont.resume(returning: .success(out))
+                        } else {
+                            cont.resume(returning: .failure(.failed(
+                                writer.error?.localizedDescription ?? "writer did not complete")))
+                        }
                     }
                 } else {
+                    let detail = cancelled ? nil
+                        : reader.error?.localizedDescription ?? writer.error?.localizedDescription
+                    reader.cancelReading()
                     writer.cancelWriting()
+                    try? FileManager.default.removeItem(at: out)
                     DispatchQueue.main.async { progress(1) }
-                    cont.resume(returning: nil)
+                    cont.resume(returning: cancelled ? .failure(.cancelled)
+                                                     : .failure(.failed(detail ?? "reader/writer failed")))
                 }
             }
         }
+        return try result.get()
     }
 
     /// Save a finished export into the Photos library (add-only permission).

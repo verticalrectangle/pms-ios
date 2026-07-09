@@ -1,8 +1,11 @@
 //  FXSheet.swift
-//  Effect browser. Three tabs map to the three brick levers: Video (add_effect_brick),
-//  Body (add_body_fx_brick / remove_background), Audio (add_audio_multifx_brick).
-//  Pick a placement — Glass (onto the selected clip) or Global (onto the FX rail) —
-//  then tap an effect to drop it. Tapping an already-selected brick welds a chain.
+//  Effect browser over the FULL generated catalog (GeneratedEffectCatalog.swift,
+//  regenerated from the desktop registry). Video FX place through
+//  add_effect_brick (Glass = onto the selected/overlapped clip's track, which
+//  auto-couples engine-side; Global = the GFX rail); audio FX through
+//  add_audio_multifx_brick. Placement is disabled when there is no valid host —
+//  never a made-up fallback id. Body FX are hidden until the engine exposes a
+//  BodyFX manifest/query.
 
 import SwiftUI
 
@@ -10,14 +13,15 @@ struct FXSheet: View {
     @ObservedObject var model: EditorModel
     @Environment(\.dismiss) private var dismiss
 
-    enum Tab: String, CaseIterable { case video = "Video FX", body = "Body FX", audio = "Audio FX" }
+    enum Tab: String, CaseIterable { case video = "Video FX", audio = "Audio FX" }
     @State private var tab: Tab = .video
     @State private var category = "All"
     @State private var query = ""
     @State private var placeGlobal = false
+    @State private var placeError: String?
 
     private var source: [EffectDef] {
-        switch tab { case .video: Effects.video; case .body: Effects.body; case .audio: Effects.audio }
+        switch tab { case .video: EffectCatalog.video; case .audio: EffectCatalog.audio }
     }
     private var list: [EffectDef] {
         source.filter {
@@ -26,14 +30,43 @@ struct FXSheet: View {
         }
     }
 
+    /// The video clip under the playhead (falling back to the first video clip)
+    /// — the host a Glass placement rides on. nil = no valid host.
+    private var videoHostClipID: String? {
+        let t = model.playhead
+        let clips = model.tracks.first { $0.kind == .video }?.clips ?? []
+        return (clips.first { t >= $0.start && t < $0.end } ?? clips.last)?.id
+    }
+    private var audioHostClipID: String? {
+        // Audio FX chains couple to audio content; video clips carry audio too.
+        let clips = (model.tracks.first { $0.kind == .audio }?.clips)
+            ?? (model.tracks.first { $0.kind == .video }?.clips) ?? []
+        return clips.first?.id
+    }
+
+    private var canPlace: Bool {
+        switch tab {
+        case .video: return placeGlobal || videoHostClipID != nil
+        case .audio: return audioHostClipID != nil
+        }
+    }
+
     var body: some View {
-        GlassSheet(title: "Effects", eyebrow: "\(Effects.all.count) GPU EFFECTS · HOT-RELOADED", full: true) {
+        GlassSheet(title: "Effects", eyebrow: "\(EffectCatalog.all.count) ENGINE EFFECTS", full: true) {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("", selection: $tab) {
                     ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }.pickerStyle(.segmented)
 
                 placementNote
+
+                if let placeError {
+                    Label(placeError, systemImage: "exclamationmark.triangle")
+                        .font(.label(9)).tracking(0.4).foregroundStyle(Color(red: 1, green: 0.6, blue: 0.5))
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.red.opacity(0.08)))
+                }
 
                 if tab == .video {
                     HStack(spacing: 9) {
@@ -45,7 +78,7 @@ struct FXSheet: View {
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 7) {
-                            ForEach(Effects.categories, id: \.self) { c in
+                            ForEach(["All"] + EffectCatalog.videoCategories, id: \.self) { c in
                                 Chip(text: c, on: category == c) { category = c }
                             }
                         }
@@ -54,7 +87,10 @@ struct FXSheet: View {
 
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                     ForEach(list) { effect in
-                        Button { place(effect) } label: { EffectCard(effect: effect) }.pressable()
+                        Button { place(effect) } label: { EffectCard(effect: effect) }
+                            .pressable()
+                            .disabled(!canPlace)
+                            .opacity(canPlace ? 1 : 0.4)
                     }
                 }
             }
@@ -64,44 +100,61 @@ struct FXSheet: View {
     private var placementNote: some View {
         Group {
             if tab == .video {
-                Picker("", selection: $placeGlobal) {
-                    Text("Glass · selected clip").tag(false)
-                    Text("Global · rail").tag(true)
-                }.pickerStyle(.segmented)
-            } else if tab == .body {
-                Label("Silhouette FX — runs process_body_fx_masks on the clip below", systemImage: "person.fill")
-                    .font(.label(9)).tracking(0.4).foregroundStyle(Theme.bodyViolet)
-                    .padding(.horizontal, 10).padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Theme.bodyViolet.opacity(0.08)))
+                VStack(spacing: 6) {
+                    Picker("", selection: $placeGlobal) {
+                        Text("Glass · selected clip").tag(false)
+                        Text("Global · rail").tag(true)
+                    }.pickerStyle(.segmented)
+                    if !placeGlobal && videoHostClipID == nil {
+                        Label("Import a video clip first — Glass FX ride on a clip", systemImage: "film")
+                            .font(.label(9)).tracking(0.4).foregroundStyle(Theme.txtMuted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
             } else {
-                Label("LIVE audio chain — auto-welds to the audio clip (1.5s)", systemImage: "waveform")
-                    .font(.label(9)).tracking(0.4).foregroundStyle(Theme.accent)
-                    .padding(.horizontal, 10).padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Theme.accentA(0.07)))
+                if audioHostClipID == nil {
+                    Label("Import audio or video first — audio FX weld to a clip", systemImage: "waveform")
+                        .font(.label(9)).tracking(0.4).foregroundStyle(Theme.txtMuted)
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.accentA(0.07)))
+                } else {
+                    Label("LIVE audio chain — auto-welds to the audio clip", systemImage: "waveform")
+                        .font(.label(9)).tracking(0.4).foregroundStyle(Theme.accent)
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.accentA(0.07)))
+                }
             }
         }
     }
 
     private func place(_ effect: EffectDef) {
+        placeError = nil
         let t = model.playhead
-        // weld into the currently selected brick if there is one
-        if let sel = model.selectedID, model.selection() != nil {
+        let placed: Bool
+        // Weld into the currently selected brick if there is one.
+        if let sel = model.selectedID, model.selection() != nil, tab == .video {
             model.weld(effect.id, intoBrick: sel)
+            placed = true
         } else {
-            let firstVideoClip = model.tracks.first { $0.kind == .video }?.clips.first { t >= $0.start && t < $0.end }?.id
-                ?? model.tracks.first { $0.kind == .video }?.clips.first?.id ?? "c1"
-            let audioClip = model.tracks.first { $0.kind == .audio }?.clips.first?.id ?? "a1"
             let target: DropTarget
             switch tab {
-            case .audio: target = .audioClip(audioClip)
-            case .body:  target = .clip(firstVideoClip)
-            case .video: target = placeGlobal ? .fxRail : .clip(firstVideoClip)
+            case .audio:
+                guard let host = audioHostClipID else { return }
+                target = .audioClip(host)
+            case .video:
+                if placeGlobal { target = .fxRail }
+                else {
+                    guard let host = videoHostClipID else { return }
+                    target = .clip(host)
+                }
             }
-            model.placeEffect(effect, onto: target, at: t)
+            placed = model.placeEffect(effect, onto: target, at: t)
         }
-        dismiss()
+        // Dismiss only on real engine success; otherwise show the handler error.
+        if placed { dismiss() }
+        else { placeError = model.engine.lastError ?? "The engine rejected that placement." }
     }
 }
 
@@ -120,7 +173,7 @@ private struct EffectCard: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(effect.name).font(.disp(14)).textCase(.uppercase).foregroundStyle(.white)
-                Text(effect.params.isEmpty ? "amount" : "\(effect.params.count) param\(effect.params.count == 1 ? "" : "s")")
+                Text(effect.params.isEmpty ? "no params" : "\(effect.params.count) param\(effect.params.count == 1 ? "" : "s")")
                     .font(.num(12)).foregroundStyle(Theme.txtMuted)
             }
         }

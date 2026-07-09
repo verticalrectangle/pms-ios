@@ -54,9 +54,20 @@ struct EditorView: View {
         if cameraOn {
             camera?.stop(); camera = nil; cameraOn = false
         } else {
-            let c = CameraCapture(engine: engine)
-            try? c.start(position: .back)
-            camera = c; cameraOn = true
+            CameraCapture.requestAuthorization { result in
+                switch result {
+                case .failure(let e):
+                    engine.lastError = e.errorDescription
+                case .success:
+                    let c = CameraCapture(engine: engine)
+                    do {
+                        try c.start(position: .back)
+                        camera = c; cameraOn = true
+                    } catch {
+                        engine.lastError = error.localizedDescription
+                    }
+                }
+            }
         }
     }
 
@@ -109,11 +120,16 @@ struct EditorView: View {
             .opacity(fullscreen ? 0 : 1)
             .animation(.bouncy(duration: 0.45, extraBounce: 0.2), value: fullscreen)
 
-            VStack {
+            VStack(spacing: 8) {
                 BusyBar(busy: engine.busy).padding(.horizontal, 12).padding(.top, 8)
+                if let err = engine.lastError {
+                    ErrorBanner(text: err) { engine.lastError = nil }
+                        .padding(.horizontal, 12)
+                }
                 Spacer()
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.busy?.label)
+            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.lastError)
 
             // The text edit bar floats just above the keyboard (respects the
             // keyboard safe area) while the rest of the UI stays put — nothing jumps.
@@ -182,19 +198,31 @@ struct EditorView: View {
             ToolbarItemGroup(placement: .bottomBar) {
                 ForEach(Array(tools.enumerated()), id: \.offset) { i, item in
                     if i > 0 { Spacer() }
-                    Button {
-                        if item.0 == .lyrics { model.addTextClip() }   // Text → add a title at the playhead
-                        else { model.activeSheet = (model.activeSheet == item.0) ? nil : item.0 }
-                    } label: {
-                        Label(item.2, systemImage: item.1)
+                    if item.0 == .lyrics {
+                        // Add-text vs typography are separate actions.
+                        Menu {
+                            Button { model.addTextClip() } label: { Label("Add Text", systemImage: "plus") }
+                            Button { model.activeSheet = .lyrics } label: { Label("Typography", systemImage: "textformat.alt") }
+                        } label: {
+                            Label(item.2, systemImage: item.1)
+                        }
+                        .tint(model.activeSheet == .lyrics ? Theme.accent : Theme.txtBody)
+                        .disabled(model.exporting)
+                    } else {
+                        Button {
+                            model.activeSheet = (model.activeSheet == item.0) ? nil : item.0
+                        } label: {
+                            Label(item.2, systemImage: item.1)
+                        }
+                        .tint(model.activeSheet == item.0 ? Theme.accent : Theme.txtBody)
+                        .disabled(model.exporting)
                     }
-                    .tint(model.activeSheet == item.0 ? Theme.accent : Theme.txtBody)
                 }
             }
         }
         .sheet(item: $model.activeSheet) { sheet in
             switch sheet {
-            case .media:  MediaSheet()
+            case .media:  MediaSheet(model: model)
             case .fx:     FXSheet(model: model)
             case .lyrics: LyricsSheet(model: model)
             case .agent:  AgentSheet(model: model)
@@ -268,6 +296,26 @@ struct EditorView: View {
             .onTapGesture { /* tap-away handled inside */ }
     }
 
+}
+
+/// Dismissible engine-error banner (EngineStore.lastError).
+struct ErrorBanner: View {
+    let text: String
+    let dismiss: () -> Void
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13)).foregroundStyle(Color(red: 1, green: 0.6, blue: 0.5))
+            Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.txt)
+                .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: dismiss) {
+                Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.txtMuted)
+            }
+        }
+        .padding(.horizontal, 13).padding(.vertical, 10)
+        .glass(13, active: true)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
 }
 
 // MARK: - Clip action bar (shown when a timeline clip is selected)
@@ -362,6 +410,9 @@ private struct LyricEditBar: View {
                 .focused($focused)
                 .onChange(of: text) { _, v in model.setClipText(clip.id, v) }
                 .onSubmit { model.selectedID = nil }   // Return commits + deselects
+            Button { model.activeSheet = .lyrics } label: {
+                Image(systemName: "textformat.alt").font(.system(size: 14))
+            }.tint(Theme.txtBody)
             ItemActionsMenu(model: model, id: clip.id)
             Button { model.splitAtPlayhead() } label: {
                 Image(systemName: "scissors").font(.system(size: 14))

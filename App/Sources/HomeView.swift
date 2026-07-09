@@ -7,6 +7,8 @@ import UIKit
 
 struct HomeView: View {
     let onOpen: (Project) -> Void
+    @EnvironmentObject var engine: EngineStore
+    @State private var loading = true
     @State private var sort: Sort = .recent
     @State private var showSettings = false
     // Circular theme reveal: a snapshot of the OLD theme, wiped away by a hole
@@ -34,9 +36,21 @@ struct HomeView: View {
         Project(id: m.id, name: m.name, sub: "\(m.clipCount) clips · \(m.fxCount) FX",
                 duration: m.duration, format: m.format, clipCount: m.clipCount, fxCount: m.fxCount,
                 updated: Self.relative.localizedString(for: m.updated, relativeTo: Date()),
-                thumbSeed: m.id, isNew: false, posterURL: m.posterURL)
+                isNew: false, posterURL: m.posterURL)
     }
     private static let relative = RelativeDateTimeFormatter()
+
+    /// Real saved projects, summarized by the engine's read-only query.
+    private func reloadMetas() {
+        engine.start()   // idempotent — onAppear ordering vs the app root isn't guaranteed
+        loading = true
+        // Engine summaries run on main (pms_command contract); yield one frame
+        // so the loading state is visible instead of a hitch.
+        DispatchQueue.main.async {
+            metas = ProjectStore.list(engine: engine)
+            loading = false
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -60,21 +74,33 @@ struct HomeView: View {
                 }
                 .padding(.bottom, 14)
 
-                if metas.isEmpty {
+                if loading {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Reading project summaries…").font(.system(size: 13)).foregroundStyle(Theme.txtMuted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 30)
+                } else if metas.isEmpty {
                     Text("No projects yet — tap New Project to start.")
                         .font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.txtMuted)
                         .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 30)
                 } else {
                     LazyVStack(spacing: 11) {
                         ForEach(sortedMetas) { m in
-                            Button { onOpen(projectFor(m)) } label: { ProjectCard(project: projectFor(m)) }
-                                .pressable()
-                                .contextMenu {
-                                    Button { renameID = m.id; renameText = m.name } label: { Label("Rename", systemImage: "pencil") }
-                                    Button(role: .destructive) {
-                                        ProjectStore.delete(m.id); metas = ProjectStore.list()
-                                    } label: { Label("Delete", systemImage: "trash") }
+                            if let error = m.error {
+                                BrokenProjectCard(meta: m, error: error) {
+                                    ProjectStore.delete(m.id); reloadMetas()
                                 }
+                            } else {
+                                Button { onOpen(projectFor(m)) } label: { ProjectCard(project: projectFor(m)) }
+                                    .pressable()
+                                    .contextMenu {
+                                        Button { renameID = m.id; renameText = m.name } label: { Label("Rename", systemImage: "pencil") }
+                                        Button(role: .destructive) {
+                                            ProjectStore.delete(m.id); reloadMetas()
+                                        } label: { Label("Delete", systemImage: "trash") }
+                                    }
+                            }
                         }
                     }
                 }
@@ -86,12 +112,12 @@ struct HomeView: View {
         .scrollIndicators(.hidden)
         .background(AtmosphereView().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)   // Home has its own big title
-        .onAppear { metas = ProjectStore.list() }   // refresh the saved-project list
+        .onAppear { reloadMetas() }   // refresh the saved-project list
         .alert("Rename Project", isPresented: Binding(get: { renameID != nil }, set: { if !$0 { renameID = nil } })) {
             TextField("Name", text: $renameText)
             Button("Cancel", role: .cancel) { renameID = nil }
             Button("Save") {
-                if let id = renameID { ProjectStore.rename(id, renameText.isEmpty ? "Untitled" : renameText); metas = ProjectStore.list() }
+                if let id = renameID { ProjectStore.rename(id, renameText.isEmpty ? "Untitled" : renameText); reloadMetas() }
                 renameID = nil
             }
         }
@@ -257,6 +283,36 @@ struct SettingsSheet: View {
             Text(title).font(.label(10)).foregroundStyle(Theme.txtMuted)
             content()
         }
+    }
+}
+
+/// A project whose .pms could not be summarized — visible, with the reason,
+/// never silently dropped from the list.
+struct BrokenProjectCard: View {
+    let meta: ProjectMeta
+    let error: String
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 13) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 20)).foregroundStyle(Color(red: 1, green: 0.7, blue: 0.4))
+                .frame(width: 52, height: 70)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.04)))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.line))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(meta.name).font(.disp(17)).textCase(.uppercase).foregroundStyle(.white)
+                Text("Can't read this project").font(.label(10)).foregroundStyle(Color(red: 1, green: 0.7, blue: 0.4))
+                Text(error).font(.num(11)).foregroundStyle(Theme.txtMuted).lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            Button(role: .destructive, action: onDelete) {
+                Image(systemName: "trash").font(.system(size: 15)).foregroundStyle(Color(red: 1, green: 0.5, blue: 0.5))
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity)
+        .glass(Theme.rCard, sheer: true)
     }
 }
 

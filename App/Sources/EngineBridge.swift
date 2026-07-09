@@ -1,62 +1,127 @@
 // EngineBridge.swift — the ONLY file that touches the C ABI (pms_engine.h).
 // Swift-side rules mirror the engine contract:
-//   - screens call `command(_:)` with lever JSON, never engine internals;
+//   - screens call `result(_:_:)` with lever JSON, never engine internals;
+//   - a top-level `error` in the reply is a FAILED mutation → thrown, published;
 //   - state flows one way: pollEvents() -> published properties.
+// Threading: pms_command is main-thread only. Export calls render/renderWait/
+// submitCameraFrame from its worker queue ONLY while ticks + preview are paused
+// (exclusive engine access), matching the desktop contract.
 import Foundation
 import Metal
 import Combine
 import QuartzCore   // CADisplayLink
 import CoreVideo    // CVPixelBuffer (camera/decoded frames)
 
-// ENGINE_MOCK (set in project.yml until pms_engine.xcframework exists):
-// screens develop against a stub engine — same observable surface, canned
-// replies. Flipping the flag swaps in the real C ABI with zero screen churn.
+// ENGINE_MOCK (set in project.yml for simulator builds): screens develop against
+// MockEngine — same command contract, same rejection behavior, no C ABI.
 #if ENGINE_MOCK
-typealias PMSEngineHandle = Int
-private func mock_reply(_ req: String) -> String {
-    if req.contains("get_project") {
-        return #"{"id":"ui","result":{"duration":8.0,"fps":30,"playhead":0.0}}"#
-    }
-    return #"{"id":"ui","result":{"ok":true,"mock":true}}"#
-}
+typealias PMSEngineHandle = MockEngine
 #else
 typealias PMSEngineHandle = OpaquePointer
 #endif
+
+enum EngineError: LocalizedError {
+    case notStarted
+    case encode(String)
+    case nullReply
+    case rejected(String)
+    case malformedReply
+
+    var errorDescription: String? {
+        switch self {
+        case .notStarted:          return "Engine not started"
+        case .encode(let d):       return "Could not encode command: \(d)"
+        case .nullReply:           return "Engine returned no reply"
+        case .rejected(let e):     return e
+        case .malformedReply:      return "Engine reply was not valid JSON"
+        }
+    }
+}
 
 final class EngineStore: ObservableObject {
     private var engine: PMSEngineHandle?
     private var displayLink: CADisplayLink?
     let device: MTLDevice = MTLCreateSystemDefaultDevice()!
 
+    struct PipelineState: Equatable {
+        var stage = "idle"
+        var progress = 0.0
+        var message = ""
+    }
+
     // Published engine state, fed exclusively by the event pump.
-    @Published var projectName: String = ""
     @Published var playhead: Double = 0
     @Published var playing: Bool = false
+    @Published var pipeline = PipelineState()
+    @Published var takeCount = 0
     @Published var masterLufs: (momentary: Double, integrated: Double)? = nil
     @Published var faceTracking: Bool = false
     @Published var busy: (label: String, progress: Double)? = nil
     @Published var lastError: String? = nil
 
+    /// False when pms_create/ABI validation failed — screens show a hard error.
+    @Published private(set) var healthy = false
+
     func start() {
         guard engine == nil else { return }
 #if ENGINE_MOCK
-        engine = 1
+        engine = MockEngine()
+        healthy = true
 #else
         let assets = Bundle.main.resourcePath! + "/EngineAssets"
         let state = FileManager.default.urls(for: .applicationSupportDirectory,
                                              in: .userDomainMask)[0].path
         engine = pms_create(Unmanaged.passUnretained(device).toOpaque(),
                             assets, state)
+        // Lifecycle validation: wrong ABI or an unusable engine must fail loudly
+        // at startup, not as a cascade of mysterious command errors later.
+        guard engine != nil else {
+            lastError = "pms_create failed"; healthy = false; return
+        }
+        guard pms_abi_version() == UInt32(PMS_ENGINE_ABI) else {
+            lastError = "Engine ABI mismatch: framework \(pms_abi_version()) vs header \(PMS_ENGINE_ABI)"
+            healthy = false
+            stop()
+            return
+        }
+        NSLog("[engine] ABI \(pms_abi_version()), .pms v\(pms_project_version())")
+        do {
+            _ = try result("get_project")
+            healthy = true
+        } catch {
+            lastError = "Engine rejected get_project at startup: \(error.localizedDescription)"
+            healthy = false
+            stop()
+            return
+        }
 #endif
         let link = CADisplayLink(target: self, selector: #selector(frame))
         link.add(to: .main, forMode: .common)
         displayLink = link
     }
 
+    /// Tear down the tick + the engine. Safe to call twice.
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+#if !ENGINE_MOCK
+        if let e = engine { pms_destroy(e) }
+#endif
+        engine = nil
+    }
+
+    deinit {
+        displayLink?.invalidate()
+#if !ENGINE_MOCK
+        if let e = engine { pms_destroy(e) }
+#endif
+    }
+
     @objc private func frame(_ link: CADisplayLink) {
         guard let e = engine else { return }
 #if ENGINE_MOCK
-        _ = e
+        e.tick(link.targetTimestamp - link.timestamp)
+        if playing != e.playheadIsAdvancing { playing = e.playheadIsAdvancing }
         if playing { playhead += link.targetTimestamp - link.timestamp }
 #else
         pms_tick(e, link.targetTimestamp - link.timestamp)
@@ -69,27 +134,47 @@ final class EngineStore: ObservableObject {
     /// canvas MTKView paused + frame-push suspended, no one else touches the engine).
     func setTicksPaused(_ paused: Bool) { displayLink?.isPaused = paused }
 
-    /// The single lever chokepoint. Returns the engine's JSON reply.
+    // MARK: - Commands
+
+    /// The single lever chokepoint. Returns the reply's `result` payload
+    /// (object or array); throws EngineError on any failure, publishing it to
+    /// `lastError` so screens can surface a banner without extra plumbing.
     @discardableResult
-    func command(_ method: String, _ params: [String: Any] = [:]) -> [String: Any] {
-        guard let e = engine else { return ["error": "engine not started"] }
-        let req: [String: Any] = ["id": "ui", "method": method, "params": params]
-        let data = try! JSONSerialization.data(withJSONObject: req)
-        let reqStr = String(data: data, encoding: .utf8)!
+    func result(_ method: String, _ params: [String: Any] = [:]) throws -> Any {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let e = engine else { throw report(.notStarted) }
 #if ENGINE_MOCK
-        _ = e
-        if method == "play"  { playing = true }
-        if method == "pause" { playing = false }
-        let reply = mock_reply(reqStr)
+        let obj = e.command(method, params)
 #else
-        guard let raw = pms_command(e, reqStr) else { return ["error": "null reply"] }
+        let req: [String: Any] = ["id": "ui", "method": method, "params": params]
+        guard JSONSerialization.isValidJSONObject(req),
+              let data = try? JSONSerialization.data(withJSONObject: req),
+              let reqStr = String(data: data, encoding: .utf8) else {
+            throw report(.encode(method))
+        }
+        guard let raw = pms_command(e, reqStr) else { throw report(.nullReply) }
         defer { pms_free(raw) }
-        let reply = String(cString: raw)
+        guard let obj = (try? JSONSerialization.jsonObject(with: Data(String(cString: raw).utf8)))
+            as? [String: Any] else { throw report(.malformedReply) }
 #endif
-        let obj = (try? JSONSerialization.jsonObject(with: Data(reply.utf8)))
-            as? [String: Any] ?? [:]
-        if let err = obj["error"] as? String { lastError = err }
-        return obj
+        if let err = obj["error"] as? String { throw report(.rejected(err)) }
+        return obj["result"] ?? [String: Any]()
+    }
+
+    /// `result(...)` for callers that expect an object payload.
+    @discardableResult
+    func resultObject(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
+        (try result(method, params)) as? [String: Any] ?? [:]
+    }
+
+    /// Fire-and-forget lever: failure lands in `lastError` only.
+    func send(_ method: String, _ params: [String: Any] = [:]) {
+        _ = try? result(method, params)
+    }
+
+    private func report(_ e: EngineError) -> EngineError {
+        lastError = e.errorDescription
+        return e
     }
 
     /// Pass a full JSON envelope {id,method,params} straight to the engine and
@@ -97,8 +182,11 @@ final class EngineStore: ObservableObject {
     func rawCommand(_ json: String) -> String {
         guard let e = engine else { return #"{"error":"engine not started"}"# }
 #if ENGINE_MOCK
-        _ = e
-        return mock_reply(json)
+        guard let obj = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any],
+              let method = obj["method"] as? String else { return #"{"error":"bad request"}"# }
+        let reply = e.command(method, obj["params"] as? [String: Any] ?? [:])
+        let data = (try? JSONSerialization.data(withJSONObject: reply)) ?? Data("{}".utf8)
+        return String(data: data, encoding: .utf8) ?? "{}"
 #else
         guard let raw = pms_command(e, json) else { return #"{"error":"null reply"}"# }
         defer { pms_free(raw) }
@@ -106,21 +194,30 @@ final class EngineStore: ObservableObject {
 #endif
     }
 
+    // MARK: - Render / frame submission
+
     func render(into texture: MTLTexture) {
         guard let e = engine else { return }
 #if ENGINE_MOCK
         _ = e   // MetalRenderView clears; the engine composite arrives with P3
 #else
-        _ = pms_render(e, Unmanaged.passUnretained(texture).toOpaque(),
-                       Int32(texture.width), Int32(texture.height))
+        let rc = pms_render(e, Unmanaged.passUnretained(texture).toOpaque(),
+                            Int32(texture.width), Int32(texture.height))
+        if rc != 0 && lastRenderRC == 0 {   // report once per failure streak
+            DispatchQueue.main.async { self.lastError = "Renderer error (pms_render rc=\(rc))" }
+        }
+        lastRenderRC = rc
 #endif
     }
+    private var lastRenderRC: Int32 = 0
 
     /// Block until the GPU finishes the committed render — offline export readback.
     func renderWait() {
         guard let e = engine else { return }
 #if !ENGINE_MOCK
         pms_render_wait(e)
+#else
+        _ = e
 #endif
     }
 
@@ -146,6 +243,8 @@ final class EngineStore: ObservableObject {
 #endif
     }
 
+    // MARK: - Events
+
 #if !ENGINE_MOCK
     private func pumpEvents(_ e: PMSEngineHandle) {
         guard let raw = pms_poll_events(e) else { return }
@@ -157,11 +256,21 @@ final class EngineStore: ObservableObject {
             case "playhead":
                 playhead = ev["t"] as? Double ?? playhead
                 playing = ev["playing"] as? Bool ?? playing
+            case "pipeline":
+                let p = PipelineState(stage: ev["stage"] as? String ?? "idle",
+                                      progress: ev["progress"] as? Double ?? 0,
+                                      message: ev["message"] as? String ?? "")
+                pipeline = p
+                busy = (p.stage == "idle" || p.stage == "done" || p.stage == "error")
+                    ? nil : (p.message.isEmpty ? p.stage : p.message, p.progress)
+                if p.stage == "error", !p.message.isEmpty { lastError = p.message }
             case "loudness":
                 if let m = ev["momentary"] as? Double,
                    let i = ev["integrated"] as? Double { masterLufs = (m, i) }
             case "face_track":
                 faceTracking = ev["valid"] as? Bool ?? false
+            case "takes":
+                takeCount = ev["count"] as? Int ?? takeCount
             case "busy":
                 if let label = ev["label"] as? String,
                    let p = ev["progress"] as? Double { busy = (label, p) }

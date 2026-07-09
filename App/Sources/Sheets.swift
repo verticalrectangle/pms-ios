@@ -1,9 +1,12 @@
 //  Sheets.swift
-//  Bottom-sheet surfaces: a shared GlassSheet chrome + the Agent (on-device AI
-//  actions + chat), Media bin, Lyric styling, and Export sheets. Each action maps
-//  to a real lever from LEVERS.md.
+//  Bottom-sheet surfaces: a shared GlassSheet chrome + the Agent, Media bin,
+//  Lyric styling, and Export sheets. Everything visible is backed by a real
+//  engine lever or Apple backend; features whose backend doesn't exist on iOS
+//  yet are shown as concretely unavailable — never faked.
 
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
 import UIKit
 
 // MARK: - Shared sheet chrome
@@ -42,186 +45,236 @@ struct GlassSheet<Content: View>: View {
     }
 }
 
-// MARK: - Agent (AI actions + chat)
+// MARK: - Agent
 
+/// On-device AI actions. Every model-backed action requires a model pack that
+/// is not bundled on iOS yet, so the honest state is "unavailable, here's why"
+/// — never a fake transcript or a silent no-op.
 struct AgentSheet: View {
     @ObservedObject var model: EditorModel
-    var body: some View {
-        GlassSheet(title: "Agent", eyebrow: "MCP · 83 LEVERS · ON-DEVICE", full: true) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("On-device actions").font(.label(9)).foregroundStyle(Theme.txtMuted)
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                    ForEach(AIActions.all) { action in
-                        Button { model.run(action) } label: { AIActionCard(action: action) }.pressable()
-                    }
-                }
-                Text("Transcript").font(.label(9)).foregroundStyle(Theme.txtMuted)
-                ChatTranscript()
-            }
-        }
-    }
-}
 
-private struct AIActionCard: View {
-    let action: AIAction
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: action.icon).font(.system(size: 18)).foregroundStyle(Theme.accent)
-                .frame(width: 34, height: 34)
-                .background(RoundedRectangle(cornerRadius: 9).fill(Theme.accentA(0.1)))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(action.title).font(.disp(13)).textCase(.uppercase).foregroundStyle(.white)
-                Text(action.model).font(.num(11)).foregroundStyle(Theme.txtMuted).lineLimit(1)
-            }
-            Text(action.lever + "()").font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.accentA(0.7))
-        }
-        .padding(12).frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
-        .glass(Theme.rCard)
-    }
-}
-
-private struct ChatTranscript: View {
-    // real levers in the tool calls
-    private let lines: [(String, String, String)] = [
-        ("user", "", "find the drop and add a glitch right before it"),
-        ("tool", "find_audio_cue", "onset @ 13.4s · drop"),
-        ("ai", "", "Found the drop at 13.4s. Dropping a Glitch Block on the FX rail from 12.9–13.4."),
-        ("tool", "add_effect_brick", "GFX · glitch_block · 12.9→13.4"),
-        ("user", "", "make the lyrics lavender and typewriter them in"),
-        ("tool", "set_typography_preset", "preset=LAVENDER"),
+    private let plannedActions: [(title: String, model: String, icon: String)] = [
+        ("Describe scenes", "Moondream2", "eye"),
+        ("Remove background", "Person matte", "person.crop.rectangle"),
+        ("Analyze beats", "beat / RMS", "metronome"),
+        ("Auto captions", "whisper.cpp", "captions.bubble"),
     ]
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, m in
-                switch m.0 {
-                case "user":
-                    Text(m.2).font(.system(size: 14)).foregroundStyle(Theme.txt)
-                        .padding(.horizontal, 14).padding(.vertical, 10)
-                        .glass(14).frame(maxWidth: .infinity, alignment: .trailing)
-                case "ai":
-                    HStack(alignment: .top, spacing: 9) {
-                        Image(systemName: "circle.hexagongrid").foregroundStyle(Theme.accent)
-                        Text(m.2).font(.system(size: 14)).foregroundStyle(Theme.txtBody)
+        GlassSheet(title: "Agent", eyebrow: "ON-DEVICE MODELS", full: true) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle").foregroundStyle(Theme.txtMuted)
+                    Text("Model packs aren't installed on this device yet. These actions unlock when a pack is downloaded.")
+                        .font(.system(size: 13)).foregroundStyle(Theme.txtBody)
+                }
+                .padding(12).glass(12, flat: true)
+
+                Text("Actions (unavailable)").font(.label(9)).foregroundStyle(Theme.txtMuted)
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                    ForEach(plannedActions, id: \.title) { action in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Image(systemName: action.icon).font(.system(size: 18)).foregroundStyle(Theme.txtMuted)
+                                .frame(width: 34, height: 34)
+                                .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.04)))
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(action.title).font(.disp(13)).textCase(.uppercase).foregroundStyle(Theme.txtMuted)
+                                Text(action.model).font(.num(11)).foregroundStyle(Theme.txtGhost).lineLimit(1)
+                            }
+                            Text("needs model pack").font(.label(8)).foregroundStyle(Theme.txtGhost)
+                        }
+                        .padding(12).frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
+                        .glass(Theme.rCard)
+                        .opacity(0.55)
                     }
-                default:
-                    HStack(spacing: 8) {
-                        Image(systemName: "terminal").font(.system(size: 13)).foregroundStyle(Theme.accent)
-                        Text(m.1 + "()").font(.system(size: 13, design: .monospaced)).foregroundStyle(Theme.accent)
-                        Text("· " + m.2).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.txtMuted)
-                    }
-                    .padding(.horizontal, 11).padding(.vertical, 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .glass(10, flat: true)
                 }
             }
         }
     }
 }
 
-// MARK: - Media bin
+// MARK: - Media bin (engine project bin + native pickers)
 
 struct MediaSheet: View {
-    private let items: [(String, String, Int, String?)] = [
-        ("EYE_CLOSEUP", "0:06", 1, "eyecl"), ("OCEAN_4K", "0:24", 1, "ocean4k"),
-        ("NEON_RUN", "0:12", 2, "neonrun"), ("CITY_NIGHT", "1:02", 0, "citynight"),
-        ("STATIC_BG", "0:30", 0, "staticbg"), ("HANDS_CLOSEUP", "0:08", 0, "handsclose"),
-        ("glass_drown.wav", "0:18", 1, nil), ("vocals_dry.wav", "0:18", 0, nil),
-    ]
+    @ObservedObject var model: EditorModel
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var showFileImporter = false
+
+    private var binItems: [String] { model.bin }
+
     var body: some View {
-        GlassSheet(title: "Project Bin", eyebrow: "MEDIA LIBRARY · \(items.count) ITEMS", full: true) {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 11), GridItem(.flexible(), spacing: 11)], spacing: 11) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, it in
+        GlassSheet(title: "Project Bin", eyebrow: "MEDIA LIBRARY · \(binItems.count) ITEMS", full: true) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    PhotosPicker(selection: $pickerItem, matching: .videos) {
+                        importButton("Photos", icon: "photo.badge.plus")
+                    }
+                    Button { showFileImporter = true } label: {
+                        importButton("Files", icon: "folder.badge.plus")
+                    }
+                }
+
+                if binItems.isEmpty {
+                    Text("Nothing in the bin yet — import from Photos or Files.")
+                        .font(.system(size: 13)).foregroundStyle(Theme.txtMuted)
+                        .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 26)
+                } else {
+                    Text("Tap to place at the playhead").font(.label(9)).foregroundStyle(Theme.txtMuted)
                     VStack(spacing: 8) {
-                        ZStack {
-                            if let seed = it.3 {
-                                AsyncImage(url: URL(string: "https://picsum.photos/seed/\(seed)/240/150")) { $0.resizable().scaledToFill() } placeholder: { Theme.line }
-                            } else {
-                                Image(systemName: "waveform").font(.system(size: 24)).foregroundStyle(Theme.txtMuted)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .background(Color.white.opacity(0.03))
-                            }
-                        }
-                        .frame(height: 78).clipShape(RoundedRectangle(cornerRadius: 9))
-                        .overlay(alignment: .topLeading) { if it.2 > 0 { Text("×\(it.2)").font(.num(11)).foregroundStyle(Theme.accent).padding(5) } }
-                        .overlay(alignment: .bottomTrailing) { Text(it.1).font(.num(11)).foregroundStyle(.white).shadow(color: .black, radius: 2).padding(5) }
-                        HStack {
-                            Text(it.0).font(.label(10)).tracking(0.4).foregroundStyle(Theme.txt).lineLimit(1)
-                            Spacer()
-                            Image(systemName: "plus").font(.system(size: 13)).foregroundStyle(Theme.txtMuted)
+                        ForEach(binItems, id: \.self) { path in
+                            binRow(path)
                         }
                     }
-                    .padding(8).glass(15)
                 }
             }
+        }
+        .onChange(of: pickerItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let movie = try? await item.loadTransferable(type: PickedMovie.self) {
+                    model.importVideo(movie.url)
+                }
+                pickerItem = nil
+            }
+        }
+        .fileImporter(isPresented: $showFileImporter,
+                      allowedContentTypes: [.movie, .audio]) { result in
+            if case .success(let url) = result {
+                let scoped = url.startAccessingSecurityScopedResource()
+                model.importVideo(url)   // copies into the project sandbox
+                if scoped { url.stopAccessingSecurityScopedResource() }
+            }
+        }
+    }
+
+    private func importButton(_ label: String, icon: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 15)).foregroundStyle(Theme.accent)
+            Text(label).font(.disp(14)).foregroundStyle(Theme.txt)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 12).glass(13)
+    }
+
+    private func binRow(_ path: String) -> some View {
+        let url = URL(fileURLWithPath: path)
+        let isAudio = ["wav", "mp3", "m4a", "aac", "flac"].contains(url.pathExtension.lowercased())
+        let onTimeline = model.tracks.flatMap(\.clips).contains { $0.sourceURL?.path == path }
+        return HStack(spacing: 10) {
+            Image(systemName: isAudio ? "waveform" : "film")
+                .font(.system(size: 15)).foregroundStyle(Theme.txtBody)
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(url.lastPathComponent).font(.label(10)).tracking(0.4).foregroundStyle(Theme.txt).lineLimit(1)
+                if onTimeline { Text("on timeline").font(.num(10)).foregroundStyle(Theme.accent) }
+            }
+            Spacer()
+            Image(systemName: "plus").font(.system(size: 13)).foregroundStyle(Theme.txtMuted)
+        }
+        .padding(9).glass(12, flat: true)
+        .contentShape(Rectangle())
+        .onTapGesture { model.placeBinItem(path) }
+        .contextMenu {
+            Button(role: .destructive) {
+                model.engine.send("remove_from_bin", ["path": path])
+                model.refresh(rebuildPlayer: false)
+            } label: { Label("Remove from bin", systemImage: "trash") }
         }
     }
 }
 
-// MARK: - Lyric styling (managed Lyrics track from trigger_pipeline)
+// MARK: - Lyric styling
 
 struct LyricsSheet: View {
     @ObservedObject var model: EditorModel
-    @State private var preset = "LAVENDER"
-    private let presets: [(String, Color?)] = [("NEON", Color(red: 1, green: 0.35, blue: 0.63)), ("CYBER", Color(red: 0.25, green: 0.88, blue: 0.88)), ("LAVENDER", Theme.accent), ("CLEAN", nil)]
-    private let anims = ["Fade", "Glitch", "Typewriter", "Bounce", "Scale", "Slide"]
+    @State private var anim = "none"
+    private let anims = ["none", "fade", "glitch", "typewriter", "bounce", "scale", "slide", "wave", "jitter"]
+
+    /// Engine-generated (managed) lyric clips exist → typography presets apply.
+    private var hasManagedLyrics: Bool {
+        model.tracks.flatMap(\.clips).contains { c in
+            guard let a = c.address else { return false }
+            return model.engineClipType(a) == "lyrics"
+        }
+    }
+    private var selectedText: Clip? { model.selectedLyricClip }
 
     var body: some View {
-        GlassSheet(title: "Lyric Style", eyebrow: "WORD-LEVEL · CTC ALIGNED", full: true) {
+        GlassSheet(title: "Text Style", eyebrow: "TITLES · ANIMATION", full: true) {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.accent)
-                    Text("Pipeline ready · MDX-Net stems · transcript aligned").font(.label(9)).tracking(0.6).foregroundStyle(Theme.txtBody)
-                    Spacer()
-                    Button { model.engine.command("trigger_pipeline"); model.engine.simulateBusy(label: "Separating stems…") } label: {
-                        Text("Re-run").font(.label(9)).foregroundStyle(Theme.accent)
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .overlay(Capsule().strokeBorder(Theme.accentA(0.5)))
-                    }
-                }
-                .padding(11).glass(12, flat: true)
-
-                Text("Typography preset").font(.label(9)).foregroundStyle(Theme.txtMuted)
-                HStack(spacing: 8) {
-                    ForEach(presets, id: \.0) { p in
-                        Button {
-                            preset = p.0
-                            model.engine.command("set_typography_preset", ["preset": p.0])
-                        } label: {
-                            VStack(spacing: 6) {
-                                Circle().fill(p.1 ?? .clear).frame(width: 16, height: 16)
-                                    .overlay(Circle().strokeBorder(p.1 == nil ? Theme.lineStrong : .clear))
-                                    .shadow(color: p.1 ?? .clear, radius: 5)
-                                Text(p.0).font(.label(9)).tracking(0.4).foregroundStyle(.white)
+                if let clip = selectedText {
+                    Text("Animation — \(clip.label)").font(.label(9)).foregroundStyle(Theme.txtMuted)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 7) {
+                            ForEach(anims, id: \.self) { a in
+                                Chip(text: a.capitalized, on: anim == a) {
+                                    anim = a
+                                    model.setClipStyle(clip.id, style: a)
+                                }
                             }
-                            .frame(maxWidth: .infinity).padding(.vertical, 11)
-                            .glass(12, active: preset == p.0)
                         }
                     }
+                } else {
+                    Text("Select a title on the timeline to style it, or add one with the Text button.")
+                        .font(.system(size: 13)).foregroundStyle(Theme.txtMuted)
+                        .padding(.vertical, 8)
                 }
 
-                Text("Animation").font(.label(9)).foregroundStyle(Theme.txtMuted)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 7) { ForEach(anims, id: \.self) { Chip(text: $0, on: $0 == "Typewriter") {} } }
+                if hasManagedLyrics {
+                    Text("Typography preset").font(.label(9)).foregroundStyle(Theme.txtMuted)
+                    HStack(spacing: 8) {
+                        ForEach(["flash", "apple", "spotify", "clean"], id: \.self) { p in
+                            Button {
+                                model.engine.send("set_typography_preset", ["preset": p])
+                                model.refresh(rebuildPlayer: false)
+                            } label: {
+                                Text(p.uppercased()).font(.label(9)).tracking(0.4).foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                    .glass(12)
+                            }
+                        }
+                    }
+                } else {
+                    Label("Typography presets style engine-generated lyric tracks — none in this project.",
+                          systemImage: "info.circle")
+                        .font(.label(9)).tracking(0.4).foregroundStyle(Theme.txtMuted)
+                        .padding(11).glass(12, flat: true)
                 }
             }
+        }
+        .onAppear {
+            if let clip = selectedText, let a = clip.address,
+               let style = model.engineClipStyle(a) { anim = style }
         }
     }
 }
 
-// MARK: - Export (trigger_export → get_export_status)
+// MARK: - Export (Apple AVAssetReader/Writer backend)
 
 struct ExportSheet: View {
     @ObservedObject var model: EditorModel
     @State private var phase: Phase = .idle
     @State private var pct = 0.0
     @State private var outURL: URL?
-    @State private var failed = false
+    @State private var errorText: String?
     @State private var saved = false
+    @State private var cancelFlag = CancelFlag()
     enum Phase { case idle, rendering, done }
+
+    final class CancelFlag: @unchecked Sendable { var cancelled = false }
 
     init(model: EditorModel) { self.model = model }
 
     private var hasVideo: Bool { !model.videoSegments.isEmpty }
+
+    /// Rough storage check: exporting needs at least ~200 MB free.
+    private var lowStorage: Bool {
+        let free = (try? URL(fileURLWithPath: NSHomeDirectory())
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            .volumeAvailableCapacityForImportantUsage) ?? nil
+        if let free { return free < 200_000_000 }
+        return false
+    }
 
     var body: some View {
         GlassSheet(title: "Export", eyebrow: "TIMELINE → H.264 / AAC · MP4") {
@@ -237,23 +290,37 @@ struct ExportSheet: View {
                             Text(String(format: "%.1fs · %@", model.duration, model.format.resolution))
                                 .font(.num(13)).foregroundStyle(Theme.txtMuted)
                         }.frame(maxWidth: .infinity).padding(.vertical, 8)
+                        if lowStorage {
+                            Label("Storage is nearly full — export may fail.", systemImage: "externaldrive.badge.exclamationmark")
+                                .font(.label(9)).foregroundStyle(Color(red: 1, green: 0.7, blue: 0.4))
+                        }
                         Button { startRender() } label: {
                             HStack(spacing: 10) { Image(systemName: "square.and.arrow.up"); Text("Export MP4").font(.disp(16)) }
                                 .foregroundStyle(Theme.accent).frame(maxWidth: .infinity).padding(.vertical, 15).glass(15, active: true)
                         }
-                        if failed {
-                            Text("Export failed — try again.").font(.num(12)).foregroundStyle(Color(red: 1, green: 0.5, blue: 0.5))
+                        if let errorText {
+                            Text(errorText).font(.num(12)).foregroundStyle(Color(red: 1, green: 0.5, blue: 0.5))
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     case .rendering:
                         VStack(alignment: .leading, spacing: 9) {
                             HStack { Text("EXPORTING…").font(.label(10)).foregroundStyle(Theme.accent); Spacer(); Text("\(Int(pct * 100))%").font(.num(13)).foregroundStyle(Theme.accent) }
                             ProgressView(value: pct).tint(Theme.accent)
+                            Button { cancelFlag.cancelled = true } label: {
+                                Text("Cancel").font(.label(11)).foregroundStyle(Theme.txtMuted)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 9)
+                                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
+                            }
                         }.padding(16).glass(15, flat: true)
                     case .done:
                         VStack(spacing: 14) {
-                            Image(systemName: saved ? "checkmark.seal.fill" : "exclamationmark.triangle")
+                            Image(systemName: saved ? "checkmark.seal.fill" : "square.and.arrow.up.circle")
                                 .font(.system(size: 34)).foregroundStyle(saved ? Theme.accent : Color(red: 1, green: 0.7, blue: 0.4))
-                            Text(saved ? "Saved to Photos" : "Exported (not saved)").font(.disp(18)).foregroundStyle(Theme.txt)
+                            Text(saved ? "Saved to Photos" : "Exported — share it below").font(.disp(18)).foregroundStyle(Theme.txt)
+                            if !saved {
+                                Text("Photos permission was denied, so the file wasn't added to your library.")
+                                    .font(.num(11)).foregroundStyle(Theme.txtMuted).multilineTextAlignment(.center)
+                            }
                             if let outURL {
                                 Text(sizeString(outURL)).font(.num(12)).foregroundStyle(Theme.txtMuted)
                                 HStack(spacing: 10) {
@@ -261,9 +328,11 @@ struct ExportSheet: View {
                                         HStack(spacing: 8) { Image(systemName: "square.and.arrow.up"); Text("Share").font(.disp(15)) }
                                             .foregroundStyle(Theme.accent).frame(maxWidth: .infinity).padding(.vertical, 13).glass(15, active: true)
                                     }
-                                    Button { openGallery() } label: {
-                                        HStack(spacing: 8) { Image(systemName: "photo.on.rectangle.angled"); Text("Open Gallery").font(.disp(15)) }
-                                            .foregroundStyle(Theme.txt).frame(maxWidth: .infinity).padding(.vertical, 13).glass(15)
+                                    if saved {
+                                        Button { openGallery() } label: {
+                                            HStack(spacing: 8) { Image(systemName: "photo.on.rectangle.angled"); Text("Open Gallery").font(.disp(15)) }
+                                                .foregroundStyle(Theme.txt).frame(maxWidth: .infinity).padding(.vertical, 13).glass(15)
+                                        }
                                     }
                                 }
                                 Button { phase = .idle } label: {
@@ -284,7 +353,9 @@ struct ExportSheet: View {
     }
 
     private func startRender() {
-        failed = false; phase = .rendering; pct = 0
+        errorText = nil; phase = .rendering; pct = 0
+        cancelFlag = CancelFlag()
+        let flag = cancelFlag
         let segments = model.videoSegments
         let titles = model.titleClips
         model.syncLiveFX()                    // engine holds the current FX stack
@@ -292,15 +363,22 @@ struct ExportSheet: View {
         model.video?.suspended = true
         model.engine.setTicksPaused(true)     // stop the engine tick too (exclusive access)
         Task {
-            let url = await VideoExporter.export(segments, titles: titles,
-                                                 engine: model.engine, size: model.format.pixelSize) { p in pct = p }
-            model.engine.setTicksPaused(false)
-            model.video?.suspended = false
-            model.exporting = false
-            guard let url else { failed = true; phase = .idle; return }
-            outURL = url
-            saved = await VideoExporter.saveToPhotos(url)   // auto-save to gallery
-            phase = .done
+            defer {
+                model.engine.setTicksPaused(false)
+                model.video?.suspended = false
+                model.exporting = false
+            }
+            do {
+                let url = try await VideoExporter.export(segments, titles: titles,
+                                                         engine: model.engine, size: model.format.pixelSize,
+                                                         isCancelled: { flag.cancelled }) { p in pct = p }
+                outURL = url
+                saved = await VideoExporter.saveToPhotos(url)   // add-only; share path remains if denied
+                phase = .done
+            } catch {
+                errorText = error.localizedDescription
+                phase = .idle
+            }
         }
     }
 

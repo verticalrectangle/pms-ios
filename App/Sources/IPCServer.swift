@@ -17,6 +17,10 @@ final class IPCServer {
     private(set) var address = "starting…"   // <ip>:<port>, shown in Settings for connecting
 
     func start(engine: EngineStore) {
+#if !DEBUG
+        address = "disabled (release build)"
+        return   // never expose the command port in production
+#else
         self.engine = engine
         guard listener == nil else { return }
         do {
@@ -28,6 +32,7 @@ final class IPCServer {
             address = "\(Self.wifiIP() ?? "?"):\(port)"
             NSLog("[ipc] listening on \(address)")
         } catch { NSLog("[ipc] start failed: \(error)") }
+#endif
     }
 
     /// Best-effort Wi-Fi (en0) IPv4 so the Mac can connect without Bonjour.
@@ -56,12 +61,19 @@ final class IPCServer {
         receive(conn, buffer: Data())
     }
 
+    /// A single request line may not exceed this — oversized clients are dropped.
+    private let maxRequestBytes = 1 << 20   // 1 MiB
+
     // Read into a rolling buffer, dispatch each '\n'-terminated JSON line.
     private func receive(_ conn: NWConnection, buffer: Data) {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { [weak self] data, _, done, err in
             guard let self else { return }
             var buf = buffer
             if let data { buf.append(data) }
+            if buf.count > self.maxRequestBytes {
+                NSLog("[ipc] request over \(self.maxRequestBytes) bytes — closing connection")
+                conn.cancel(); return
+            }
             while let nl = buf.firstIndex(of: 0x0A) {
                 let line = buf.subdata(in: buf.startIndex..<nl)
                 buf.removeSubrange(buf.startIndex...nl)
@@ -75,7 +87,10 @@ final class IPCServer {
     private func handle(_ line: Data, _ conn: NWConnection) {
         guard let req = String(data: line, encoding: .utf8),
               !req.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        // Serialize with the app's own commands by running on the main thread.
+        // Serialize with the app's own commands by hopping to main. This runs on
+        // the connection's utility queue — never on main (main.sync from main
+        // would deadlock; assert the invariant).
+        dispatchPrecondition(condition: .notOnQueue(.main))
         let reply = DispatchQueue.main.sync { self.engine?.rawCommand(req) ?? #"{"error":"no engine"}"# }
         var out = Data(reply.utf8); out.append(0x0A)
         conn.send(content: out, completion: .contentProcessed { _ in })

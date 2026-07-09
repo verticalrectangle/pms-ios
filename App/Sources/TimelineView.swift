@@ -302,8 +302,9 @@ private struct ContentClipView: View {
             RoundedRectangle(cornerRadius: 7).fill(.ultraThinMaterial)
             if kind == .video {
                 if clip.thumbs.isEmpty {
-                    AsyncImage(url: URL(string: "https://picsum.photos/seed/\(clip.seed)cl/240/120")) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
-                        .opacity(0.5).clipped()
+                    // Filmstrip still generating — quiet placeholder, no network.
+                    LinearGradient(colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)],
+                                   startPoint: .top, endPoint: .bottom)
                 } else {
                     // Filmstrip: each frame is placed by its SOURCE time within
                     // the clip's [sourceStart, sourceStart+duration] window — so

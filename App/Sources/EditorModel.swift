@@ -1,8 +1,19 @@
 //  EditorModel.swift
-//  The editable projection of the open project. Holds the scene the screens render
-//  and mutate; every mutation is applied optimistically AND pushed to the engine
-//  through EngineStore.command(...) using the real levers. State that the engine
-//  owns (playhead, playing, LUFS, busy) is read straight off EngineStore.
+//  The editable projection of the open project. The ENGINE owns the timeline:
+//  every structural mutation goes through EngineStore.result(...) with integer
+//  (track, clip) addresses, then the projection is re-decoded from
+//  get_project(verbose: true). Local state exists only as
+//    - a render cache of the last snapshot (tracks/chapters/format/bpm), and
+//    - live-gesture optimism (a drag updates the cache at 60 fps; the engine
+//      lever is sent once, on gesture end, then the projection refreshes).
+//  Undo/redo are the engine's. AVFoundation (VideoPlayback) is a decode/preview
+//  backend fed FROM the projection — it never owns clip timing.
+//
+//  Transport: the engine owns transport STATE (play/pause/seek land in
+//  AppState), but on iOS the engine has no audio clock (pms_tick does not
+//  advance the playhead), so while media is loaded the AVPlayer remains the
+//  fine-grained clock and the engine playhead is reconciled at ~5 Hz + on
+//  every boundary (play/pause/seek). With no media, engine events drive time.
 
 import SwiftUI
 import Combine
@@ -14,107 +25,234 @@ final class EditorModel: ObservableObject {
     let engine: EngineStore
     let project: Project
 
-    @Published var tracks: [Track]
-    @Published var chapters: [ChapterMarker]
+    // Projection cache (rendered by screens; re-derived from the engine).
+    @Published var tracks: [Track] = []
+    @Published var chapters: [ChapterMarker] = []
     @Published var selectedID: String?
     @Published var activeSheet: EditorSheet?
     @Published var format: Format
-    @Published var bpm: Double
+    @Published var bpm: Double = 120
     @Published var beatsVisible = true
+    @Published var engineDuration: Double = 0
+    @Published var bin: [String] = []
 
-    // Authoritative playback state — the AVPlayer clock drives these when a
-    // video is loaded (via onTick); otherwise optimistic + the engine.
+    // Transport (see header note).
     @Published var playhead: Double = 0
     @Published var isPlaying = false
 
-    // Imported video (decoded through the engine's frame path).
     var video: VideoPlayback?
     @Published var videoLoaded = false
     @Published var exporting = false        // export owns the engine → live canvas suspended
     @Published var videoDuration: Double?
-    @Published var focusNewText = false   // keyboard pops only right after CREATING a title, not on select
+    @Published var focusNewText = false   // keyboard pops only right after CREATING a title
+
+    @Published var canUndo = false
+    @Published var canRedo = false
+    private var undoDepth = 0 { didSet { canUndo = undoDepth > 0 } }
+    private var redoDepth = 0 { didSet { canRedo = redoDepth > 0 } }
+
+    /// AVFoundation-owned per-source runtime info (true duration, filmstrip).
+    private var mediaInfo: [String: MediaInfo] = [:]
+    private var cancellables: Set<AnyCancellable> = []
+    private var lastSnapshot = EngineProjectSnapshot()
+    private var textCommitTask: Task<Void, Never>?
+    private var paramCommitTask: Task<Void, Never>?
+    private var lastEngineSeekSync = Date.distantPast
+
+    // MARK: - Init / hydration
+
+    init(project: Project, engine: EngineStore) {
+        self.project = project
+        self.engine = engine
+        self.format = project.format
+
+        if ProjectStore.exists(project.id) {
+            do {
+                try ProjectStore.load(engine: engine, id: project.id)
+            } catch { /* lastError already published; editor opens empty */ }
+        } else {
+            engine.send("new_project", ["force": true])
+            engine.send("set_format", ["format": project.format.lever])
+        }
+        refresh()
+
+        // With no media loaded, engine events own the transport readouts.
+        engine.$playhead.receive(on: RunLoop.main).sink { [weak self] t in
+            guard let self, self.video == nil else { return }
+            self.playhead = t
+        }.store(in: &cancellables)
+        engine.$playing.receive(on: RunLoop.main).sink { [weak self] p in
+            guard let self, self.video == nil else { return }
+            self.isPlaying = p
+        }.store(in: &cancellables)
+    }
+
+    /// Re-decode the projection from the engine — after every mutation.
+    func refresh(rebuildPlayer: Bool = true) {
+        guard let r = try? engine.resultObject("get_project", ["verbose": true]) else { return }
+        let snap = EngineProjectSnapshot.decode(r)
+        lastSnapshot = snap
+        engineDuration = snap.duration
+        bpm = snap.bpm
+        bin = snap.bin
+        if let f = r["format"] as? String { format = Format(engineFormat: f) }
+        chapters = snap.markers.map { ChapterMarker($0) }
+        tracks = snap.uiTracks(media: { [weak self] in self?.mediaInfo[$0] },
+                               resolve: { [weak self] in self?.resolveMedia($0) })
+        if let sel = selectedID, locate(sel) == nil { selectedID = nil }
+
+        // Probe any media the projection references that AVFoundation hasn't
+        // seen yet (true duration + filmstrip), then re-derive. Keyed by the
+        // ENGINE path (what the projection reports), probed at the resolved URL.
+        let missing = Set(tracks.flatMap { $0.clips.compactMap { $0.address }}
+            .compactMap { lastSnapshot[$0]?.source })
+            .subtracting(mediaInfo.keys)
+        if !missing.isEmpty { Task { await probeMedia(paths: Array(missing)) } }
+
+        if rebuildPlayer { Task { await rebuildVideo() } }
+        syncLiveFX()
+    }
+
+    /// Resolve an engine source path to a readable URL. A saved .pms carries
+    /// absolute container paths; iOS moves the container between installs, so
+    /// stale paths relink into this project's media/ dir by basename.
+    private func resolveMedia(_ path: String) -> URL? {
+        if FileManager.default.fileExists(atPath: path) { return URL(fileURLWithPath: path) }
+        let relinked = ProjectStore.mediaDir(project.id)
+            .appendingPathComponent(URL(fileURLWithPath: path).lastPathComponent)
+        return FileManager.default.fileExists(atPath: relinked.path) ? relinked : nil
+    }
+
+    private func probeMedia(paths: [String]) async {
+        for path in paths {
+            guard let url = resolveMedia(path) else { continue }
+            let dur = (try? await AVURLAsset(url: url).load(.duration))?.seconds ?? 0
+            guard dur > 0 else { continue }
+            let n = max(1, min(24, Int(dur / 1.5)))
+            let strip = await VideoPlayback.filmstrip(for: url, count: n,
+                                                      cacheDir: ProjectStore.cacheDir(project.id))
+            mediaInfo[path] = MediaInfo(duration: dur, thumbs: strip)
+        }
+        tracks = lastSnapshot.uiTracks(media: { [weak self] in self?.mediaInfo[$0] },
+                                       resolve: { [weak self] in self?.resolveMedia($0) })
+        await rebuildVideo()
+    }
+
+    /// One mutating lever: send, adjust the undo depth, refresh the projection.
+    /// On rejection the refresh restores the engine's truth (reverts optimism).
+    @discardableResult
+    private func mutate(_ method: String, _ params: [String: Any],
+                        rebuildPlayer: Bool = true) -> [String: Any]? {
+        do {
+            let r = try engine.result(method, params)
+            undoDepth += 1
+            redoDepth = 0
+            refresh(rebuildPlayer: rebuildPlayer)
+            return r as? [String: Any] ?? [:]
+        } catch {
+            refresh(rebuildPlayer: rebuildPlayer)
+            return nil
+        }
+    }
+
+    // MARK: - Track scaffolding (created lazily, engine-side)
+
+    /// Canonical lane order, top to bottom: GFX rail, text, video, audio.
+    private func canonicalPosition(for kind: TrackKind) -> Int {
+        func idx(_ k: TrackKind) -> Int? { tracks.firstIndex { $0.kind == k } }
+        switch kind {
+        case .fxRail: return 0
+        case .lyric:  return (idx(.fxRail).map { $0 + 1 }) ?? 0
+        case .video:  return idx(.audio) ?? tracks.count
+        case .audio:  return tracks.count
+        }
+    }
+    private func defaultName(for kind: TrackKind) -> String {
+        switch kind { case .fxRail: "GFX"; case .video: "V1"; case .lyric: "T1"; case .audio: "A1" }
+    }
+
+    /// Engine track index for a lane kind, creating the track if needed.
+    private func ensureTrack(_ kind: TrackKind) -> Int? {
+        if let t = tracks.first(where: { $0.kind == kind }), t.engineIndex >= 0 {
+            return t.engineIndex
+        }
+        guard let r = try? engine.resultObject("add_track", [
+            "name": defaultName(for: kind), "position": canonicalPosition(for: kind),
+        ]) else { return nil }
+        refresh(rebuildPlayer: false)
+        return r["track"] as? Int
+    }
+
+    // MARK: - Import
 
     func importVideo(_ url: URL) {
         activeSheet = nil
-        if video == nil {
-            let v = VideoPlayback(engine: engine)
-            v.onTick = { [weak self] time, playing in
-                self?.playhead = time
-                self?.isPlaying = playing
-            }
-            video = v
-        }
         Task {
             let dur = (try? await AVURLAsset(url: url).load(.duration))?.seconds ?? 0
-            guard dur > 0 else { return }
-            // Copy the picked file into the project's durable media/ dir (was temp).
+            guard dur > 0 else {
+                engine.lastError = "Could not read that video."
+                return
+            }
             let media = ProjectStore.importMedia(url, into: project.id)
-            let n = max(1, min(24, Int(dur / 1.5)))   // ~1 frame / 1.5s, capped
-            let strip = await VideoPlayback.filmstrip(for: media, count: n)
-            let id = "v_\(UUID().uuidString.prefix(6))"
-
-            if videoLoaded, let ti = videoTrackIndex, !tracks[ti].clips.isEmpty {
-                // APPEND after the last clip — builds a multi-clip sequence.
-                // (videoLoaded, NOT "has clips" — the initial timeline is Sample
-                //  mock data, so the first real import must replace it, not append.)
-                let startAt = tracks[ti].clips.map(\.end).max() ?? 0
-                let clip = Clip(id: id, label: "CLIP", start: startAt, duration: dur,
-                                thumbs: strip, sourceURL: media, sourceStart: 0, sourceDuration: dur)
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                    tracks[ti].clips.append(clip)
-                    renumberLabels()
-                    selectedID = clip.id
-                }
-            } else {
-                // FIRST import — lay down the tracks.
-                playhead = 0
-                let clip = Clip(id: id, label: "CLIP 1", start: 0, duration: dur,
-                                thumbs: strip, sourceURL: media, sourceStart: 0, sourceDuration: dur)
-                tracks = [
-                    Track(id: "GFX", kind: .fxRail, name: "FX", clips: []),
-                    Track(id: "V1", kind: .video, name: "V1", clips: [clip]),
-                ]
-                selectedID = nil
+            // GFX rail FIRST — it inserts at engine position 0 and would shift
+            // an already-captured video track index.
+            _ = ensureTrack(.fxRail)
+            guard let ti = ensureTrack(.video) else { return }
+            // Append after the last clip on the video track.
+            let startAt = tracks.first { $0.engineIndex == ti }?.clips.map(\.end).max() ?? 0
+            let r = mutate("add_clip", [
+                "track": ti, "type": "video",
+                "start": startAt, "end": startAt + dur, "text": media.path,
+            ])
+            if let ci = r?["clip"] as? Int {
+                selectedID = EngineClipAddress(track: ti, clip: ci).idString
             }
             videoLoaded = true
-            await rebuildVideo()
         }
     }
 
-    // MARK: Undo / redo (snapshots of the timeline)
+    // MARK: - Undo / redo (the engine's history)
 
-    private var undoStack: [[Track]] = []
-    private var redoStack: [[Track]] = []
-    @Published var canUndo = false
-    @Published var canRedo = false
-
-    /// Snapshot the timeline before a mutating edit.
-    private func snapshot() {
-        undoStack.append(tracks)
-        if undoStack.count > 60 { undoStack.removeFirst() }
-        redoStack.removeAll()
-        canUndo = true; canRedo = false
-    }
     func undo() {
-        guard let prev = undoStack.popLast() else { return }
-        redoStack.append(tracks)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { tracks = prev; selectedID = nil }
-        canUndo = !undoStack.isEmpty; canRedo = true
-        Task { await rebuildVideo() }
+        // A pending debounced commit would re-apply the value being undone.
+        textCommitTask?.cancel(); paramCommitTask?.cancel()
+        guard (try? engine.result("undo")) != nil else { return }
+        undoDepth -= 1; redoDepth += 1
+        selectedID = nil
+        refresh()
     }
     func redo() {
-        guard let next = redoStack.popLast() else { return }
-        undoStack.append(tracks)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { tracks = next; selectedID = nil }
-        canUndo = true; canRedo = !redoStack.isEmpty
-        Task { await rebuildVideo() }
+        textCommitTask?.cancel(); paramCommitTask?.cancel()
+        guard (try? engine.result("redo")) != nil else { return }
+        redoDepth -= 1; undoDepth += 1
+        selectedID = nil
+        refresh()
     }
 
-    // MARK: Clip editing (structural — rebuilds the AVComposition)
+    // MARK: - Address resolution
+
+    enum ItemKind { case clip, brick }
+    /// The address of a timeline item in the CURRENT projection. Resolve on
+    /// demand — never store across a mutation (indices shift).
+    struct ItemRef { let id: String; let track: Int; let index: Int; let kind: ItemKind }
+
+    func locate(_ id: String) -> ItemRef? {
+        for (ti, tr) in tracks.enumerated() {
+            if let ci = tr.clips.firstIndex(where: { $0.id == id })  { return ItemRef(id: id, track: ti, index: ci, kind: .clip) }
+            if let bi = tr.bricks.firstIndex(where: { $0.id == id }) { return ItemRef(id: id, track: ti, index: bi, kind: .brick) }
+        }
+        return nil
+    }
+    var selectedRef: ItemRef? { selectedID.flatMap(locate) }
+
+    /// Engine address for a UI item id.
+    private func address(_ id: String) -> EngineClipAddress? {
+        guard let r = locate(id) else { return nil }
+        return r.kind == .clip ? tracks[r.track].clips[r.index].address
+                               : tracks[r.track].bricks[r.index].address
+    }
 
     private var videoTrackIndex: Int? { tracks.firstIndex { $0.kind == .video } }
-    /// The track holding a clip (any kind) — drag ops operate on all tracks, not
-    /// just video, so text/other bricks move + trim the same way.
     private func trackIndex(ofClip id: String) -> Int? {
         tracks.firstIndex { $0.clips.contains { $0.id == id } }
     }
@@ -129,78 +267,63 @@ final class EditorModel: ObservableObject {
     /// Title/lyric clips to bake into the export overlay.
     var titleClips: [Clip] { tracks.first { $0.kind == .lyric }?.clips ?? [] }
 
-    /// The current video clips as export/playback segments.
+    /// The current video clips as export/playback segments (engine-projected).
     var videoSegments: [VideoPlayback.Segment] {
-        (tracks.first { $0.kind == .video }?.clips ?? []).compactMap { c in
-            c.sourceURL.map { VideoPlayback.Segment(url: $0, start: c.start, sourceStart: c.sourceStart, duration: c.duration, fadeIn: c.fadeIn, fadeOut: c.fadeOut) }
+        tracks.filter { $0.kind == .video }.flatMap(\.clips).compactMap { c in
+            guard let url = c.sourceURL,
+                  FileManager.default.fileExists(atPath: url.path) else { return nil }
+            return VideoPlayback.Segment(url: url, start: c.start, sourceStart: c.sourceStart,
+                                         duration: c.duration, speed: c.speed,
+                                         fadeIn: c.fadeIn, fadeOut: c.fadeOut)
         }
     }
 
-    /// Rebuild the player timeline from the current video clips.
+    /// Rebuild the player timeline from the projection.
     func rebuildVideo(seekTo: Double? = nil) async {
-        guard let ti = videoTrackIndex else { return }
-        let segs = tracks[ti].clips.compactMap { c in
-            c.sourceURL.map { VideoPlayback.Segment(url: $0, start: c.start, sourceStart: c.sourceStart, duration: c.duration, fadeIn: c.fadeIn, fadeOut: c.fadeOut) }
+        let segs = videoSegments
+        if segs.isEmpty {
+            video?.stop(); video = nil
+            videoLoaded = false; videoDuration = nil
+            if isPlaying { isPlaying = false; engine.send("pause") }
+            return
+        }
+        if video == nil {
+            let v = VideoPlayback(engine: engine)
+            v.onTick = { [weak self] time, playing in self?.playerTick(time, playing) }
+            video = v
         }
         await video?.load(segments: segs, seekTo: seekTo)
         videoDuration = video?.duration
+        videoLoaded = true
     }
 
-    /// Renumber labels by order — WITHOUT moving any clip. Edits are local: a
-    /// split cuts in place, a delete leaves its gap, nothing else shifts.
-    private func renumberLabels() {
-        guard let ti = videoTrackIndex else { return }
-        for i in tracks[ti].clips.indices { tracks[ti].clips[i].label = "CLIP \(i + 1)" }
-    }
-
-    /// Split the SELECTED item under the playhead into two — a clip (any kind) OR
-    /// an FX brick. Structural; same footage / text / chain in each half.
-    func splitAtPlayhead() {
-        guard let r = selectedRef else { return }
-        if r.kind == .brick { splitBrickAtPlayhead(r); return }
-        let ti = r.track
-        guard let ci = tracks[ti].clips.firstIndex(where: { playhead > $0.start + 0.1 && playhead < $0.end - 0.1 })
-        else { return }
-        snapshot()
-        let c = tracks[ti].clips[ci]
-        let off = playhead - c.start
-        // Both halves keep the FULL source filmstrip — ContentClipView crops it
-        // to each clip's [sourceStart, sourceStart+duration] range by source time.
-        var a = c; a.duration = off; a.fadeOut = 0        // fade-out belongs to the tail now
-        var b = Clip(id: c.id + "_s\(Int(playhead * 1000))", label: c.label,
-                     start: playhead, duration: c.duration - off, seed: c.seed,
-                     thumbs: c.thumbs,
-                     sourceURL: c.sourceURL, sourceStart: c.sourceStart + off * c.speed,
-                     sourceDuration: c.sourceDuration, speed: c.speed)
-        b.fadeIn = 0; b.fadeOut = c.fadeOut               // fade-in stayed with the head
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-            tracks[ti].clips.replaceSubrange(ci...ci, with: [a, b])   // a+b occupy c's exact span
-            if tracks[ti].kind == .video { renumberLabels() }         // text keeps its words
-            selectedID = b.id
-        }
-        // composition unchanged (a+b == original span & net fade) → no reload needed
-    }
-
-    /// Split an FX brick at the playhead — chain/params/binding carry to both halves.
-    private func splitBrickAtPlayhead(_ r: ItemRef) {
-        let b = tracks[r.track].bricks[r.index]
-        guard playhead > b.start + 0.1, playhead < b.end - 0.1 else { return }
-        snapshot()
-        var left = b; left.duration = playhead - b.start
-        var right = b; right.id = regenID(b.id); right.start = playhead; right.duration = b.end - playhead
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-            tracks[r.track].bricks.replaceSubrange(r.index...r.index, with: [left, right])
-            selectedID = right.id
+    /// AVPlayer clock → transport readout + throttled engine reconciliation.
+    private func playerTick(_ time: Double, _ playing: Bool) {
+        playhead = time
+        isPlaying = playing
+        if playing, Date().timeIntervalSince(lastEngineSeekSync) > 0.2 {
+            lastEngineSeekSync = Date()
+            engine.send("seek", ["time": time])
         }
     }
 
-    // MARK: Free-position drag (the desktop model: free start/end, implicit
-    // gaps, wall-clamp, snap — one Clip struct, index-independent).
+    // MARK: - Live drag optimism (engine lever lands on gesture end)
 
     private let snapRadius = 0.17   // ≈ 8px @ PPS 46 (desktop SNAP_PX / zoom)
 
-    func beginEdit() { snapshot() }                 // one undo step per drag
-    func endEdit(_ id: String) { if trackKind(ofClip: id) == .video { Task { await rebuildVideo() } } }
+    func beginEdit() { }            // gesture latches its own origin
+
+    /// Trim released → one trim_clip (engine derives in_point from the start delta).
+    func endEdit(_ id: String) {
+        guard let r = locate(id) else { return }
+        let (start, end): (Double, Double) = r.kind == .clip
+            ? (tracks[r.track].clips[r.index].start, tracks[r.track].clips[r.index].end)
+            : (tracks[r.track].bricks[r.index].start, tracks[r.track].bricks[r.index].end)
+        guard let a = address(id) else { return }
+        _ = mutate("trim_clip", ["track": a.track, "clip": a.clip,
+                                 "start": start, "end": end],
+                   rebuildPlayer: r.kind == .clip)
+    }
 
     /// Lines a dragged edge snaps to: playhead, 0, every OTHER clip's AND brick's edges.
     private func snapCandidates(excluding id: String) -> [Double] {
@@ -211,13 +334,11 @@ final class EditorModel: ObservableObject {
         }
         return c
     }
-    /// Snap a single edge to the nearest candidate within the radius.
     func snapEdge(_ t: Double, excluding id: String) -> Double {
         var best = t, dt = snapRadius
         for c in snapCandidates(excluding: id) where abs(c - t) < dt { dt = abs(c - t); best = c }
         return best
     }
-    /// Snap a body move — whichever of the clip's two edges is closest wins.
     func snapStart(_ t: Double, excluding id: String, duration dur: Double) -> Double {
         var best = t, dt = snapRadius
         for c in snapCandidates(excluding: id) {
@@ -226,8 +347,7 @@ final class EditorModel: ObservableObject {
         }
         return best
     }
-    /// Walls: an edge can't cross a same-track neighbor. floor = max end of clips
-    /// left of the dragged clip's ORIGINAL span, ceil = min start of clips right.
+    /// Walls: an edge can't cross a same-track neighbor.
     func trimWalls(excluding id: String, origStart: Double, origEnd: Double) -> (floor: Double, ceil: Double) {
         guard let ti = trackIndex(ofClip: id) else { return (0, .greatestFiniteMagnitude) }
         var floor = 0.0, ceil = Double.greatestFiniteMagnitude
@@ -238,7 +358,7 @@ final class EditorModel: ObservableObject {
         return (floor, ceil)
     }
 
-    /// Plain setter — the trim gesture has already clamped to walls + source.
+    /// Live setter during a trim drag — local cache only.
     func setTrim(_ id: String, start: Double, sourceStart: Double, duration: Double) {
         guard let ti = trackIndex(ofClip: id), let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
         tracks[ti].clips[ci].start = max(0, start)
@@ -246,9 +366,7 @@ final class EditorModel: ObservableObject {
         tracks[ti].clips[ci].duration = max(0.3, duration)
     }
 
-    // MARK: Brick drag — no source in/out, no composition rebuild. Bricks can't
-    // overlap OTHER BRICKS on the same track (they may coexist with clips).
-
+    // Brick drag — live-local; engine lever on release.
     func setBrickStart(_ id: String, _ start: Double) {
         guard let r = locate(id), r.kind == .brick else { return }
         tracks[r.track].bricks[r.index].start = max(0, start)
@@ -258,13 +376,11 @@ final class EditorModel: ObservableObject {
         tracks[r.track].bricks[r.index].start = max(0, start)
         tracks[r.track].bricks[r.index].duration = max(0.15, duration)
     }
-    /// Same-track brick-vs-brick overlap (half-open).
     func brickConflicts(_ id: String) -> Bool {
         guard let r = locate(id), r.kind == .brick else { return false }
         let b = tracks[r.track].bricks[r.index]
         return tracks[r.track].bricks.contains { $0.id != id && b.start < $0.end && b.end > $0.start }
     }
-    /// Trim walls from same-track neighbour BRICKS (a brick edge can't cross one).
     func brickTrimWalls(_ id: String, origStart: Double, origEnd: Double) -> (floor: Double, ceil: Double) {
         guard let r = locate(id), r.kind == .brick else { return (0, .greatestFiniteMagnitude) }
         var floor = 0.0, ceil = Double.greatestFiniteMagnitude
@@ -274,117 +390,446 @@ final class EditorModel: ObservableObject {
         }
         return (floor, ceil)
     }
-    /// Release: bounce back to the origin if the brick overlaps a same-track brick.
     func endBrickMove(_ id: String, originStart: Double) {
         if brickConflicts(id) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { setBrickStart(id, originStart) }
+            refresh(rebuildPlayer: false)   // restore engine truth
+            return
         }
+        guard let r = locate(id), r.kind == .brick, let a = address(id) else { return }
+        _ = mutate("move_clip", ["track": a.track, "clip": a.clip,
+                                 "start": tracks[r.track].bricks[r.index].start],
+                   rebuildPlayer: false)
     }
 
-    // MARK: Fades (live value; rebuild the composition on release)
+    // Body move — free set-start live, engine move_clip on release.
+    func setClipStart(_ id: String, _ newStart: Double) {
+        guard let ti = trackIndex(ofClip: id), let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
+        tracks[ti].clips[ci].start = max(0, newStart)
+    }
+    func clipConflicts(_ id: String) -> Bool {
+        guard let ti = trackIndex(ofClip: id), let c = tracks[ti].clips.first(where: { $0.id == id }) else { return false }
+        return tracks[ti].clips.contains { $0.id != id && c.start < $0.end && c.end > $0.start }
+    }
+    func endMove(_ id: String, originStart: Double) {
+        if clipConflicts(id) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { setClipStart(id, originStart) }
+            refresh()
+            return
+        }
+        guard let ti = trackIndex(ofClip: id),
+              let c = tracks[ti].clips.first(where: { $0.id == id }),
+              let a = address(id) else { return }
+        _ = mutate("move_clip", ["track": a.track, "clip": a.clip, "start": c.start],
+                   rebuildPlayer: trackKind(ofClip: id) == .video)
+    }
+
+    // MARK: - Fades (live value; engine commit on release)
 
     func setFade(_ id: String, fadeIn: Double? = nil, fadeOut: Double? = nil) {
         guard let ti = trackIndex(ofClip: id), let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
         if let fadeIn  { tracks[ti].clips[ci].fadeIn  = max(0, fadeIn) }
         if let fadeOut { tracks[ti].clips[ci].fadeOut = max(0, fadeOut) }
     }
-    func commitFade() { Task { await rebuildVideo() } }
-
-    // MARK: Body move — free set-start, overlap allowed live, bounced on release
-
-    /// Live during the drag (no rebuild) — the clip's start follows the finger.
-    func setClipStart(_ id: String, _ newStart: Double) {
-        guard let ti = trackIndex(ofClip: id), let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) else { return }
-        tracks[ti].clips[ci].start = max(0, newStart)
+    func commitFade() {
+        guard let id = selectedID, let r = locate(id), r.kind == .clip,
+              let a = address(id) else { return }
+        let c = tracks[r.track].clips[r.index]
+        _ = mutate("set_clip_props", ["ops": [
+            ["track": a.track, "clip": a.clip, "prop": "fade_in",  "value": c.fadeIn],
+            ["track": a.track, "clip": a.clip, "prop": "fade_out", "value": c.fadeOut],
+        ]])
     }
-    /// Same-track overlap, half-open (desktop clips_conflict).
-    func clipConflicts(_ id: String) -> Bool {
-        guard let ti = trackIndex(ofClip: id), let c = tracks[ti].clips.first(where: { $0.id == id }) else { return false }
-        return tracks[ti].clips.contains { $0.id != id && c.start < $0.end && c.end > $0.start }
-    }
-    /// Release: bounce back to the origin on overlap, else keep. Rebuild the
-    /// composition only for video clips (text is an overlay — no reload).
-    func endMove(_ id: String, originStart: Double) {
-        if clipConflicts(id) {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { setClipStart(id, originStart) }
+
+    // MARK: - Split / delete
+
+    /// Split the SELECTED item (clip or FX brick) at the playhead.
+    func splitAtPlayhead() {
+        guard let id = selectedID, let a = address(id) else { return }
+        let r = mutate("split_clip", ["track": a.track, "clip": a.clip, "time": playhead])
+        if let right = r?["right_clip"] as? Int {
+            selectedID = EngineClipAddress(track: a.track, clip: right).idString
         }
-        if trackKind(ofClip: id) == .video { Task { await rebuildVideo() } }
     }
 
-    /// Delete the selected clip; remaining clips close the gap.
-    func deleteSelectedClip() {
-        guard let ti = videoTrackIndex, let id = selectedID else { return }
-        snapshot()
+    /// Universal delete — any clip or brick, engine-addressed.
+    func deleteSelected(_ id: String? = nil) {
+        guard let rid = id ?? selectedID, let a = address(rid) else { return }
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-            tracks[ti].clips.removeAll { $0.id == id }
-            selectedID = nil
+            _ = mutate("delete_clip", ["track": a.track, "clip": a.clip])
+            if selectedID == rid { selectedID = nil }
         }
-        if tracks[ti].clips.isEmpty {
-            video?.stop(); video = nil
-            videoLoaded = false; videoDuration = nil; playhead = 0; isPlaying = false
-        } else {
-            renumberLabels()              // leave the gap; don't shift other clips
-            Task { await rebuildVideo() }
+    }
+    func deleteSelectedClip() { deleteSelected() }
+    func deleteClipAnywhere(_ id: String) { deleteSelected(id) }
+
+    // MARK: - Text / lyric clips
+
+    func activeLyrics(at t: Double) -> [Clip] {
+        tracks.first { $0.kind == .lyric }?.clips.filter { t >= $0.start && t < $0.end } ?? []
+    }
+    var selectedLyricClip: Clip? {
+        tracks.first { $0.kind == .lyric }?.clips.first { $0.id == selectedID }
+    }
+
+    /// Add a text clip at the playhead (creates the text track if needed) + select it.
+    func addTextClip() {
+        activeSheet = nil
+        guard let ti = ensureTrack(.lyric) else { return }
+        let r = mutate("add_clip", ["track": ti, "type": "text",
+                                    "start": playhead, "end": playhead + 3,
+                                    "text": "YOUR TEXT"],
+                       rebuildPlayer: false)
+        if let ci = r?["clip"] as? Int {
+            selectedID = EngineClipAddress(track: ti, clip: ci).idString
+            focusNewText = true
         }
     }
 
-    init(project: Project, engine: EngineStore) {
-        self.project = project
-        self.engine = engine
-        if let doc = ProjectStore.load(project.id) {          // saved project → hydrate from .pms
-            self.tracks = doc.tracks
-            self.chapters = doc.chapters
-            self.format = doc.format
-            self.bpm = doc.bpm
-        } else if project.isNew {                             // fresh empty project
-            self.tracks = []; self.chapters = []
-            self.format = project.format; self.bpm = Sample.bpm
-        } else {                                              // demo card (no saved doc yet)
-            self.tracks = Sample.tracks; self.chapters = Sample.chapters
-            self.format = project.format; self.bpm = Sample.bpm
-        }
-        if tracks.contains(where: { $0.kind == .video && !$0.clips.isEmpty }) {
-            Task { await hydrateVideo() }                     // rebuild player + filmstrips
+    /// Engine clip type / animation style at an address (for sheets that need
+    /// engine vocabulary the UI structs don't carry).
+    func engineClipType(_ a: EngineClipAddress) -> String? { lastSnapshot[a]?.type }
+    func engineClipStyle(_ a: EngineClipAddress) -> String? { lastSnapshot[a]?.clipStyle }
+
+    /// Set a text clip's animation style (engine anim vocabulary: fade/glitch/…).
+    func setClipStyle(_ id: String, style: String) {
+        guard let a = address(id) else { return }
+        _ = mutate("set_clip_prop", ["track": a.track, "clip": a.clip,
+                                     "prop": "clip_style", "value": style],
+                   rebuildPlayer: false)
+    }
+
+    /// Place a project-bin item on the timeline at the playhead (video/audio by
+    /// extension), creating the destination track if needed.
+    func placeBinItem(_ path: String) {
+        let isAudio = ["wav", "mp3", "m4a", "aac", "flac"]
+            .contains(URL(fileURLWithPath: path).pathExtension.lowercased())
+        Task {
+            let dur = (try? await AVURLAsset(url: URL(fileURLWithPath: path)).load(.duration))?.seconds ?? 0
+            guard dur > 0 else {
+                engine.lastError = "Could not read \(URL(fileURLWithPath: path).lastPathComponent)."
+                return
+            }
+            guard let ti = ensureTrack(isAudio ? .audio : .video) else { return }
+            let start = firstFreeStart(onTrack: tracks.firstIndex { $0.engineIndex == ti } ?? 0,
+                                       preferred: playhead, duration: dur)
+            let r = mutate("add_clip", ["track": ti, "type": isAudio ? "audio" : "video",
+                                        "start": start, "end": start + dur, "text": path])
+            if let ci = r?["clip"] as? Int {
+                selectedID = EngineClipAddress(track: ti, clip: ci).idString
+            }
+            activeSheet = nil
         }
     }
 
-    /// Rebuild the AVPlayer + regenerate filmstrips (thumbs aren't persisted) from
-    /// the loaded video clips.
-    private func hydrateVideo() async {
-        guard let ti = videoTrackIndex, !tracks[ti].clips.isEmpty else { return }
-        if video == nil {
-            let v = VideoPlayback(engine: engine)
-            v.onTick = { [weak self] time, playing in self?.playhead = time; self?.isPlaying = playing }
-            video = v
+    /// Live typing updates the cache; the engine commit is debounced so a word
+    /// is one history step, not one per keystroke.
+    func setClipText(_ id: String, _ text: String) {
+        guard let r = locate(id), r.kind == .clip else { return }
+        tracks[r.track].clips[r.index].label = text
+        guard let a = address(id) else { return }
+        textCommitTask?.cancel()
+        textCommitTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            self?.commitText(a, text)
         }
-        for ci in tracks[ti].clips.indices {
-            let c = tracks[ti].clips[ci]
-            if c.thumbs.isEmpty, let url = c.sourceURL {
-                let n = max(1, min(24, Int(c.sourceDuration / 1.5)))
-                let strip = await VideoPlayback.filmstrip(for: url, count: n)
-                if ti < tracks.count, ci < tracks[ti].clips.count { tracks[ti].clips[ci].thumbs = strip }
+    }
+    private func commitText(_ a: EngineClipAddress, _ text: String) {
+        _ = mutate("set_clip_prop", ["track": a.track, "clip": a.clip,
+                                     "prop": "text", "value": text],
+                   rebuildPlayer: false)
+    }
+
+    // MARK: - Selection routing
+
+    enum SelectionBar { case none; case clip(Clip); case lyric(Clip); case brick(Brick) }
+    var selectedBar: SelectionBar {
+        guard let r = selectedRef else { return .none }
+        switch r.kind {
+        case .clip:  let c = tracks[r.track].clips[r.index]
+                     return tracks[r.track].kind == .lyric ? .lyric(c) : .clip(c)
+        case .brick: return .brick(tracks[r.track].bricks[r.index])
+        }
+    }
+
+    func selection() -> (track: Track, brick: Brick)? {
+        for tr in tracks { if let b = tr.bricks.first(where: { $0.id == selectedID }) { return (tr, b) } }
+        return nil
+    }
+    func binding(forBrick id: String) -> Binding<Brick>? {
+        guard let ti = tracks.firstIndex(where: { $0.bricks.contains { $0.id == id } }),
+              let bi = tracks[ti].bricks.firstIndex(where: { $0.id == id }) else { return nil }
+        return Binding(
+            get: { self.tracks[ti].bricks[bi] },
+            set: { self.tracks[ti].bricks[bi] = $0 }
+        )
+    }
+
+    // MARK: - Copy / paste / duplicate (recreated through engine levers)
+
+    struct ClipboardItem {
+        enum Payload { case clip(Clip, type: String); case brick(Brick) }
+        let payload: Payload
+        let trackKind: TrackKind
+    }
+    @Published var clipboard: ClipboardItem?
+
+    private func engineType(of c: Clip, on kind: TrackKind) -> String {
+        guard let a = c.address, let snap = lastSnapshot[a] else {
+            switch kind { case .video: return "video"; case .audio: return "audio"; default: return "text" }
+        }
+        return snap.type
+    }
+
+    func copyItem(_ id: String? = nil) {
+        guard let r = (id ?? selectedID).flatMap(locate) else { return }
+        let kind = tracks[r.track].kind
+        clipboard = r.kind == .clip
+            ? ClipboardItem(payload: .clip(tracks[r.track].clips[r.index],
+                                           type: engineType(of: tracks[r.track].clips[r.index], on: kind)),
+                            trackKind: kind)
+            : ClipboardItem(payload: .brick(tracks[r.track].bricks[r.index]), trackKind: kind)
+    }
+    func cutItem(_ id: String? = nil) {
+        guard let r = (id ?? selectedID).flatMap(locate) else { return }
+        copyItem(r.id); deleteSelected(r.id)
+    }
+    /// Paste lands at the PLAYHEAD (NLE convention).
+    func pasteItem() {
+        guard let cb = clipboard else { return }
+        insertCopy(cb, at: playhead)
+    }
+    /// Duplicate lands right AFTER the original.
+    func duplicateItem(_ id: String? = nil) {
+        guard let r = (id ?? selectedID).flatMap(locate) else { return }
+        copyItem(r.id)
+        guard let cb = clipboard else { return }
+        let end = r.kind == .clip ? tracks[r.track].clips[r.index].end
+                                  : tracks[r.track].bricks[r.index].end
+        insertCopy(cb, at: end)
+    }
+
+    private func firstFreeStart(onTrack ti: Int, preferred: Double, duration: Double) -> Double {
+        var start = max(0, preferred), moved = true
+        while moved { moved = false
+            for o in tracks[ti].clips where start < o.end && start + duration > o.start { start = o.end; moved = true }
+        }
+        return start
+    }
+
+    private func insertCopy(_ cb: ClipboardItem, at t: Double) {
+        guard let ti = tracks.firstIndex(where: { $0.kind == cb.trackKind }),
+              tracks[ti].engineIndex >= 0 else { return }
+        let et = tracks[ti].engineIndex
+        switch cb.payload {
+        case .clip(let c, let type):
+            let start = firstFreeStart(onTrack: ti, preferred: t, duration: c.duration)
+            var params: [String: Any] = ["track": et, "type": type,
+                                         "start": start, "end": start + c.duration]
+            params["text"] = c.sourceURL?.path ?? c.label
+            // in_point is only reachable through the trim contract (a start
+            // delta scales into source seconds) — so a trimmed copy is created
+            // covering the pre-roll span, then trimmed forward to `start`.
+            let pre = c.sourceStart > 0.01 ? start - c.sourceStart / max(0.01, c.speed) : start
+            let usePreRoll = pre >= 0 && pre < start
+            if usePreRoll { params["start"] = pre }
+            let r = mutate("add_clip", params)
+            if let ci = r?["clip"] as? Int {
+                if usePreRoll {
+                    _ = mutate("trim_clip", ["track": et, "clip": ci,
+                                             "start": start, "end": start + c.duration])
+                }
+                selectedID = EngineClipAddress(track: et, clip: ci).idString
+            }
+        case .brick(let b):
+            placeBrickCopy(b, onEngineTrack: et, at: t)
+        }
+    }
+
+    private func placeBrickCopy(_ b: Brick, onEngineTrack et: Int, at t: Double) {
+        let r: [String: Any]?
+        switch b.kind {
+        case .multiFX:
+            r = mutate("add_multifx_brick", [
+                "track": et, "start": t, "end": t + b.duration,
+                "effects": b.chainEntries(),
+            ], rebuildPlayer: false)
+        case .audioFX:
+            r = mutate("add_audio_multifx_brick", [
+                "track": et, "start": t, "end": t + b.duration,
+                "effects": b.chainEntries(),
+            ], rebuildPlayer: false)
+        case .bodyFX:
+            r = mutate("add_clip", ["track": et, "type": "body_fx",
+                                    "start": t, "end": t + b.duration], rebuildPlayer: false)
+            if let ci = r?["clip"] as? Int, let bodyType = b.bodyFXType {
+                _ = mutate("set_clip_prop", ["track": et, "clip": ci,
+                                             "prop": "body_fx_type", "value": bodyType],
+                           rebuildPlayer: false)
+            }
+        case .glassFX, .globalFX:
+            r = mutate("add_effect_brick", [
+                "track": et, "fx_type": b.chain.first ?? "grade",
+                "start": t, "end": t + b.duration, "params": b.params,
+            ], rebuildPlayer: false)
+        }
+        if let ci = r?["clip"] as? Int {
+            selectedID = EngineClipAddress(track: et, clip: ci).idString
+        }
+    }
+
+    // MARK: - Transport (engine owns state; AVPlayer is the media clock)
+
+    func togglePlay() {
+        isPlaying.toggle()
+        engine.send(isPlaying ? "play" : "pause")
+        if let v = video { isPlaying ? v.play() : v.pause() }
+        if !isPlaying { engine.send("seek", ["time": playhead]) }   // land the exact pause point
+    }
+    func seek(_ t: Double) {
+        let v = min(max(t, 0), duration)
+        playhead = v
+        engine.send("seek", ["time": v])
+        video?.seek(v)
+    }
+    /// Pause playback when the user grabs the timeline to scrub.
+    func pauseForScrub() {
+        if isPlaying {
+            video?.pause(); isPlaying = false
+            engine.send("pause")
+        }
+    }
+
+    // MARK: - FX levers
+
+    /// Drop an effect on a target. Video effects on a content track couple to
+    /// the overlapped clip engine-side; the GFX rail hosts global bricks.
+    /// Returns false when the engine rejected the placement (error published).
+    @discardableResult
+    func placeEffect(_ effect: EffectDef, onto target: DropTarget, at t: Double) -> Bool {
+        var params = Dictionary(uniqueKeysWithValues: effect.params.map { ($0.key, $0.def) })
+        params.removeValue(forKey: "dry_wet")
+
+        let hostTrack: Int
+        let r: [String: Any]?
+        switch target {
+        case .clip(let clipID):
+            guard let ti = trackIndex(ofClip: clipID), tracks[ti].engineIndex >= 0 else { return false }
+            hostTrack = tracks[ti].engineIndex
+            r = mutate("add_effect_brick", [
+                "track": hostTrack, "fx_type": effect.id,
+                "start": t, "end": t + 2, "params": params,
+            ], rebuildPlayer: false)
+        case .audioClip(let clipID):
+            guard let ti = trackIndex(ofClip: clipID), tracks[ti].engineIndex >= 0 else { return false }
+            hostTrack = tracks[ti].engineIndex
+            r = mutate("add_audio_multifx_brick", [
+                "track": hostTrack, "start": t, "end": t + 4,
+                "effects": [["fx_type": effect.id, "params": params] as [String: Any]],
+            ], rebuildPlayer: false)
+        case .fxRail:
+            guard let gfx = ensureTrack(.fxRail) else { return false }
+            hostTrack = gfx
+            r = mutate("add_effect_brick", [
+                "track_name": "GFX", "fx_type": effect.id,
+                "start": t, "end": t + 3, "params": params,
+            ], rebuildPlayer: false)
+        case .brick(let brickID):
+            weld(effect.id, intoBrick: brickID)
+            return true
+        }
+        guard let ci = r?["clip"] as? Int else { return false }
+        selectedID = EngineClipAddress(track: hostTrack, clip: ci).idString
+        return true
+    }
+
+    /// Weld an effect into an existing brick → the chain contract is
+    /// delete + recreate as a Multi-FX brick (add_multifx_brick CREATES;
+    /// it never mutates an existing brick).
+    func weld(_ effectID: String, intoBrick brickID: String) {
+        guard let r = locate(brickID), r.kind == .brick, let a = address(brickID) else { return }
+        let b = tracks[r.track].bricks[r.index]
+        guard b.kind == .glassFX || b.kind == .multiFX || b.kind == .globalFX else { return }
+        var entries = b.chainEntries()
+        entries.append(["fx_type": effectID, "params": [String: Double]()])
+        // delete + recreate is compound: batch it so a rejected recreate rolls
+        // the deletion back (abort_batch) instead of destroying the brick.
+        engine.send("begin_batch", ["label": "Weld FX"])
+        guard (try? engine.result("delete_clip", ["track": a.track, "clip": a.clip])) != nil else {
+            engine.send("abort_batch")
+            refresh(rebuildPlayer: false); return
+        }
+        let reply = try? engine.resultObject("add_multifx_brick", [
+            "track": a.track, "start": b.start, "end": b.end, "effects": entries,
+        ])
+        if reply == nil {
+            engine.send("abort_batch")   // restores the deleted brick
+            refresh(rebuildPlayer: false)
+            return
+        }
+        engine.send("end_batch")
+        undoDepth += 1; redoDepth = 0
+        refresh(rebuildPlayer: false)
+        if let ci = reply?["clip"] as? Int {
+            selectedID = EngineClipAddress(track: a.track, clip: ci).idString
+        }
+    }
+
+    /// Decouple a welded brick from its host clip.
+    func decouple(_ brickID: String) {
+        guard let a = address(brickID) else { return }
+        _ = mutate("decouple_fx_brick", ["track": a.track, "clip": a.clip], rebuildPlayer: false)
+        selectedID = nil   // decouple re-hosts the brick on a new track
+    }
+
+    /// Live slider — local + shader immediately; the engine lever debounced.
+    func setParam(_ key: String, _ value: Double, onBrick id: String) {
+        guard let b = binding(forBrick: id) else { return }
+        b.wrappedValue.params[key] = value
+        syncLiveFX()
+        guard let a = address(id), let fxID = b.wrappedValue.chain.last else { return }
+        paramCommitTask?.cancel()
+        paramCommitTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else { return }
+            _ = self?.mutate("set_clip_fx", ["track": a.track, "clip": a.clip,
+                                             "fx_id": fxID, "params": [key: value]],
+                             rebuildPlayer: false)
+        }
+    }
+
+    func deleteBrick(_ id: String) { deleteSelected(id) }
+
+    /// Push the current video-FX stack to the Metal render adapter. Built from
+    /// the ENGINE projection (never a separate Swift brick array); goes away
+    /// once pms_render derives the same stack from AppState directly.
+    func syncLiveFX() {
+        var stack: [[String: Any]] = []
+        for tr in tracks {
+            for b in tr.bricks where b.kind == .glassFX || b.kind == .multiFX || b.kind == .globalFX {
+                let perFX = b.chainParams(padTo: b.chain.count)
+                for (i, fxID) in b.chain.enumerated() {
+                    stack.append(["fx_type": fxID, "params": perFX[i],
+                                  "start": b.start, "end": b.end])
+                }
             }
         }
-        videoLoaded = true
-        await rebuildVideo()
+        stack.sort { ($0["start"] as? Double ?? 0) < ($1["start"] as? Double ?? 0) }
+        engine.send("set_live_fx", ["fx": stack])
     }
 
-    /// Persist the project to its .pms (media already lives in the project's media/ dir).
+    // MARK: - Persistence
+
+    /// Persist through the engine's binary .pms + the poster sidecar.
     func save() {
-        guard !tracks.isEmpty || ProjectStore.exists(project.id) else { return }
-        var t = tracks
-        for ti in t.indices {
-            for ci in t[ti].clips.indices {
-                t[ti].clips[ci].mediaFile = t[ti].clips[ci].sourceURL?.lastPathComponent
-            }
-        }
-        let doc = ProjectDoc(name: project.name, format: format, bpm: bpm,
-                             duration: duration, tracks: t, chapters: chapters)
-        ProjectStore.save(doc, id: project.id)
-        Task { await writePoster() }
+        guard !lastSnapshot.isEmpty || ProjectStore.exists(project.id) else { return }
+        do {
+            try ProjectStore.save(engine: engine, id: project.id, name: project.name)
+            Task { await writePoster() }
+        } catch { /* published to lastError */ }
     }
 
-    /// First-frame poster for the Home card.
     private func writePoster() async {
         guard let v = tracks.first(where: { $0.kind == .video }),
               let c = v.clips.first, let url = c.sourceURL else { return }
@@ -398,11 +843,10 @@ final class EditorModel: ObservableObject {
         }
     }
 
-    var duration: Double { videoDuration ?? project.duration }
+    var duration: Double { max(engineDuration, videoDuration ?? 0) }
 
-    // MARK: Derived
+    // MARK: - Derived
 
-    /// Bricks whose time range contains `t` — drives the canvas badges + look.
     func activeBricks(at t: Double) -> [Brick] {
         tracks.flatMap { $0.bricks }.filter { t >= $0.start && t < $0.end }
     }
@@ -411,301 +855,29 @@ final class EditorModel: ObservableObject {
         guard let v = tracks.first(where: { $0.kind == .video }), !v.clips.isEmpty else { return "" }
         return (v.clips.first { t >= $0.start && t < $0.end } ?? v.clips.last)?.label ?? ""
     }
+}
 
-    // MARK: Text / lyric clips (rendered as canvas overlays; preview now, bake later)
+extension Brick {
+    /// Per-chain-entry params, padded/aligned to the chain length. The last
+    /// stage always reflects `params` (the inspector's live binding).
+    func chainParams(padTo n: Int) -> [[String: Double]] {
+        var out = Array(repeating: [String: Double](), count: max(0, n))
+        for i in 0..<min(n, chainParamsList.count) { out[i] = chainParamsList[i] }
+        if !out.isEmpty { out[out.count - 1] = params }
+        return out
+    }
 
-    /// Text clips (lyric track) whose span contains `t` — drives the canvas title.
-    func activeLyrics(at t: Double) -> [Clip] {
-        tracks.first { $0.kind == .lyric }?.clips.filter { t >= $0.start && t < $0.end } ?? []
-    }
-    var selectedLyricClip: Clip? {
-        tracks.first { $0.kind == .lyric }?.clips.first { $0.id == selectedID }
-    }
-    /// Add a text clip at the playhead (creates the text track if needed) + select it.
-    func addTextClip() {
-        activeSheet = nil
-        snapshot()
-        let clip = Clip(id: "t_\(UUID().uuidString.prefix(6))", label: "YOUR TEXT",
-                        start: playhead, duration: 3)
-        if let ti = tracks.firstIndex(where: { $0.kind == .lyric }) {
-            tracks[ti].clips.append(clip)
-        } else {
-            // Text track sits ABOVE video (lower index = frontmost layer).
-            tracks.insert(Track(id: "TXT", kind: .lyric, name: "TEXT", clips: [clip]),
-                          at: videoTrackIndex ?? tracks.count)
-        }
-        selectedID = clip.id
-        focusNewText = true   // just created → open the keyboard; selecting later won't
-    }
-    func setClipText(_ id: String, _ text: String) {
-        for ti in tracks.indices where tracks[ti].kind == .lyric {
-            if let ci = tracks[ti].clips.firstIndex(where: { $0.id == id }) {
-                tracks[ti].clips[ci].label = text; return
+    /// `effects` array entries for add_multifx_brick / add_audio_multifx_brick,
+    /// carrying per-entry params and body_fx_type where present.
+    func chainEntries() -> [[String: Any]] {
+        let perFX = chainParams(padTo: chain.count)
+        return chain.enumerated().map { i, fxID in
+            var e: [String: Any] = ["fx_type": fxID, "params": perFX[i]]
+            if fxID == "body_fx", i < chainBodyTypes.count, let bt = chainBodyTypes[i] {
+                e["body_fx_type"] = bt
             }
+            return e
         }
-    }
-    /// Delete a clip on any non-video track (text/audio) — video uses deleteSelectedClip.
-    func deleteClipAnywhere(_ id: String) {
-        snapshot()
-        for ti in tracks.indices { tracks[ti].clips.removeAll { $0.id == id } }
-        if selectedID == id { selectedID = nil }
-    }
-
-    func selection() -> (track: Track, brick: Brick)? {
-        for tr in tracks { if let b = tr.bricks.first(where: { $0.id == selectedID }) { return (tr, b) } }
-        return nil
-    }
-
-    func binding(forBrick id: String) -> Binding<Brick>? {
-        guard let ti = tracks.firstIndex(where: { $0.bricks.contains { $0.id == id } }),
-              let bi = tracks[ti].bricks.firstIndex(where: { $0.id == id }) else { return nil }
-        return Binding(
-            get: { self.tracks[ti].bricks[bi] },
-            set: { self.tracks[ti].bricks[bi] = $0 }
-        )
-    }
-
-    // MARK: - Universal item ops (one address + one clipboard for clips AND bricks)
-
-    enum ItemKind { case clip, brick }
-    /// The address of a timeline item. Resolve-on-demand — never store across a
-    /// mutation (indices shift when arrays change).
-    struct ItemRef { let id: String; let track: Int; let index: Int; let kind: ItemKind }
-
-    func locate(_ id: String) -> ItemRef? {
-        for (ti, tr) in tracks.enumerated() {
-            if let ci = tr.clips.firstIndex(where: { $0.id == id })  { return ItemRef(id: id, track: ti, index: ci, kind: .clip) }
-            if let bi = tr.bricks.firstIndex(where: { $0.id == id }) { return ItemRef(id: id, track: ti, index: bi, kind: .brick) }
-        }
-        return nil
-    }
-    var selectedRef: ItemRef? { selectedID.flatMap(locate) }
-
-    /// Which action bar the current selection routes to — the ONE resolver that
-    /// replaces the three clip-privileged ones (fixes the audio-clip dead end:
-    /// an audio clip now routes to .clip → ClipActionBar).
-    enum SelectionBar { case none; case clip(Clip); case lyric(Clip); case brick(Brick) }
-    var selectedBar: SelectionBar {
-        guard let r = selectedRef else { return .none }
-        switch r.kind {
-        case .clip:  let c = tracks[r.track].clips[r.index]
-                     return tracks[r.track].kind == .lyric ? .lyric(c) : .clip(c)
-        case .brick: return .brick(tracks[r.track].bricks[r.index])
-        }
-    }
-
-    struct ClipboardItem { enum Payload { case clip(Clip); case brick(Brick) }; let payload: Payload; let trackKind: TrackKind }
-    @Published var clipboard: ClipboardItem?
-
-    private func regenID(_ old: String) -> String { "\(old.prefix(4))_\(UUID().uuidString.prefix(6))" }
-
-    func copyItem(_ id: String? = nil) {
-        guard let r = (id ?? selectedID).flatMap(locate) else { return }
-        let kind = tracks[r.track].kind
-        clipboard = r.kind == .clip
-            ? ClipboardItem(payload: .clip(tracks[r.track].clips[r.index]),  trackKind: kind)
-            : ClipboardItem(payload: .brick(tracks[r.track].bricks[r.index]), trackKind: kind)
-    }
-    func cutItem(_ id: String? = nil) {
-        guard let r = (id ?? selectedID).flatMap(locate) else { return }
-        copyItem(r.id); deleteSelected(r.id)     // deleteSelected snapshots → one undo step
-    }
-    /// Paste lands at the PLAYHEAD (NLE convention).
-    func pasteItem() {
-        guard let cb = clipboard else { return }
-        switch cb.payload {
-        case .clip(let c):  insertClipCopy(c,  ofKind: cb.trackKind, at: playhead)
-        case .brick(let b): insertBrickCopy(b, ofKind: cb.trackKind, at: playhead, keepBinding: false)
-        }
-    }
-    /// Duplicate lands right AFTER the original (desktop duplicate).
-    func duplicateItem(_ id: String? = nil) {
-        guard let r = (id ?? selectedID).flatMap(locate) else { return }
-        if r.kind == .clip { let c = tracks[r.track].clips[r.index]
-                             insertClipCopy(c, ofKind: tracks[r.track].kind, at: c.end) }
-        else               { let b = tracks[r.track].bricks[r.index]
-                             insertBrickCopy(b, ofKind: tracks[r.track].kind, at: b.end, keepBinding: true) }
-    }
-
-    /// First start ≥ preferred with no same-track clip overlap (clips can't stack).
-    private func firstFreeStart(onTrack ti: Int, preferred: Double, duration: Double) -> Double {
-        var start = max(0, preferred), moved = true
-        while moved { moved = false
-            for o in tracks[ti].clips where start < o.end && start + duration > o.start { start = o.end; moved = true }
-        }
-        return start
-    }
-
-    private func insertClipCopy(_ src: Clip, ofKind kind: TrackKind, at t: Double) {
-        guard let ti = tracks.firstIndex(where: { $0.kind == kind }) else { return }
-        snapshot()
-        var c = src; c.id = regenID(src.id)
-        c.start = firstFreeStart(onTrack: ti, preferred: t, duration: c.duration)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-            tracks[ti].clips.append(c)
-            if kind == .video { renumberLabels() }   // text keeps its words
-            selectedID = c.id
-        }
-        if kind == .video { Task { await rebuildVideo() } }   // composition must include it
-    }
-
-    private func insertBrickCopy(_ src: Brick, ofKind kind: TrackKind, at t: Double, keepBinding: Bool) {
-        guard let ti = tracks.firstIndex(where: { $0.kind == kind }) else { return }
-        snapshot()
-        var b = src; b.id = regenID(src.id); b.start = t   // bricks may overlap → exact playhead
-        if !keepBinding { b.boundClipID = nil }            // paste = free brick; engine re-welds
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-            tracks[ti].bricks.append(b); selectedID = b.id
-        }
-    }
-
-    /// Universal delete — any clip (with video teardown) or brick.
-    func deleteSelected(_ id: String? = nil) {
-        guard let r = (id ?? selectedID).flatMap(locate) else { return }
-        snapshot()
-        let ti = r.track, wasVideo = tracks[ti].kind == .video && r.kind == .clip
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-            if r.kind == .clip { tracks[ti].clips.removeAll { $0.id == r.id } }
-            else               { tracks[ti].bricks.removeAll { $0.id == r.id } }
-            if selectedID == r.id { selectedID = nil }
-        }
-        if wasVideo {
-            if tracks[ti].clips.isEmpty {
-                video?.stop(); video = nil
-                videoLoaded = false; videoDuration = nil; playhead = 0; isPlaying = false
-            } else { renumberLabels(); Task { await rebuildVideo() } }
-        }
-    }
-
-    // MARK: Transport (levers)
-
-    func togglePlay() {
-        isPlaying.toggle()
-        if let v = video { isPlaying ? v.play() : v.pause() }   // onTick reconciles
-        else { engine.command(isPlaying ? "play" : "pause") }
-    }
-    func seek(_ t: Double) {
-        let v = min(max(t, 0), duration)
-        playhead = v
-        if let vid = video { vid.seek(v) } else { engine.command("seek", ["time": v]) }
-    }
-    /// Pause playback when the user grabs the timeline to scrub.
-    func pauseForScrub() {
-        if isPlaying { video?.pause(); isPlaying = false; if video == nil { engine.command("pause") } }
-    }
-
-    // MARK: Mutations → levers
-
-    /// Drop an effect. On a video clip → glass (add_effect_brick, welds after 1.5s).
-    /// On the FX rail → global. Body/audio effects use their own levers.
-    func placeEffect(_ effect: EffectDef, onto target: DropTarget, at t: Double) {
-        let nid = "\(effect.id)_\(Int(Date().timeIntervalSince1970 * 1000) % 100000)"
-        var params = Dictionary(uniqueKeysWithValues: effect.params.map { ($0.key, $0.def) })
-
-        switch target {
-        case .clip(let clipID):
-            let kind: BrickKind = effect.category == "Body" ? .bodyFX : .glassFX
-            let lever = effect.category == "Body"
-                ? (effect.id == "rvm_matte" ? "remove_background" : "add_body_fx_brick")
-                : "add_effect_brick"
-            insertBrick(Brick(id: nid, kind: kind, start: t, duration: 2, chain: [effect.id],
-                              boundClipID: clipID, params: params), onTrackWithClip: clipID)
-            engine.command(lever, ["effect": effect.id, "clip": clipID, "start": t, "params": params])
-            selectedID = nid
-
-        case .fxRail:
-            insertBrick(Brick(id: nid, kind: .globalFX, start: t, duration: 3, chain: [effect.id], params: params),
-                        onTrackKind: .fxRail)
-            engine.command("add_effect_brick", ["effect": effect.id, "track": "GFX", "start": t, "global": true, "params": params])
-            selectedID = nid
-
-        case .audioClip(let clipID):
-            insertBrick(Brick(id: nid, kind: .audioFX, start: t, duration: 4, chain: [effect.id],
-                              boundClipID: clipID, params: params), onTrackWithClip: clipID)
-            engine.command("add_audio_multifx_brick", ["effects": [effect.id], "clip": clipID, "start": t])
-            selectedID = nid
-
-        case .brick(let brickID):
-            weld(effect.id, intoBrick: brickID)
-        }
-        _ = params
-        syncLiveFX()
-    }
-
-    /// Push the current video-FX stack to the engine — the Metal backend applies
-    /// these to the submitted frame at render time (the real GPU FX path). First
-    /// increment: not time-windowed (applies to the whole preview); the engine
-    /// currently renders chromatic_aberration, others are no-ops until the
-    /// transpiled shader library lands.
-    func syncLiveFX() {
-        var bricks: [Brick] = []
-        for tr in tracks {
-            for b in tr.bricks where b.kind == .glassFX || b.kind == .multiFX || b.kind == .globalFX {
-                bricks.append(b)
-            }
-        }
-        bricks.sort { $0.start < $1.start }
-        var stack: [[String: Any]] = []
-        for b in bricks {
-            for fxID in b.chain {
-                var entry: [String: Any] = ["fx_type": fxID]
-                entry["params"] = b.params
-                entry["start"] = b.start          // brick span → engine windows the FX to it
-                entry["end"] = b.end
-                stack.append(entry)
-            }
-        }
-        engine.command("set_live_fx", ["fx": stack])
-    }
-
-    /// Weld an effect into an existing brick → Multi-FX chain (add_multifx_brick semantics).
-    func weld(_ effectID: String, intoBrick brickID: String) {
-        guard let b = binding(forBrick: brickID) else { return }
-        b.wrappedValue.chain.append(effectID)
-        if b.wrappedValue.kind == .glassFX { b.wrappedValue.kind = .multiFX }
-        engine.command("add_multifx_brick", ["brick": brickID, "effects": b.wrappedValue.chain])
-        selectedID = brickID
-        syncLiveFX()
-    }
-
-    /// Decouple a welded brick back to a free-floating glass brick.
-    func decouple(_ brickID: String) {
-        guard let b = binding(forBrick: brickID) else { return }
-        b.wrappedValue.boundClipID = nil
-        engine.command("decouple_fx_brick", ["brick": brickID])
-    }
-
-    func setParam(_ key: String, _ value: Double, onBrick id: String) {
-        guard let b = binding(forBrick: id) else { return }
-        b.wrappedValue.params[key] = value
-        engine.command("set_clip_fx", ["brick": id, "params": [key: value]])
-        syncLiveFX()   // live slider → re-push the stack so the shader updates in real time
-    }
-
-    func deleteBrick(_ id: String) {
-        for i in tracks.indices { tracks[i].bricks.removeAll { $0.id == id } }
-        engine.command("delete_clip", ["clip": id])
-        if selectedID == id { selectedID = nil }
-        syncLiveFX()
-    }
-
-    // MARK: AI actions (each is one lever + a local model; drives the busy bar)
-
-    func run(_ action: AIAction) {
-        activeSheet = nil
-        engine.command(action.lever, [:])
-        engine.simulateBusy(label: action.busyLabel)      // mirrors the `busy` event
-    }
-
-    // MARK: private
-
-    private func insertBrick(_ brick: Brick, onTrackWithClip clipID: String) {
-        guard let ti = tracks.firstIndex(where: { $0.clips.contains { $0.id == clipID } }) else { return }
-        tracks[ti].bricks.append(brick)
-    }
-    private func insertBrick(_ brick: Brick, onTrackKind kind: TrackKind) {
-        guard let ti = tracks.firstIndex(where: { $0.kind == kind }) else { return }
-        tracks[ti].bricks.append(brick)
     }
 }
 
@@ -715,8 +887,8 @@ enum EditorSheet: Identifiable {
 }
 
 enum DropTarget {
-    case clip(String)       // glass FX bind
-    case audioClip(String)  // audio FX
-    case fxRail             // global FX
-    case brick(String)      // weld into chain
+    case clip(String)       // effect brick on the clip's track (couples engine-side)
+    case audioClip(String)  // audio FX chain brick
+    case fxRail             // global FX on the GFX rail
+    case brick(String)      // weld into an existing brick's chain
 }
