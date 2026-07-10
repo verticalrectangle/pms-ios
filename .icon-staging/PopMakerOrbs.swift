@@ -1,3 +1,16 @@
+//  PopMakerOrbs.swift
+//  The AtmosphereView bokeh orbs, repurposed as icon backdrop content.
+//  Renders glossy 3D spheres from Theme.swift — RadialGradient lit top-left
+//  + specular highlight + depth blur — in three compositions:
+//  .field (7 orbs at UI positions), .cluster (5 orbs, tight), .hero (1 large).
+//
+//  Glass mode: foreground (sharp, low-blur) orbs become iOS 26 Liquid Glass
+//  objects — Circle().glassEffect(.regular, in: .circle) with optional hue tint.
+//  Background (blurred) orbs stay as opaque colored bokeh — they're the content
+//  the glass refracts. Driven by env vars for capture_pms.sh parameterization.
+
+import SwiftUI
+
 extension Color {
     /// Brightness-scaled shade for sphere shading. f>1 → lighter + desaturated
     /// (the lit highlight side); f<1 → darker + more saturated (the shadow side).
@@ -12,15 +25,6 @@ extension Color {
     }
 }
 
-//  PopMakerOrbs.swift
-//  The AtmosphereView bokeh orbs, repurposed as icon backdrop content.
-//  Renders the exact same glossy 3D spheres from Theme.swift — RadialGradient
-//  lit top-left + specular highlight + depth blur — in three compositions:
-//  .field (7 orbs at UI positions), .cluster (5 orbs, tight), .hero (1 large).
-//  Driven by env vars so capture_pms.sh can parameterize per variant.
-
-import SwiftUI
-
 struct PopMakerOrbs: View {
     enum Composition: String {
         case field, cluster, hero
@@ -29,10 +33,13 @@ struct PopMakerOrbs: View {
     let composition: Composition
     let ground: Color
     let orbColors: [Color]      // 1–3 hues; extras cycle
+    let glassForeground: Bool   // foreground orbs become liquid glass
+    let glassTinted: Bool       // glass orbs carry a hue tint (vs .regular clear)
 
     private struct Orb {
         let nx, ny, size, blur, opacity: CGFloat
         let color: Color
+        var isForeground: Bool { blur < 0.015 }   // sharp orbs = foreground
     }
 
     private var orbs: [Orb] {
@@ -41,7 +48,6 @@ struct PopMakerOrbs: View {
 
         switch composition {
         case .field:
-            // Exact AtmosphereView positions/sizes/blur/opacity — 7 orbs
             return [
                 Orb(nx: 0.91, ny: 0.16, size: 0.34, blur: 0.004, opacity: 0.95, color: c(0)),
                 Orb(nx: 0.08, ny: 0.71, size: 0.30, blur: 0.006, opacity: 0.93, color: c(1 % cols.count)),
@@ -52,7 +58,6 @@ struct PopMakerOrbs: View {
                 Orb(nx: 0.20, ny: 0.16, size: 0.12, blur: 0.060, opacity: 0.51, color: c(2 % cols.count)),
             ]
         case .cluster:
-            // 5 orbs, tighter around center — reads at icon scale
             return [
                 Orb(nx: 0.50, ny: 0.42, size: 0.38, blur: 0.003, opacity: 0.96, color: c(0)),
                 Orb(nx: 0.22, ny: 0.62, size: 0.26, blur: 0.010, opacity: 0.88, color: c(1 % cols.count)),
@@ -61,7 +66,6 @@ struct PopMakerOrbs: View {
                 Orb(nx: 0.66, ny: 0.22, size: 0.14, blur: 0.036, opacity: 0.58, color: c(1 % cols.count)),
             ]
         case .hero:
-            // Single large glossy sphere, optically centered
             return [
                 Orb(nx: 0.50, ny: 0.50, size: 0.62, blur: 0.002, opacity: 0.98, color: c(0)),
             ]
@@ -74,14 +78,20 @@ struct PopMakerOrbs: View {
             ZStack {
                 ground
                 ForEach(Array(orbs.enumerated()), id: \.offset) { _, o in
-                    ball(o, S: S)
-                        .position(x: o.nx * S, y: o.ny * S)
+                    if glassForeground && o.isForeground {
+                        glassBall(o, S: S)
+                            .position(x: o.nx * S, y: o.ny * S)
+                    } else {
+                        ball(o, S: S)
+                            .position(x: o.nx * S, y: o.ny * S)
+                    }
                 }
             }
         }
         .ignoresSafeArea()
     }
 
+    // Opaque glossy 3D sphere — the AtmosphereView.ball() rendering
     @ViewBuilder
     private func ball(_ o: Orb, S: CGFloat) -> some View {
         let size = S * o.size
@@ -99,6 +109,17 @@ struct PopMakerOrbs: View {
             }
             .frame(width: size, height: size)
             .blur(radius: S * o.blur)
+            .opacity(o.opacity)
+    }
+
+    // iOS 26 Liquid Glass orb — frosted glass disc refracting the content behind
+    @ViewBuilder
+    private func glassBall(_ o: Orb, S: CGFloat) -> some View {
+        let size = S * o.size
+        Circle()
+            .fill(.white.opacity(0.001))
+            .glassEffect(glassTinted ? .regular.tint(o.color.opacity(0.35)) : .regular, in: .circle)
+            .frame(width: size, height: size)
             .opacity(o.opacity)
     }
 }

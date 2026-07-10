@@ -1,7 +1,7 @@
 #!/bin/bash
-# capture_pms.sh — render 20 PopMaker Studio icon tiles: raw bokeh orbs on
-# light ground, no glass disc, no glyph. Just the AtmosphereView glossy 3D
-# spheres filling the whole rounded-square tile.
+# capture_pms.sh — render 20 PopMaker Studio icon tiles: glass foreground orbs
+# on light ground. Foreground orbs are iOS 26 Liquid Glass; background orbs are
+# opaque colored bokeh. No glass disc, no glyph — just orbs filling the tile.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -15,10 +15,10 @@ xcrun simctl bootstatus "$CAPTURE_UDID" 2>/dev/null || true
 xcrun simctl install "$CAPTURE_UDID" build/Build/Products/Debug-iphonesimulator/IconRenderer.app
 mkdir -p out
 
-# TSV: tag  comp  ground_hex  orb_colors
+# TSV: tag  comp  ground_hex  orb_colors  glass_tinted
 TSV="$(python3 gen_pms_variants.py)"
 n=0; total=20
-while IFS=$'\t' read -r tag comp ground orb_colors; do
+while IFS=$'\t' read -r tag comp ground orb_colors glass_tinted; do
   [[ -z "$tag" ]] && continue
   n=$((n+1))
   out_path="out/pms-icon-$tag-1024.png"
@@ -28,6 +28,8 @@ while IFS=$'\t' read -r tag comp ground orb_colors; do
   SIMCTL_CHILD_ENCLAVE_ORB_COMP="$comp" \
   SIMCTL_CHILD_ENCLAVE_ORB_GROUND="$ground" \
   SIMCTL_CHILD_ENCLAVE_ORB_COLORS="$orb_colors" \
+  SIMCTL_CHILD_ENCLAVE_GLASS_ORBS="1" \
+  SIMCTL_CHILD_ENCLAVE_GLASS_TINTED="$glass_tinted" \
   SIMCTL_CHILD_ENCLAVE_GLYPH="liquidMark" \
   SIMCTL_CHILD_ENCLAVE_PM_GLYPH="0" \
   SIMCTL_CHILD_ENCLAVE_NO_GLYPH="1" \
