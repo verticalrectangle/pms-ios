@@ -92,6 +92,7 @@ final class VideoPlayback {
         let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
         var cursor = CMTime.zero
+        var firstVideoTransformSet = false
         for seg in segments.sorted(by: { $0.start < $1.start }) {
             let clipStart = CMTime(seconds: seg.start, preferredTimescale: 600)
             if CMTimeCompare(clipStart, cursor) > 0 {
@@ -109,6 +110,13 @@ final class VideoPlayback {
             do {
                 if let sv = try await asset.loadTracks(withMediaType: .video).first {
                     try vTrack?.insertTimeRange(srcRange, of: sv, at: clipStart)
+                    // Propagate the source track's orientation transform. AVComposition tracks
+                    // do NOT inherit preferredTransform on insert, so portrait phone clips
+                    // would render sideways unless we copy it over.
+                    if !firstVideoTransformSet {
+                        vTrack?.preferredTransform = try await sv.load(.preferredTransform)
+                        firstVideoTransformSet = true
+                    }
                     if speed != 1 {
                         vTrack?.scaleTimeRange(CMTimeRange(start: clipStart, duration: srcRange.duration),
                                                toDuration: tlDuration)
@@ -190,6 +198,7 @@ final class VideoPlayback {
             }
             req.finish(with: acc.cropped(to: extent), context: nil)
         })
+        vc.renderSize = size
         return (comp, vc)
     }
 
