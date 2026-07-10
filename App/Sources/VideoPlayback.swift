@@ -380,7 +380,7 @@ enum VideoExporter {
         let url: URL
         let start: Double, end: Double, inPoint: Double, speed: Double
     }
-    struct TextLayer { let track: Int, clip: Int; let text: String }
+    struct TextLayer { let track: Int, clip: Int; let clipModel: Clip }
     /// (start, end, track, clip) spans of the primary track's clips — resolves
     /// which engine address each base frame belongs to.
     typealias BaseSpan = (start: Double, end: Double, track: Int, clip: Int)
@@ -396,8 +396,11 @@ enum VideoExporter {
         let (comp, vc0) = try await VideoPlayback.buildComposition(segments, audioOnly: audioOnly)
 
         // Static text layers: submit once; the engine windows them by clip span.
+        // Rasters use the export canvas size so placement fractions land on
+        // the same pixels as the preview raster (TextLayoutModel).
         for t in texts {
-            let pb = await LayerFeeder.rasterText(t.text)
+            let pb = await LayerFeeder.rasterText(t.clipModel,
+                                                  canvas: CGSize(width: size.w, height: size.h))
             engine.submitLayerFrame(track: t.track, clip: t.clip, pb, hostTime: -1)   // static layer: no scene-clock update
         }
         // Overlay readers: sequential decode over each clip's source range.

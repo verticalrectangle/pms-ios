@@ -24,6 +24,16 @@ final class MockEngine {
         var fadeIn = 0.0, fadeOut = 0.0
         var fontSize = 42.0
         var clipStyle = "none"
+        // Canvas transform (engine defaults; fractions of canvas)
+        var posX = 0.5, posY = 0.5
+        var scaleX = 1.0, scaleY = 1.0
+        var rotation = 0.0
+        var cropL = 0.0, cropT = 0.0, cropR = 0.0, cropB = 0.0
+        var flipH = false, flipV = false
+        var subPos = 0
+        var subPosX = 0.5, subPosY = 0.85
+        var subAnchorH = 1
+        var subWrapW = 0.85
         var coupled = false
         var fxType = ""                       // effect bricks
         var fxParams: [String: Double] = [:]
@@ -50,6 +60,8 @@ final class MockEngine {
 
     private var state = MState()
     private var playing = false
+    private var selectedTrack = -1, selectedClip = -1   // canvas selection (runtime-only)
+    private var inBatch = false                          // history coalescing (begin/end/abort_batch)
     private var undoStack: [MState] = []
     private var redoStack: [MState] = []
     private var recentProjects: [String] = []
@@ -259,7 +271,35 @@ final class MockEngine {
             undoStack.append(state); state = next
             return ok(projectJSON())
 
-        case "begin_batch", "end_batch", "abort_batch", "set_live_fx", "select_clip":
+        case "set_live_fx":
+            return ok([:])
+
+        // Batches mirror the engine: one history entry per batch; abort rolls
+        // back to the begin_batch snapshot.
+        case "begin_batch":
+            guard !inBatch else { return err("already in a batch") }
+            push()
+            inBatch = true
+            return ok([:])
+        case "end_batch":
+            guard inBatch else { return err("not in a batch") }
+            inBatch = false
+            return ok([:])
+        case "abort_batch":
+            guard inBatch else { return err("not in a batch") }
+            inBatch = false
+            if let prev = undoStack.popLast() { state = prev }
+            return ok([:])
+
+        case "select_clip":
+            // Canvas selection (runtime-only, like the engine's
+            // state.selected_track/clip — never serialized).
+            guard let ci = params["clip"] as? Int, ci >= 0 else {
+                selectedTrack = -1; selectedClip = -1
+                return ok([:])
+            }
+            guard let (ti, vci) = clipAddress(params) else { return err("bad clip address") }
+            selectedTrack = ti; selectedClip = vci
             return ok([:])
 
         case "list_body_fx":
@@ -355,6 +395,7 @@ final class MockEngine {
         state.tracks[ti].clips.contains { !$0.isFX && $0.start < e && $0.end > s }
     }
     private func push() {
+        guard !inBatch else { return }   // batch = one entry, captured at begin_batch
         undoStack.append(state)
         if undoStack.count > 100 { undoStack.removeFirst() }
         redoStack.removeAll()
@@ -371,6 +412,24 @@ final class MockEngine {
         case "text":      c.text = value as? String ?? c.text
         case "font_size": c.fontSize = dbl(value) ?? c.fontSize
         case "clip_style": c.clipStyle = value as? String ?? c.clipStyle
+        case "pos_x":     c.posX = dbl(value) ?? c.posX
+        case "pos_y":     c.posY = dbl(value) ?? c.posY
+        case "scale_x":   c.scaleX = dbl(value) ?? c.scaleX
+        case "scale_y":   c.scaleY = dbl(value) ?? c.scaleY
+        case "rotation":  c.rotation = dbl(value) ?? c.rotation
+        // Crop clamps mirror the engine: each side is limited to 0.95 minus
+        // its opposite so a sliver of the frame always survives.
+        case "crop_l":    c.cropL = max(0, min(dbl(value) ?? 0, 0.95 - c.cropR))
+        case "crop_r":    c.cropR = max(0, min(dbl(value) ?? 0, 0.95 - c.cropL))
+        case "crop_t":    c.cropT = max(0, min(dbl(value) ?? 0, 0.95 - c.cropB))
+        case "crop_b":    c.cropB = max(0, min(dbl(value) ?? 0, 0.95 - c.cropT))
+        case "flip_h":    c.flipH = value as? Bool ?? c.flipH
+        case "flip_v":    c.flipV = value as? Bool ?? c.flipV
+        case "sub_pos":   c.subPos = (value as? Int) ?? Int(dbl(value) ?? Double(c.subPos))
+        case "sub_pos_x": c.subPosX = dbl(value) ?? c.subPosX
+        case "sub_pos_y": c.subPosY = dbl(value) ?? c.subPosY
+        case "sub_anchor_h": c.subAnchorH = (value as? Int) ?? Int(dbl(value) ?? Double(c.subAnchorH))
+        case "sub_wrap_w": c.subWrapW = dbl(value) ?? c.subWrapW
         case "body_fx_type": c.bodyFXType = value as? String ?? c.bodyFXType
         case "body_fx_amount": c.fxParams["body_fx_amount"] = dbl(value) ?? 0
         case "body_fx_param_0", "body_fx_param_1", "body_fx_param_2", "body_fx_param_3":
@@ -393,6 +452,12 @@ final class MockEngine {
             "volume": c.volume, "speed": c.speed, "opacity": c.opacity,
             "muted": c.muted, "fade_in": c.fadeIn, "fade_out": c.fadeOut,
             "font_size": c.fontSize, "clip_style": c.clipStyle,
+            "pos_x": c.posX, "pos_y": c.posY,
+            "scale_x": c.scaleX, "scale_y": c.scaleY, "rotation": c.rotation,
+            "crop_l": c.cropL, "crop_t": c.cropT, "crop_r": c.cropR, "crop_b": c.cropB,
+            "flip_h": c.flipH, "flip_v": c.flipV,
+            "sub_pos": c.subPos, "sub_pos_x": c.subPosX, "sub_pos_y": c.subPosY,
+            "sub_anchor_h": c.subAnchorH, "sub_wrap_w": c.subWrapW,
         ]
         if !c.source.isEmpty { j["source"] = c.source }
         if c.coupled { j["coupled"] = true }

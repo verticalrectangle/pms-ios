@@ -379,7 +379,7 @@ struct ExportSheet: View {
                                               inPoint: c.sourceStart, speed: c.speed))
                     }
                 case .lyric:
-                    texts.append(.init(track: a.track, clip: a.clip, text: c.label))
+                    texts.append(.init(track: a.track, clip: a.clip, clipModel: c))
                 default: break
                 }
             }

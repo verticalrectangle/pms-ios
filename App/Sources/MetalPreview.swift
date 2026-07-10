@@ -88,25 +88,30 @@ struct CanvasChrome: View {
     }
 }
 
-/// Time-windowed text/title overlay on the canvas (preview). The same clips
-/// will bake into export via a CATextLayer once the animation-tool path lands.
+/// Live-edit text overlay on the canvas: ONLY the clip currently being typed
+/// into draws here (committed titles composite engine-side). Placement comes
+/// from TextLayoutModel so typing shows exactly where the raster will land.
 struct LyricOverlay: View {
     let clips: [Clip]
-    let width: CGFloat
+    let box: CGSize
     var body: some View {
-        VStack(spacing: width * 0.02) {
+        ZStack {
             ForEach(clips) { c in
+                let lay = TextLayoutModel.layout(c.label.isEmpty ? " " : c.label,
+                                                 clip: c, in: box)
                 Text(c.label)
-                    .font(.system(size: width * 0.12, weight: .black))
+                    .font(.system(size: lay.fontSize, weight: .black))
                     .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.55), radius: width * 0.02)
-                    .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.4)
-                    .lineLimit(3)
+                    .shadow(color: .black.opacity(0.55), radius: box.width * 0.02)
+                    .multilineTextAlignment(c.subAnchorH == 0 ? .leading :
+                                            c.subAnchorH == 2 ? .trailing : .center)
+                    .frame(width: lay.rect.width,
+                           alignment: c.subAnchorH == 0 ? .leading :
+                                      c.subAnchorH == 2 ? .trailing : .center)
+                    .position(x: lay.rect.midX, y: lay.rect.midY)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .padding(.horizontal, width * 0.06)
+        .frame(width: box.width, height: box.height)
         .allowsHitTesting(false)
     }
 }

@@ -34,6 +34,25 @@ struct EngineClipSnapshot: Identifiable {
     var fadeOut: Double
     var fontSize: Double
     var clipStyle: String
+    // Canvas transform (fractions of canvas; engine base values — keyframes
+    // project separately). CANVAS_PLAN.md.
+    var posX: Double
+    var posY: Double
+    var scaleX: Double
+    var scaleY: Double
+    var rotation: Double            // degrees, clockwise
+    var cropL: Double
+    var cropT: Double
+    var cropR: Double
+    var cropB: Double
+    var flipH: Bool
+    var flipV: Bool
+    // Text placement (canvas fractions; sub_* engine vocabulary)
+    var subPos: Int                 // 0 bottom, 1 centre, 2 top, 3 custom Y
+    var subPosX: Double             // horizontal centre fraction (0 left, 1 right)
+    var subPosY: Double             // custom Y fraction from top (sub_pos == 3)
+    var subAnchorH: Int             // 0 left, 1 centre, 2 right
+    var subWrapW: Double            // column width as fraction of canvas width
     // FX bricks (type == effect / multi_fx / audio_multi_fx / body_fx)
     struct ChainEntry {
         var fxType: String
@@ -165,6 +184,22 @@ struct EngineProjectSnapshot {
             fadeOut: num(cj["fade_out"]) ?? 0,
             fontSize: num(cj["font_size"]) ?? 0,
             clipStyle: cj["clip_style"] as? String ?? "",
+            posX: num(cj["pos_x"]) ?? 0.5,
+            posY: num(cj["pos_y"]) ?? 0.5,
+            scaleX: num(cj["scale_x"]) ?? 1,
+            scaleY: num(cj["scale_y"]) ?? 1,
+            rotation: num(cj["rotation"]) ?? 0,
+            cropL: num(cj["crop_l"]) ?? 0,
+            cropT: num(cj["crop_t"]) ?? 0,
+            cropR: num(cj["crop_r"]) ?? 0,
+            cropB: num(cj["crop_b"]) ?? 0,
+            flipH: cj["flip_h"] as? Bool ?? false,
+            flipV: cj["flip_v"] as? Bool ?? false,
+            subPos: (cj["sub_pos"] as? Int) ?? Int(num(cj["sub_pos"]) ?? 0),
+            subPosX: num(cj["sub_pos_x"]) ?? 0.5,
+            subPosY: num(cj["sub_pos_y"]) ?? 0.85,
+            subAnchorH: (cj["sub_anchor_h"] as? Int) ?? Int(num(cj["sub_anchor_h"]) ?? 1),
+            subWrapW: num(cj["sub_wrap_w"]) ?? 0.85,
             fxType: cj["fx_type"] as? String,
             fxParams: bodyAwareParams(cj),
             fxChain: chain,
@@ -250,6 +285,19 @@ extension EngineProjectSnapshot {
                 clip.fadeIn = c.fadeIn
                 clip.fadeOut = c.fadeOut
                 clip.address = c.address
+                clip.sourceSize = info?.size
+                clip.posX = c.posX; clip.posY = c.posY
+                clip.scaleX = c.scaleX; clip.scaleY = c.scaleY
+                clip.rotation = c.rotation
+                clip.cropL = c.cropL; clip.cropT = c.cropT
+                clip.cropR = c.cropR; clip.cropB = c.cropB
+                clip.flipH = c.flipH; clip.flipV = c.flipV
+                clip.textKind = (c.type == "text" || c.type == "lyrics" || c.type == "subtitle")
+                clip.fontSize = c.fontSize
+                clip.subPos = c.subPos
+                clip.subPosX = c.subPosX; clip.subPosY = c.subPosY
+                clip.subAnchorH = c.subAnchorH
+                clip.subWrapW = c.subWrapW
                 track.clips.append(clip)
             }
             for b in t.fxBricks {
@@ -276,4 +324,5 @@ extension EngineProjectSnapshot {
 struct MediaInfo {
     var duration: Double
     var thumbs: [URL]
+    var size: CGSize? = nil     // display size (naturalSize ∘ preferredTransform)
 }

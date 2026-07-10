@@ -90,6 +90,7 @@ final class LayerFeeder {
     func rebuild(tracks: [Track], snapshot: EngineProjectSnapshot,
                  primaryEngineTrack: Int,
                  excludingText: EngineClipAddress? = nil,
+                 canvas: CGSize = CGSize(width: 1080, height: 1920),
                  resolveMedia: (String) -> URL?) {
         // Overlay video layers
         for o in overlays { o.player.pause(); o.player.replaceCurrentItem(with: nil) }
@@ -114,9 +115,11 @@ final class LayerFeeder {
             for c in tr.clips {
                 guard let a = c.address, a != excludingText else { continue }
                 live.insert(a)
-                let key = "\(c.label)"
+                // Any placement field change re-rasters (position lives IN the
+                // raster — the engine composites it as a full-canvas layer).
+                let key = "\(c.label)|\(c.fontSize)|\(c.subPos)|\(c.subPosX)|\(c.subPosY)|\(c.subAnchorH)|\(c.subWrapW)|\(Int(canvas.width))x\(Int(canvas.height))"
                 guard textKeys[a] != key else { continue }
-                if let pb = Self.rasterText(c.label) {
+                if let pb = Self.rasterText(c, canvas: canvas) {
                     engine?.submitLayerFrame(track: a.track, clip: a.clip, pb,
                                              hostTime: -1)   // static layer: no scene-clock update
                     textKeys[a] = key
@@ -179,10 +182,12 @@ final class LayerFeeder {
 
     // MARK: - Text raster
 
-    /// Rasterize a title into a canvas-proportioned transparent BGRA buffer
-    /// (portrait 1080-wide basis; the engine transforms/aspect-fits it).
-    static func rasterText(_ text: String, width: Int = 1080, height: Int = 1920) -> CVPixelBuffer? {
-        guard !text.isEmpty else { return nil }
+    /// Rasterize a title into a canvas-sized transparent BGRA buffer. Placement
+    /// comes from TextLayoutModel (the same fractions the canvas handles show),
+    /// so preview handles, the engine layer, and export all agree.
+    static func rasterText(_ c: Clip, canvas: CGSize = CGSize(width: 1080, height: 1920)) -> CVPixelBuffer? {
+        guard !c.label.isEmpty else { return nil }
+        let width = Int(canvas.width), height = Int(canvas.height)
         var pbOut: CVPixelBuffer?
         CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA,
                             [kCVPixelBufferCGBitmapContextCompatibilityKey: true] as CFDictionary,
@@ -202,17 +207,15 @@ final class LayerFeeder {
         // CG origin is bottom-left; flip to draw in UIKit coordinates.
         ctx.translateBy(x: 0, y: CGFloat(height))
         ctx.scaleBy(x: 1, y: -1)
-        let size = CGSize(width: width, height: height)
-        let para = NSMutableParagraphStyle(); para.alignment = .center
+        let lay = TextLayoutModel.layout(c.label, clip: c, in: canvas)
+        let para = NSMutableParagraphStyle(); para.alignment = lay.alignment
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: size.width * 0.12, weight: .black),
+            .font: UIFont.systemFont(ofSize: lay.fontSize, weight: .black),
             .foregroundColor: UIColor.white, .paragraphStyle: para,
             .shadow: { let s = NSShadow(); s.shadowColor = UIColor.black.withAlphaComponent(0.55)
-                       s.shadowBlurRadius = size.width * 0.02; s.shadowOffset = .zero; return s }(),
+                       s.shadowBlurRadius = canvas.width * 0.02; s.shadowOffset = .zero; return s }(),
         ]
-        let box = CGRect(x: size.width * 0.06, y: size.height * 0.375,
-                         width: size.width * 0.88, height: size.height * 0.25)
-        (text as NSString).draw(in: box, withAttributes: attrs)
+        (c.label as NSString).draw(in: lay.rect, withAttributes: attrs)
         UIGraphicsPopContext()
         return pb
     }

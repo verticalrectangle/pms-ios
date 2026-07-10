@@ -83,11 +83,32 @@ struct Clip: Identifiable, TimelineItem {
     var sourceURL: URL? = nil     // engine `source` path resolved to a file URL
     var sourceStart: Double = 0   // engine in_point (source seconds)
     var sourceDuration: Double = 0 // full source length (AVAsset probe; clamps trim)
+    var sourceSize: CGSize? = nil  // source display size (canvas bbox aspect-fit; nil until probed)
     var speed: Double = 1.0       // source-consumption rate; srcTime = sourceStart + (t-start)*speed
     var fadeIn: Double = 0
     var fadeOut: Double = 0
     var address: EngineClipAddress? = nil   // where this clip lives in the engine
     var end: Double { start + duration }
+
+    // Canvas transform (engine base values, fractions of canvas — see
+    // CANVAS_PLAN.md; the canvas overlay edits these via set_clip_props).
+    var posX: Double = 0.5          // clip centre, 0 = left edge, 1 = right edge
+    var posY: Double = 0.5          // clip centre, 0 = top edge, 1 = bottom edge
+    var scaleX: Double = 1
+    var scaleY: Double = 1
+    var rotation: Double = 0        // degrees, clockwise
+    var cropL: Double = 0, cropT: Double = 0, cropR: Double = 0, cropB: Double = 0
+    var flipH = false, flipV = false
+    var hasCrop: Bool { cropL > 0 || cropT > 0 || cropR > 0 || cropB > 0 }
+
+    // Text placement (text/lyrics clips; engine sub_* vocabulary)
+    var textKind = false            // decoded from a lyric-lane engine type
+    var fontSize: Double = 0        // fraction of canvas height (0 = default)
+    var subPos: Int = 0             // 0 bottom, 1 centre, 2 top, 3 custom Y
+    var subPosX: Double = 0.5
+    var subPosY: Double = 0.85
+    var subAnchorH: Int = 1         // 0 left, 1 centre, 2 right
+    var subWrapW: Double = 0.85
 }
 
 /// UI flavour of an FX brick — derived from the engine clip type + host lane.
