@@ -1,13 +1,24 @@
 # Track layering on iOS — desktop-parity plan
 
-> **Status 2026-07-09:** Stages 0–4 are implemented and build-proven (Linux
-> engine-smoke PASS at ABI 3; xcframework compiles clean; simulator + unsigned
-> device builds green). GPU behavior is **not yet device-verified** — the §7
-> definition-of-done scenario needs a phone. Known deviations recorded in
-> `fx_debug` statuses: hand-written desktop FX (grade/blur/vignette/…) have no
-> MSL ports and report `unknown_fx`; beat-pulse FX modulation, ZoomPunch/
-> datamosh CPU paths, background presets, and per-clip body-FX masks remain
-> the accepted v1 gaps of §4.
+> **Status 2026-07-09 (rev 2):** Stages 0–4 implemented; GPU behavior is now
+> **numerically verified on macOS Metal** by the new `metal-render-test`
+> target (tools/metal_render_test.mm — pixel-assertion harness over the real
+> C-ABI flow; host build: `cmake -B build-mac -S . -DPMS_ENGINE_ONLY=ON
+> -DPMS_HEADLESS=ON -DONNXRUNTIME_ROOT=/usr/local/opt/onnxruntime
+> -Dwhisper_DIR=/usr/local/opt/whisper-cpp/lib/cmake/whisper`, shader dir via
+> `PMS_SHADER_DIR`). It covers: legacy path, scene activation, coupled-FX
+> pixels + time windows, two-FX ordering (chain ≡ stacked rails), dissolve
+> blending, text-over-video premultiplied compositing, bus scoping between
+> layers, wet/dry, and a 109-effect PSO sweep.
+> **The "FX don't render" bug is fixed and regression-gated**: the scene ran
+> on `state.playhead`, which is frozen during export and 5 Hz-lagged in
+> preview, so FX windows collected zero entries; the scene now runs on the
+> frame clock (`g_scene_clock` = latest submitted layer host_time; static
+> rasters pass -1). The harness reproduces the old failure exactly and passes
+> with the fix. Remaining accepted gaps (§4): hand-written desktop FX report
+> `unknown_fx` (incl. `ken_burns`, a desktop CPU path), beat-pulse modulation,
+> ZoomPunch/datamosh, background presets, per-clip body-FX masks; the §7
+> on-device scenario still wants a phone for end-to-end confirmation.
 
 **Goal.** The canvas composites exactly like the desktop app: the bottom
 timeline track is the bottom layer of the canvas and every track above stacks

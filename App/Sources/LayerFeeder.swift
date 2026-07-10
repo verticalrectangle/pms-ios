@@ -118,16 +118,16 @@ final class LayerFeeder {
                 guard textKeys[a] != key else { continue }
                 if let pb = Self.rasterText(c.label) {
                     engine?.submitLayerFrame(track: a.track, clip: a.clip, pb,
-                                             hostTime: 0)
+                                             hostTime: -1)   // static layer: no scene-clock update
                     textKeys[a] = key
                 } else {
                     textKeys.removeValue(forKey: a)
-                    engine?.submitLayerFrame(track: a.track, clip: a.clip, nil, hostTime: 0)
+                    engine?.submitLayerFrame(track: a.track, clip: a.clip, nil, hostTime: -1)   // static layer: no scene-clock update
                 }
             }
         }
         for (a, _) in textKeys where !live.contains(a) {
-            engine?.submitLayerFrame(track: a.track, clip: a.clip, nil, hostTime: 0)
+            engine?.submitLayerFrame(track: a.track, clip: a.clip, nil, hostTime: -1)   // static layer: no scene-clock update
             textKeys.removeValue(forKey: a)
         }
         _ = snapshot

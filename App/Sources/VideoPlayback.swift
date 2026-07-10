@@ -389,7 +389,7 @@ enum VideoExporter {
         // Static text layers: submit once; the engine windows them by clip span.
         for t in texts {
             let pb = await LayerFeeder.rasterText(t.text)
-            engine.submitLayerFrame(track: t.track, clip: t.clip, pb, hostTime: 0)
+            engine.submitLayerFrame(track: t.track, clip: t.clip, pb, hostTime: -1)   // static layer: no scene-clock update
         }
         // Overlay readers: sequential decode over each clip's source range.
         var overlayReaders: [OverlayFrameSource] = []
