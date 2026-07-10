@@ -99,9 +99,20 @@ struct InspectorView: View {
         return EffectCatalog.byID[brick.chain.last ?? ""]?.params ?? []
     }
 
+    /// Sliders scroll internally past 4 params — the floating panel must never
+    /// grow past ~half the screen (it overlays the timeline, not the layout).
     private func paramSliders(_ brick: Brick, bind: Binding<Brick>) -> some View {
+        let defs = paramDefs(brick)
+        return ScrollView(defs.count > 4 ? .vertical : []) {
+            slidersColumn(brick, bind: bind, defs: defs)
+        }
+        .frame(maxHeight: defs.count > 4 ? 180 : nil)
+    }
+
+    private func slidersColumn(_ brick: Brick, bind: Binding<Brick>,
+                               defs: [EffectDef.Param]) -> some View {
         VStack(spacing: 9) {
-            ForEach(paramDefs(brick), id: \.key) { p in
+            ForEach(defs, id: \.key) { p in
                 let value = Binding<Double>(
                     get: { bind.wrappedValue.params[p.key] ?? p.def },
                     set: { model.setParam(p.key, $0, onBrick: brick.id) }

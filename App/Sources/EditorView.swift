@@ -97,18 +97,6 @@ struct EditorView: View {
                 canvas(box: canvasBox())
                 TransportBar(model: model, engine: engine).padding(.horizontal, 16)
                 timeline
-                switch model.selectedBar {
-                case .clip(let clip):   // video OR audio (no longer a dead end)
-                    ClipActionBar(model: model, clip: clip)
-                        .padding(.horizontal, 12)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                case .brick(let brick):
-                    InspectorView(model: model, brickID: brick.id)
-                        .padding(.horizontal, 12)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                case .lyric, .none:
-                    EmptyView()   // text bar floats separately; nothing selected → no bar
-                }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -132,6 +120,33 @@ struct EditorView: View {
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.busy?.label)
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.lastError)
+
+            // Selection bars FLOAT over the editor, pinned to the bottom — they
+            // never participate in the main column's layout (in-flow they
+            // compressed/pushed the canvas+timeline whenever a clip or brick
+            // was selected). Same pattern as LyricEditBar below.
+            Group {
+                switch model.selectedBar {
+                case .clip(let clip):   // video OR audio (no longer a dead end)
+                    VStack {
+                        Spacer()
+                        ClipActionBar(model: model, clip: clip).padding(.horizontal, 12)
+                    }
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                case .brick(let brick):
+                    VStack {
+                        Spacer()
+                        InspectorView(model: model, brickID: brick.id).padding(.horizontal, 12)
+                    }
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                case .lyric, .none:
+                    EmptyView()   // text bar floats separately; nothing selected → no bar
+                }
+            }
+            .zIndex(15)   // over the timeline, under the text edit bar (20)
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedID)
 
             // The text edit bar floats just above the keyboard (respects the
             // keyboard safe area) while the rest of the UI stays put — nothing jumps.
