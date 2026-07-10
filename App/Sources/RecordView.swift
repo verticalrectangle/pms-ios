@@ -2,9 +2,13 @@
 // renders every preview frame (camera → pms_submit_camera_frame → live-FX
 // stack → MetalPreview), so what you see is pixel-identical to playback and
 // export. Looks are pushed record-scoped through set_live_fx (always-on, no
-// timeline window); on dismiss the timeline-derived stack is restored. A
-// finished take lands at the playhead with the active look welded on as a
-// coupled Multi-FX brick — raw file, non-destructive filters.
+// timeline window); on dismiss the timeline-derived stack is restored.
+//
+// Recording is multi-segment: each start creates a new UUID-named .mov with a
+// monotonic segment index, and stop buffers the completed segment. Done places
+// all segments in order; Undo deletes the last pending segment; teardown scrubs
+// any pending/in-flight files. Writer callbacks are main-dispatched by the
+// recorder, so all state updates stay on the main queue.
 import SwiftUI
 import AVFoundation
 
@@ -34,8 +38,16 @@ struct RecordView: View {
     @State private var studioSpec = MakeupSpec()
     @State private var studioActive = false
     @State private var customLooks: [SavedLook] = CustomLookStore.load()
-    // WYSIWYG take encoder — looks are baked into the recorded pixels.
-    @State private var recorder: FilteredTakeRecorder?
+
+    // Multi-segment recording state. All state is main-queue; no actor.
+    @State private var nextSegmentIndex: Int = 0
+    @State private var segments: [RecordedSegment] = []
+    @State private var inFlight: [Int: InFlight] = [:]
+    @State private var currentRecorder: FilteredTakeRecorder?
+    @State private var currentSegmentIndex: Int?
+    @State private var finalizing = false
+    @State private var placed = false
+    @State private var isTornDown = false
 
     private let ticker = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
@@ -91,7 +103,7 @@ struct RecordView: View {
             }
         }
         .statusBarHidden()
-        .onAppear { claimFramePath(); startCamera() }
+        .onAppear { resetState(); claimFramePath(); startCamera() }
         .onDisappear(perform: teardown)
         .onReceive(ticker) { _ in
             if let s = recordStart { elapsed = Date().timeIntervalSince(s) }
@@ -129,14 +141,17 @@ struct RecordView: View {
                     .background(Circle().fill(.black.opacity(0.35)))
             }
             Spacer()
-            if recording {
-                HStack(spacing: 6) {
+            HStack(spacing: 6) {
+                if recording {
                     Circle().fill(.red).frame(width: 8, height: 8)
-                    Text(timeString(elapsed)).font(.num(13)).foregroundStyle(.white)
                 }
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(Capsule().fill(.black.opacity(0.35)))
+                Text("\(totalCount) clips").font(.label(11))
+                Text("·").font(.num(13))
+                Text(timeString(totalDuration)).font(.num(13))
             }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Capsule().fill(.black.opacity(0.35)))
             Spacer()
             Button { timerArmed.toggle(); haptic() } label: {
                 Image(systemName: timerArmed ? "timer.circle.fill" : "timer")
@@ -152,7 +167,7 @@ struct RecordView: View {
                     .padding(10)
                     .background(Circle().fill(.black.opacity(0.35)))
             }
-            .disabled(recording)   // flip mid-take would tear the writer session
+            .disabled(recording || finalizing)   // flip disabled mid-take
         }
         .padding(.horizontal, 14)
         .padding(.top, 6)
@@ -242,22 +257,52 @@ struct RecordView: View {
     }
 
     private var recordRow: some View {
-        ZStack {
-            Button(action: recordTapped) {
-                ZStack {
-                    Circle().strokeBorder(.white.opacity(0.9), lineWidth: 4)
-                        .frame(width: 74, height: 74)
-                    RoundedRectangle(cornerRadius: recording ? 7 : 30)
-                        .fill(Color(red: 1, green: 0.27, blue: 0.27))
-                        .frame(width: recording ? 30 : 60, height: recording ? 30 : 60)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: recording)
-                }
-            }
-            .pressable()
-            .disabled(countdown != nil)
+        HStack(spacing: 28) {
+            undoButton
+            recordButton
+            doneButton
         }
         .padding(.bottom, 26)
         .padding(.top, 4)
+    }
+
+    private var recordButton: some View {
+        Button(action: recordTapped) {
+            ZStack {
+                Circle().strokeBorder(.white.opacity(0.9), lineWidth: 4)
+                    .frame(width: 74, height: 74)
+                RoundedRectangle(cornerRadius: recording ? 7 : 30)
+                    .fill(Color(red: 1, green: 0.27, blue: 0.27))
+                    .frame(width: recording ? 30 : 60, height: recording ? 30 : 60)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: recording)
+            }
+        }
+        .pressable()
+        .disabled(countdown != nil || finalizing)
+    }
+
+    private var undoButton: some View {
+        Button(action: undoLast) {
+            Image(systemName: "arrow.uturn.backward")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(segments.isEmpty ? .white.opacity(0.4) : .white)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(.black.opacity(0.35)))
+        }
+        .disabled(segments.isEmpty || finalizing)
+        .pressable()
+    }
+
+    private var doneButton: some View {
+        Button(action: doneTapped) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(canDone ? .white : .white.opacity(0.4))
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(.black.opacity(0.35)))
+        }
+        .disabled(!canDone || finalizing)
+        .pressable()
     }
 
     // MARK: camera + looks plumbing
@@ -367,6 +412,22 @@ struct RecordView: View {
         camera?.matteEnabled = lookUsesMatte
     }
 
+    private func resetState() {
+        isTornDown = false
+        placed = false
+        finalizing = false
+        recording = false
+        recordStart = nil
+        elapsed = 0
+        countdown = nil
+        errorText = nil
+        nextSegmentIndex = 0
+        segments.removeAll()
+        inFlight.removeAll()
+        currentRecorder = nil
+        currentSegmentIndex = nil
+    }
+
     private func recordTapped() {
         if recording { stopRecording(); return }
         if timerArmed { runCountdown(3) } else { startRecording() }
@@ -384,9 +445,9 @@ struct RecordView: View {
     }
 
     private func startRecording() {
-        guard let camera else { return }
+        guard !isTornDown, !finalizing, !recording, let camera else { return }
         let url = ProjectStore.mediaDir(model.project.id)
-            .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970)).mov")
+            .appendingPathComponent("\(UUID().uuidString).mov")
         // WYSIWYG: every camera frame is re-rendered through the engine's
         // live-FX stack and encoded — the look is IN the recorded pixels
         // (makeup, matte trails, everything), exactly as previewed.
@@ -394,29 +455,105 @@ struct RecordView: View {
             errorText = "Take recorder failed to start."
             return
         }
-        recorder = rec
+        let index = nextSegmentIndex
+        nextSegmentIndex += 1
+        inFlight[index] = InFlight(recorder: rec, url: url)
+        currentRecorder = rec
+        currentSegmentIndex = index
         camera.filteredRecorder = rec
         recordStart = Date(); elapsed = 0
         recording = true
+        errorText = nil
         haptic()
     }
 
     private func stopRecording() {
+        guard recording, let rec = currentRecorder, let index = currentSegmentIndex else { return }
         recording = false
         recordStart = nil
+        currentRecorder = nil
+        currentSegmentIndex = nil
         camera?.filteredRecorder = nil
-        let rec = recorder
-        recorder = nil
-        rec?.finish { url in
+        if var entry = inFlight[index] {
+            entry.finishRequested = true
+            inFlight[index] = entry
+        }
+        rec.finish { [self] url in
+            inFlight.removeValue(forKey: index)
+            if isTornDown {
+                if !placed, let url { try? FileManager.default.removeItem(at: url) }
+                return
+            }
             guard let url else {
                 errorText = "Take failed to write."
                 return
             }
-            // The look is baked into the file — land it clean, no brick
-            // (a timeline brick would double-apply the effect).
-            model.placeRecordedTake(url.path, look: [])
-            haptic()
+            segments.append(RecordedSegment(index: index, url: url, duration: nil))
+            segments.sort { $0.index < $1.index }
+            measureDuration(url: url, index: index)
         }
+        haptic()
+    }
+
+    private func doneTapped() {
+        guard canDone, !finalizing else { return }
+        finalizing = true
+        let ordered = segments.map { (path: $0.url.path, duration: $0.duration!) }
+        guard model.placeRecordedTakes(ordered) else {
+            finalizing = false
+            errorText = "Could not place recorded segments."
+            return
+        }
+        placed = true
+        dismiss()
+    }
+
+    private func undoLast() {
+        guard let last = segments.last else { return }
+        segments.removeLast()
+        try? FileManager.default.removeItem(at: last.url)
+        haptic()
+    }
+
+    private func measureDuration(url: URL, index: Int) {
+        let asset = AVURLAsset(url: url)
+        asset.loadValuesAsynchronously(forKeys: ["duration"]) { [self] in
+            var error: NSError?
+            let status = asset.statusOfValue(forKey: "duration", error: &error)
+            let seconds = asset.duration.seconds
+            DispatchQueue.main.async { [self] in
+                if isTornDown {
+                    if !placed { try? FileManager.default.removeItem(at: url) }
+                    return
+                }
+                if status == .loaded, seconds > 0 {
+                    if let i = segments.firstIndex(where: { $0.index == index }) {
+                        segments[i].duration = seconds
+                        haptic()
+                    } else {
+                        try? FileManager.default.removeItem(at: url)
+                    }
+                } else {
+                    if segments.contains(where: { $0.index == index }) {
+                        errorText = "Take failed to read back."
+                        segments.removeAll { $0.index == index }
+                    }
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+        }
+    }
+
+    private var canDone: Bool {
+        !segments.isEmpty && inFlight.isEmpty && segments.allSatisfy { $0.duration != nil }
+    }
+
+    private var totalCount: Int {
+        segments.count + inFlight.count
+    }
+
+    private var totalDuration: TimeInterval {
+        segments.compactMap { $0.duration }.reduce(0, +) + (recording ? elapsed : 0)
     }
 
     private func dismiss() {
@@ -424,9 +561,27 @@ struct RecordView: View {
     }
 
     private func teardown() {
+        isTornDown = true
+        recording = false
+        recordStart = nil
+        currentRecorder = nil
+        currentSegmentIndex = nil
         camera?.filteredRecorder = nil
-        recorder?.finish { _ in }
-        recorder = nil
+        for (index, entry) in inFlight where !entry.finishRequested {
+            var entry = entry
+            entry.finishRequested = true
+            inFlight[index] = entry
+            entry.recorder.finish { [self] url in
+                inFlight.removeValue(forKey: index)
+                if isTornDown, !placed, let url {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+        }
+        if !placed {
+            for segment in segments { try? FileManager.default.removeItem(at: segment.url) }
+            segments.removeAll()
+        }
         camera?.stop()
         camera = nil
         engine.send("face_track_enable", ["on": false])
@@ -445,4 +600,17 @@ struct RecordView: View {
     private func haptic() {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
+}
+
+private struct RecordedSegment: Identifiable {
+    let index: Int
+    let url: URL
+    var duration: Double?
+    var id: Int { index }
+}
+
+private struct InFlight {
+    let recorder: FilteredTakeRecorder
+    let url: URL
+    var finishRequested: Bool = false
 }

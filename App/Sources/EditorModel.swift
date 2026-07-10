@@ -806,6 +806,55 @@ final class EditorModel: ObservableObject {
         }
     }
 
+    /// Place multiple recorded segments contiguously as one atomic undo entry.
+    @discardableResult
+    func placeRecordedTakes(_ segments: [(path: String, duration: Double)]) -> Bool {
+        guard !segments.isEmpty else { return false }
+        guard segments.allSatisfy({ $0.duration > 0 }) else {
+            engine.lastError = "Recorded segments must have positive durations."
+            return false
+        }
+        guard let ti = ensureTrack(.video) else {
+            engine.lastError = "Could not create the video track."
+            return false
+        }
+        let totalDuration = segments.reduce(0) { $0 + $1.duration }
+        guard let localIdx = tracks.firstIndex(where: { $0.engineIndex == ti }) else {
+            engine.lastError = "Could not locate the video track."
+            return false
+        }
+        let start = firstFreeStart(onTrack: localIdx, preferred: playhead, duration: totalDuration)
+
+        guard (try? engine.result("begin_batch", ["label": "Recorded segments"])) != nil else {
+            engine.lastError = "Could not begin recording placement."
+            return false
+        }
+        var cursor = start
+        var lastClip: Int?
+        for segment in segments {
+            guard let r = try? engine.resultObject("add_clip", [
+                "track": ti, "type": "video",
+                "start": cursor, "end": cursor + segment.duration,
+                "text": segment.path,
+            ]), let ci = r["clip"] as? Int else {
+                engine.send("abort_batch", [:])
+                engine.lastError = "Could not place all recorded segments."
+                refresh()
+                return false
+            }
+            lastClip = ci
+            cursor += segment.duration
+        }
+        engine.send("end_batch", [:])
+        undoDepth += 1
+        redoDepth = 0
+        refresh()
+        if let lastClip = lastClip {
+            selectedID = EngineClipAddress(track: ti, clip: lastClip).idString
+        }
+        return true
+    }
+
     /// Live typing updates the cache; the engine commit is debounced so a word
     /// is one history step, not one per keystroke.
     func setClipText(_ id: String, _ text: String) {
