@@ -84,7 +84,10 @@ final class VideoPlayback {
         }
     }
 
-    static func buildComposition(_ segments: [Segment], titles: [Clip] = []) async throws -> (AVMutableComposition, AVMutableVideoComposition?) {
+    /// `audioOnly`: clips whose SOUND plays but whose pixels are engine layers
+    /// (audio-track clips; overlay video audio is a v1 gap per the plan).
+    static func buildComposition(_ segments: [Segment], titles: [Clip] = [],
+                                 audioOnly: [Segment] = []) async throws -> (AVMutableComposition, AVMutableVideoComposition?) {
         let comp = AVMutableComposition()
         let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
@@ -124,6 +127,33 @@ final class VideoPlayback {
             }
             cursor = CMTimeAdd(clipStart, tlDuration)
         }
+        // Audio-only segments land on their own composition tracks (created
+        // lazily so overlapping sound sources coexist). Failures propagate.
+        var extraAudio: [AVMutableCompositionTrack] = []
+        for seg in audioOnly.sorted(by: { $0.start < $1.start }) {
+            let asset = AVURLAsset(url: seg.url)
+            guard let sa = try? await asset.loadTracks(withMediaType: .audio).first else { continue }
+            let speed = max(0.01, seg.speed)
+            let srcRange = CMTimeRange(start: CMTime(seconds: seg.sourceStart, preferredTimescale: 600),
+                                       duration: CMTime(seconds: seg.duration * speed, preferredTimescale: 600))
+            let at = CMTime(seconds: seg.start, preferredTimescale: 600)
+            var host: AVMutableCompositionTrack?
+            for tr in extraAudio where host == nil {
+                if (try? tr.insertTimeRange(srcRange, of: sa, at: at)) != nil { host = tr }
+            }
+            if host == nil, extraAudio.count < 4,
+               let tr = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+                do { try tr.insertTimeRange(srcRange, of: sa, at: at) }
+                catch { throw CompositionError.insertFailed(seg.url.lastPathComponent, error.localizedDescription) }
+                extraAudio.append(tr)
+                host = tr
+            }
+            if let host, speed != 1 {
+                host.scaleTimeRange(CMTimeRange(start: at, duration: srcRange.duration),
+                                    toDuration: CMTime(seconds: seg.duration, preferredTimescale: 600))
+            }
+        }
+
         // The UNIFIED composite: fold every layer (video base → fades → titles)
         // through ONE Core Image handler, shared by preview + export, in track
         // order. Only engaged when there's something to composite.
@@ -177,7 +207,8 @@ final class VideoPlayback {
     /// (Re)build the playable timeline from the ordered clip segments — every
     /// edit (trim/split/delete) calls this. Preserves the play position.
     /// Rapid edits cancel each other: only the newest rebuild installs.
-    func load(segments: [Segment], titles: [Clip] = [], seekTo: Double? = nil) async {
+    func load(segments: [Segment], titles: [Clip] = [], audioOnly: [Segment] = [],
+              seekTo: Double? = nil) async {
         loadGeneration += 1
         let gen = loadGeneration
         let wasPlaying = player.rate > 0
@@ -187,7 +218,7 @@ final class VideoPlayback {
         let comp: AVMutableComposition
         let vc: AVMutableVideoComposition?
         do {
-            (comp, vc) = try await Self.buildComposition(segments, titles: titles)
+            (comp, vc) = try await Self.buildComposition(segments, titles: titles, audioOnly: audioOnly)
         } catch {
             engine?.lastError = error.localizedDescription
             suppressTicks = false
@@ -248,13 +279,18 @@ final class VideoPlayback {
 
     var suspended = false   // export takes exclusive engine access (no live frames)
 
+    /// When set, decoded frames route here (the layer feeder addresses them to
+    /// the engine's scene compositor) instead of the legacy single-content path.
+    var frameSink: ((CVPixelBuffer, Double) -> Void)?
+
     private func pushFrame(hostTime: CFTimeInterval = CACurrentMediaTime()) {
         guard !suspended, let out = output else { return }
         let itemTime = out.itemTime(forHostTime: hostTime)
         guard out.hasNewPixelBuffer(forItemTime: itemTime),
               let pb = out.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil)
         else { return }
-        engine?.submitCameraFrame(pb, rotation: 0, hostTime: itemTime.seconds)
+        if let frameSink { frameSink(pb, itemTime.seconds) }
+        else { engine?.submitCameraFrame(pb, rotation: 0, hostTime: itemTime.seconds) }
     }
 }
 
@@ -328,11 +364,37 @@ enum VideoExporter {
         }
     }
 
-    nonisolated static func export(_ segments: [VideoPlayback.Segment], titles: [Clip] = [],
+    /// One overlay video layer for export: its own reader stepped to the
+    /// output frame clock (same submissions as preview → same engine scene).
+    struct OverlayLayer {
+        let track: Int, clip: Int
+        let url: URL
+        let start: Double, end: Double, inPoint: Double, speed: Double
+    }
+    struct TextLayer { let track: Int, clip: Int; let text: String }
+    /// (start, end, track, clip) spans of the primary track's clips — resolves
+    /// which engine address each base frame belongs to.
+    typealias BaseSpan = (start: Double, end: Double, track: Int, clip: Int)
+
+    nonisolated static func export(_ segments: [VideoPlayback.Segment],
+                                   audioOnly: [VideoPlayback.Segment] = [],
+                                   overlays: [OverlayLayer] = [],
+                                   texts: [TextLayer] = [],
+                                   baseSpans: [BaseSpan] = [],
                                    engine: EngineStore, size: (w: Int, h: Int),
                                    isCancelled: @escaping () -> Bool = { false },
                                    progress: @escaping (Double) -> Void) async throws -> URL {
-        let (comp, vc0) = try await VideoPlayback.buildComposition(segments, titles: titles)
+        let (comp, vc0) = try await VideoPlayback.buildComposition(segments, audioOnly: audioOnly)
+
+        // Static text layers: submit once; the engine windows them by clip span.
+        for t in texts {
+            let pb = await LayerFeeder.rasterText(t.text)
+            engine.submitLayerFrame(track: t.track, clip: t.clip, pb, hostTime: 0)
+        }
+        // Overlay readers: sequential decode over each clip's source range.
+        var overlayReaders: [OverlayFrameSource] = []
+        for o in overlays { overlayReaders.append(try await OverlayFrameSource(o)) }
+        let ovl = overlayReaders
         let duration = comp.duration.seconds
         guard duration > 0 else { throw ExportError.emptyTimeline }
         guard let vc = vc0,
@@ -430,7 +492,15 @@ enum VideoExporter {
                     if isCancelled() { cancelled = true; break }
                     guard let ipb = CMSampleBufferGetImageBuffer(sb) else { continue }
                     let pt = CMSampleBufferGetPresentationTimeStamp(sb)
-                    engine.submitCameraFrame(ipb, rotation: 0, hostTime: pt.seconds)  // frame + its time
+                    let t = pt.seconds
+                    if let span = baseSpans.first(where: { t >= $0.start && t < $0.end }) ?? baseSpans.last {
+                        // Scene path: the base frame is the primary track's layer...
+                        engine.submitLayerFrame(track: span.track, clip: span.clip, ipb, hostTime: t)
+                    } else {
+                        // ...no layered project → legacy single-content path.
+                        engine.submitCameraFrame(ipb, rotation: 0, hostTime: t)
+                    }
+                    for r in ovl { r.submit(at: t, engine: engine) }   // overlay layers at this frame time
                     var opb: CVPixelBuffer?
                     CVPixelBufferPoolCreatePixelBuffer(nil, pool, &opb)
                     var ctex: CVMetalTexture?
@@ -495,5 +565,72 @@ enum VideoExporter {
             }
             return true
         } catch { return false }
+    }
+}
+
+// MARK: - Export overlay source (off-main: lives outside the @MainActor exporter)
+
+/// Sequential frame source for one overlay clip during export: an
+/// AVAssetReader over the clip's source range, stepped monotonically to each
+/// output frame's time. Latest frame at-or-before the target wins. Driven
+/// from the export worker queue.
+final class OverlayFrameSource {
+    private let layer: VideoExporter.OverlayLayer
+    private let reader: AVAssetReader
+    private let out: AVAssetReaderTrackOutput
+    private var current: CVPixelBuffer?
+    private var pending: (pts: Double, pb: CVPixelBuffer)?
+    private var wasActive = false
+
+    init(_ layer: VideoExporter.OverlayLayer) async throws {
+        self.layer = layer
+        let asset = AVURLAsset(url: layer.url)
+        guard let vt = try await asset.loadTracks(withMediaType: .video).first else {
+            throw VideoExporter.ExportError.setup("overlay \(layer.url.lastPathComponent): no video track")
+        }
+        reader = try AVAssetReader(asset: asset)
+        out = AVAssetReaderTrackOutput(track: vt, outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        guard reader.canAdd(out) else {
+            throw VideoExporter.ExportError.setup("overlay \(layer.url.lastPathComponent): reader rejected output")
+        }
+        reader.add(out)
+        let speed = max(0.01, layer.speed)
+        reader.timeRange = CMTimeRange(
+            start: CMTime(seconds: layer.inPoint, preferredTimescale: 600),
+            duration: CMTime(seconds: (layer.end - layer.start) * speed, preferredTimescale: 600))
+        guard reader.startReading() else {
+            throw VideoExporter.ExportError.setup("overlay \(layer.url.lastPathComponent): \(reader.error?.localizedDescription ?? "reader start failed")")
+        }
+    }
+
+    /// Advance to output time t and submit the layer frame (clears the layer
+    /// when t leaves the clip's span).
+    func submit(at t: Double, engine: EngineStore) {
+        let active = t >= layer.start && t < layer.end
+        if !active {
+            if wasActive {
+                engine.submitLayerFrame(track: layer.track, clip: layer.clip, nil, hostTime: t)
+                wasActive = false
+            }
+            return
+        }
+        let target = layer.inPoint + (t - layer.start) * max(0.01, layer.speed)
+        while true {
+            if let p = pending {
+                if p.pts <= target { current = p.pb; pending = nil }
+                else { break }   // next frame is in the future — keep current
+            }
+            guard pending == nil, reader.status == .reading,
+                  let sb = out.copyNextSampleBuffer() else { break }
+            guard let pb = CMSampleBufferGetImageBuffer(sb) else { continue }
+            let pts = CMSampleBufferGetPresentationTimeStamp(sb).seconds
+            if pts <= target { current = pb }
+            else { pending = (pts, pb) }
+        }
+        if let current {
+            engine.submitLayerFrame(track: layer.track, clip: layer.clip, current, hostTime: t)
+            wasActive = true
+        }
     }
 }

@@ -244,6 +244,22 @@ final class EngineStore: ObservableObject {
 #endif
     }
 
+    /// Submit one visual layer's frame, addressed by engine (track, clip) —
+    /// the scene compositor stacks layers in track order (bottom lane deepest).
+    /// nil clears the layer. The engine retains until superseded, so static
+    /// layers (text rasters) can be submitted once.
+    func submitLayerFrame(track: Int, clip: Int, _ pixelBuffer: CVPixelBuffer?,
+                          rotation: Int32 = 0, hostTime: Double) {
+        guard let e = engine else { return }
+#if ENGINE_MOCK
+        _ = e
+#else
+        pms_submit_layer_frame(e, Int32(track), Int32(clip),
+                               pixelBuffer.map { Unmanaged.passUnretained($0).toOpaque() },
+                               rotation, hostTime)
+#endif
+    }
+
     /// Submit a Vision person matte (OneComponent8 CVPixelBuffer; nil clears).
     /// The engine retains the buffer. Called off the Vision worker queue.
     func submitPersonMatte(_ matte: CVPixelBuffer?, hostTime: Double) {

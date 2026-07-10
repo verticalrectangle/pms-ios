@@ -41,6 +41,7 @@ final class EditorModel: ObservableObject {
     @Published var isPlaying = false
 
     var video: VideoPlayback?
+    var layers: LayerFeeder?
     @Published var videoLoaded = false
     @Published var exporting = false        // export owns the engine → live canvas suspended
     @Published var videoDuration: Double?
@@ -264,12 +265,19 @@ final class EditorModel: ObservableObject {
         return tracks[ti].clips.first { $0.id == selectedID }
     }
 
-    /// Title/lyric clips to bake into the export overlay.
-    var titleClips: [Clip] { tracks.first { $0.kind == .lyric }?.clips ?? [] }
+    /// Title/lyric clips (engine scene layers; also export raster sources).
+    var titleClips: [Clip] { tracks.filter { $0.kind == .lyric }.flatMap(\.clips) }
 
-    /// The current video clips as export/playback segments (engine-projected).
-    var videoSegments: [VideoPlayback.Segment] {
-        tracks.filter { $0.kind == .video }.flatMap(\.clips).compactMap { c in
+    /// The PRIMARY video track: the bottom-most video lane (deepest layer) —
+    /// its clips play through the main AVPlayer (the transport master clock).
+    /// Other video tracks are overlay layers fed by LayerFeeder.
+    var primaryVideoEngineTrack: Int? {
+        tracks.last { $0.kind == .video }?.engineIndex
+    }
+
+    private func segments(fromEngineTrack et: Int?) -> [VideoPlayback.Segment] {
+        guard let et else { return [] }
+        return (tracks.first { $0.engineIndex == et }?.clips ?? []).compactMap { c in
             guard let url = c.sourceURL,
                   FileManager.default.fileExists(atPath: url.path) else { return nil }
             return VideoPlayback.Segment(url: url, start: c.start, sourceStart: c.sourceStart,
@@ -278,15 +286,31 @@ final class EditorModel: ObservableObject {
         }
     }
 
-    /// Titles baked into the played composition — preview == export. The clip
-    /// currently being text-edited is excluded (the live overlay shows it) so
-    /// typing isn't gated on a composition rebuild.
-    private var bakedTitleClips: [Clip] {
-        titleClips.filter { $0.id != selectedLyricClip?.id }
+    /// Primary-track clips as playback/export segments.
+    var videoSegments: [VideoPlayback.Segment] {
+        segments(fromEngineTrack: primaryVideoEngineTrack)
+    }
+    /// Overlay video-track clips (video-only layers; audio is a v1 gap).
+    var overlaySegmentsExist: Bool {
+        tracks.contains { $0.kind == .video && $0.engineIndex != primaryVideoEngineTrack && !$0.clips.isEmpty }
+    }
+    /// Audio-track clips — sound only, mixed into the AVComposition.
+    var audioOnlySegments: [VideoPlayback.Segment] {
+        tracks.filter { $0.kind == .audio }.flatMap(\.clips).compactMap { c in
+            guard let url = c.sourceURL,
+                  FileManager.default.fileExists(atPath: url.path) else { return nil }
+            return VideoPlayback.Segment(url: url, start: c.start, sourceStart: c.sourceStart,
+                                         duration: c.duration, speed: c.speed)
+        }
     }
 
-    /// Rebuild the player timeline from the projection.
+    /// Rebuild the player timeline from the projection: the main AVPlayer
+    /// carries the PRIMARY video track (+ all audio); every other visual layer
+    /// (overlay video, text) is an engine scene layer fed by LayerFeeder.
+    /// Text is NOT baked into the composition — the engine composites it at
+    /// its track's z-order, exactly like the desktop.
     func rebuildVideo(seekTo: Double? = nil) async {
+        rebuildLayers()
         let segs = videoSegments
         if segs.isEmpty {
             video?.stop(); video = nil
@@ -299,15 +323,44 @@ final class EditorModel: ObservableObject {
             v.onTick = { [weak self] time, playing in self?.playerTick(time, playing) }
             video = v
         }
-        await video?.load(segments: segs, titles: bakedTitleClips, seekTo: seekTo)
+        wireBaseFrameSink()
+        await video?.load(segments: segs, audioOnly: audioOnlySegments, seekTo: seekTo)
         videoDuration = video?.duration
         videoLoaded = true
     }
 
-    /// AVPlayer clock → transport readout + throttled engine reconciliation.
+    /// Route the main player's decoded frames to the engine as the PRIMARY
+    /// track's layer, addressed by whichever clip covers the frame time.
+    private func wireBaseFrameSink() {
+        video?.frameSink = { [weak self] pb, t in
+            guard let self else { return }
+            guard let et = self.primaryVideoEngineTrack,
+                  let tr = self.tracks.first(where: { $0.engineIndex == et }),
+                  let c = tr.clips.first(where: { t >= $0.start && t < $0.end }) ?? tr.clips.last,
+                  let a = c.address else {
+                self.engine.submitCameraFrame(pb, rotation: 0, hostTime: t)   // legacy fallback
+                return
+            }
+            self.engine.submitLayerFrame(track: a.track, clip: a.clip, pb, hostTime: t)
+        }
+    }
+
+    /// Reconfigure the layer feeder from the current projection.
+    private func rebuildLayers() {
+        if layers == nil { layers = LayerFeeder(engine: engine) }
+        layers?.rebuild(tracks: tracks, snapshot: lastSnapshot,
+                        primaryEngineTrack: primaryVideoEngineTrack ?? -1,
+                        excludingText: selectedLyricClip?.address,
+                        resolveMedia: { [weak self] in self?.resolveMedia($0) })
+        layers?.transport(playhead: playhead, playing: isPlaying)
+    }
+
+    /// AVPlayer clock → transport readout + throttled engine reconciliation +
+    /// overlay-layer sync.
     private func playerTick(_ time: Double, _ playing: Bool) {
         playhead = time
         isPlaying = playing
+        layers?.transport(playhead: time, playing: playing)
         if playing, Date().timeIntervalSince(lastEngineSeekSync) > 0.2 {
             lastEngineSeekSync = Date()
             engine.send("seek", ["time": time])
@@ -706,6 +759,7 @@ final class EditorModel: ObservableObject {
         isPlaying.toggle()
         engine.send(isPlaying ? "play" : "pause")
         if let v = video { isPlaying ? v.play() : v.pause() }
+        layers?.transport(playhead: playhead, playing: isPlaying)
         if !isPlaying { engine.send("seek", ["time": playhead]) }   // land the exact pause point
     }
     func seek(_ t: Double) {
@@ -713,6 +767,16 @@ final class EditorModel: ObservableObject {
         playhead = v
         engine.send("seek", ["time": v])
         video?.seek(v)
+        layers?.transport(playhead: v, playing: isPlaying)
+    }
+
+    // MARK: - Track reordering (track order IS canvas z-order)
+
+    /// Move a lane up/down one slot (UI index space == engine index space).
+    func moveTrack(engineIndex: Int, delta: Int) {
+        let to = engineIndex + delta
+        guard engineIndex >= 0, to >= 0, to < tracks.count else { return }
+        _ = mutate("move_track", ["from": engineIndex, "to": to])
     }
     /// Pause playback when the user grabs the timeline to scrub.
     func pauseForScrub() {

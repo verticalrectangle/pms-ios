@@ -357,19 +357,51 @@ struct ExportSheet: View {
         cancelFlag = CancelFlag()
         let flag = cancelFlag
         let segments = model.videoSegments
-        let titles = model.titleClips
-        model.syncLiveFX()                    // engine holds the current FX stack
+        let audioOnly = model.audioOnlySegments
+
+        // The engine scene composites layers exactly like preview: the export
+        // loop re-submits base + overlay video frames per output frame, and
+        // text rasters once. Gather everything from the projection up front.
+        let primary = model.primaryVideoEngineTrack
+        var overlays: [VideoExporter.OverlayLayer] = []
+        var baseSpans: [VideoExporter.BaseSpan] = []
+        var texts: [VideoExporter.TextLayer] = []
+        for tr in model.tracks {
+            for c in tr.clips {
+                guard let a = c.address else { continue }
+                switch tr.kind {
+                case .video where tr.engineIndex == primary:
+                    baseSpans.append((c.start, c.end, a.track, a.clip))
+                case .video:
+                    if let url = c.sourceURL, overlays.count < LayerFeeder.overlayVideoCap {
+                        overlays.append(.init(track: a.track, clip: a.clip, url: url,
+                                              start: c.start, end: c.end,
+                                              inPoint: c.sourceStart, speed: c.speed))
+                    }
+                case .lyric:
+                    texts.append(.init(track: a.track, clip: a.clip, text: c.label))
+                default: break
+                }
+            }
+        }
+
+        model.syncLiveFX()                    // legacy fallback path only
         model.exporting = true                // suspend the live canvas → export owns the engine
         model.video?.suspended = true
+        model.layers?.suspended = true
         model.engine.setTicksPaused(true)     // stop the engine tick too (exclusive access)
         Task {
             defer {
                 model.engine.setTicksPaused(false)
                 model.video?.suspended = false
+                model.layers?.suspended = false
                 model.exporting = false
+                model.refresh()               // re-submit preview layers fresh
             }
             do {
-                let url = try await VideoExporter.export(segments, titles: titles,
+                let url = try await VideoExporter.export(segments, audioOnly: audioOnly,
+                                                         overlays: overlays, texts: texts,
+                                                         baseSpans: baseSpans,
                                                          engine: model.engine, size: model.format.pixelSize,
                                                          isCancelled: { flag.cancelled }) { p in pct = p }
                 outURL = url

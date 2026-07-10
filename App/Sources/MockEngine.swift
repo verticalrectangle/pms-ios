@@ -92,6 +92,17 @@ final class MockEngine {
             state.tracks.insert(MTrack(name: params["name"] as? String ?? "Track"), at: pos)
             return ok(["track": pos])
 
+        case "move_track":
+            guard let from = params["from"] as? Int, from >= 0, from < state.tracks.count else {
+                return err("track index out of range")
+            }
+            var to = params["to"] as? Int ?? 0
+            to = max(0, min(to, state.tracks.count - 1))
+            push()
+            let moved = state.tracks.remove(at: from)
+            state.tracks.insert(moved, at: to)
+            return ok(["track": to, "order": state.tracks.map(\.name)])
+
         case "add_clip":
             guard let ti = trackIndex(params) else { return err("track index out of range") }
             push()

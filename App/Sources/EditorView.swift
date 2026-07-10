@@ -160,7 +160,10 @@ struct EditorView: View {
         .onTapGesture { if model.selectedLyricClip != nil { model.selectedID = nil } }
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
-        .onDisappear { model.save() }                                  // persist on leave
+        .onDisappear {
+            model.save()                                               // persist on leave
+            model.layers?.stop()                                       // release overlay decoders
+        }
         .onChange(of: scenePhase) { _, p in if p != .active { model.save() } }  // + on background
         // Native bars step aside as the preview expands to fullscreen; the dock
         // also hides while editing a title so the edit bar owns the bottom.

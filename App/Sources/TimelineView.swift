@@ -7,6 +7,11 @@ import SwiftUI
 
 private let PPS: CGFloat = 46          // pixels per second
 
+/// Lane height per kind — shared by the lanes and the reorder rail.
+func laneHeight(_ k: TrackKind) -> CGFloat {
+    switch k { case .fxRail: 30; case .video: 52; case .lyric: 40; case .audio: 34 }
+}
+
 private extension View {
     /// Apply a HIGH-PRIORITY gesture only when `active`. High priority so it wins
     /// over the timeline scrub (which has a smaller minimumDistance and would
@@ -43,6 +48,9 @@ struct TimelineView: View {
             .clipped()
             .contentShape(Rectangle())
             .overlay(alignment: .center) { Playhead(model: model, engine: engine) }
+            // Fixed leading rail: per-lane grips. Track order IS canvas z-order
+            // (bottom lane = deepest layer), so moving a lane restacks the canvas.
+            .overlay(alignment: .topLeading) { ReorderRail(model: model) }
             // Normal priority (NOT high) so the trim handles' high-priority drag
             // wins when you grab an edge; scrub only claims drags on empty timeline.
             .gesture(
@@ -55,6 +63,48 @@ struct TimelineView: View {
             )
             .onTapGesture { loc in model.seek(t + Double((loc.x - sidePad) / PPS)) }
         }
+    }
+}
+
+// MARK: - Reorder rail (track order == canvas z-order)
+
+private struct ReorderRail: View {
+    @ObservedObject var model: EditorModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Color.clear.frame(height: 34)   // ruler row
+            ForEach(Array(model.tracks.enumerated()), id: \.element.id) { i, track in
+                Menu {
+                    Text(layerLabel(i)).font(.caption)
+                    Button {
+                        model.moveTrack(engineIndex: track.engineIndex, delta: -1)
+                    } label: { Label("Move Up (frontward)", systemImage: "arrow.up") }
+                        .disabled(i == 0)
+                    Button {
+                        model.moveTrack(engineIndex: track.engineIndex, delta: +1)
+                    } label: { Label("Move Down (backward)", systemImage: "arrow.down") }
+                        .disabled(i == model.tracks.count - 1)
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.txtGhost)
+                        Text(track.name).font(.label(7)).tracking(0.4).foregroundStyle(Theme.txtMuted)
+                    }
+                    .padding(.horizontal, 4).padding(.vertical, 2)
+                    .background(Capsule().fill(.ultraThinMaterial))
+                    .overlay(Capsule().strokeBorder(Theme.line))
+                }
+                .frame(height: laneHeight(track.kind), alignment: .center)
+            }
+        }
+        .padding(.leading, 4)
+    }
+
+    private func layerLabel(_ i: Int) -> String {
+        if i == 0 { return "Front layer" }
+        if i == model.tracks.count - 1 { return "Back layer" }
+        return "Layer \(model.tracks.count - i) of \(model.tracks.count)"
     }
 }
 
