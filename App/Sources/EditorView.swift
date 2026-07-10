@@ -44,39 +44,16 @@ struct EditorView: View {
     private let projectName: String
 
     @State private var fullscreen = false
-    @State private var camera: CameraCapture?
-    @State private var cameraOn = false
+    @State private var showRecord = false   // full-screen camera capture (RecordView)
     @State private var pickerItem: PhotosPickerItem?
     @StateObject private var keyboard = KeyboardObserver()
     @Environment(\.scenePhase) private var scenePhase
 
-    private func toggleCamera() {
-        if cameraOn {
-            camera?.stop(); camera = nil; cameraOn = false
-        } else {
-            CameraCapture.requestAuthorization { result in
-                switch result {
-                case .failure(let e):
-                    engine.lastError = e.errorDescription
-                case .success:
-                    let c = CameraCapture(engine: engine)
-                    // Person segmentation only when a body-FX brick wants it.
-                    c.matteEnabled = model.tracks.flatMap(\.bricks).contains { $0.kind == .bodyFX }
-                    do {
-                        try c.start(position: .back)
-                        camera = c; cameraOn = true
-                    } catch {
-                        engine.lastError = error.localizedDescription
-                    }
-                }
-            }
-        }
-    }
-
-    init(project: Project, engine: EngineStore) {
+    init(project: Project, engine: EngineStore, autoRecord: Bool = false) {
         self.engine = engine
         self.projectName = project.isNew ? "" : project.name   // unnamed until saved with a title
         _model = StateObject(wrappedValue: EditorModel(project: project, engine: engine))
+        _showRecord = State(initialValue: autoRecord)   // Home's camera button lands here recording-ready
     }
 
     private var t: Double { model.playhead }
@@ -205,10 +182,11 @@ struct EditorView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { toggleCamera() } label: {
-                    Image(systemName: cameraOn ? "camera.fill" : "camera")
+                Button { showRecord = true } label: {
+                    Image(systemName: "camera")
                 }
-                .tint(cameraOn ? Theme.accent : Theme.txtBody)
+                .tint(Theme.txtBody)
+                .disabled(model.exporting)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { model.activeSheet = .export } label: {
@@ -240,6 +218,9 @@ struct EditorView: View {
                 }
             }
         }
+        .fullScreenCover(isPresented: $showRecord) {
+            RecordView(engine: engine, model: model, isPresented: $showRecord)
+        }
         .sheet(item: $model.activeSheet) { sheet in
             switch sheet {
             case .media:  MediaSheet(model: model)
@@ -262,49 +243,6 @@ struct EditorView: View {
         .onChange(of: model.selectedLyricClip?.id) { _, _ in
             Task { await model.rebuildVideo() }
         }
-        // Person segmentation follows the timeline: run it only while a
-        // body-FX brick exists.
-        .onChange(of: model.tracks.flatMap(\.bricks).contains { $0.kind == .bodyFX }) { _, has in
-            camera?.matteEnabled = has
-        }
-    }
-
-    // MARK: - Take recording (camera on → AVAssetWriter sink; engine gets the file)
-
-    @State private var recording = false
-
-    private var recordButton: some View {
-        Button {
-            guard let camera else { return }
-            if recording {
-                recording = false
-                camera.stopTake { url in
-                    guard let url else {
-                        engine.lastError = "Take failed to write."
-                        return
-                    }
-                    model.placeBinItem(url.path)   // bin + clip at the playhead
-                }
-            } else {
-                let url = ProjectStore.mediaDir(model.project.id)
-                    .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970)).mov")
-                do {
-                    try camera.startTake(to: url)
-                    recording = true
-                } catch {
-                    engine.lastError = error.localizedDescription
-                }
-            }
-        } label: {
-            ZStack {
-                Circle().strokeBorder(.white.opacity(0.9), lineWidth: 3).frame(width: 54, height: 54)
-                RoundedRectangle(cornerRadius: recording ? 5 : 22)
-                    .fill(Color(red: 1, green: 0.27, blue: 0.27))
-                    .frame(width: recording ? 24 : 44, height: recording ? 24 : 44)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: recording)
-            }
-        }
-        .pressable()
     }
 
     /// Largest aspect-correct canvas box that fits ~42% of the screen height
@@ -320,7 +258,7 @@ struct EditorView: View {
     // MTKView (UIViewRepresentable) ignores .aspectRatio, so the canvas is
     // sized explicitly (box computed from the root geometry).
     private func canvas(box: CGSize) -> some View {
-        MetalPreview(store: engine, paused: fullscreen || model.exporting)   // freeze for the fullscreen player or while export owns the engine
+        MetalPreview(store: engine, paused: fullscreen || showRecord || model.exporting)   // freeze while the fullscreen player / record cover / export owns the engine
             .frame(width: box.width, height: box.height)
             .overlay(CanvasChrome(clipLabel: model.activeVideoLabel(at: t),
                                   activeBricks: model.activeBricks(at: t)))
@@ -328,10 +266,7 @@ struct EditorView: View {
             // Only the clip currently being text-edited draws as an overlay,
             // so typing shows instantly without a composition rebuild.
             .overlay(LyricOverlay(clips: model.activeLyrics(at: t).filter { $0.id == model.selectedLyricClip?.id },
-                                  width: box.width))
-            .overlay(alignment: .bottom) {
-                if cameraOn { recordButton.padding(.bottom, 14) }
-            }
+                                  box: box))
             .overlay {
                 if !model.videoLoaded {
                     VStack(spacing: 12) {
@@ -344,12 +279,35 @@ struct EditorView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
             .overlay(RoundedRectangle(cornerRadius: Theme.rCard).strokeBorder(Theme.line))
-            .frame(maxWidth: .infinity)   // centre horizontally
+            // Editing surface ABOVE the clip shape so handles (rotate knob,
+            // off-canvas drags) aren't cut by the rounded-rect mask.
+            .overlay(CanvasEditOverlay(model: model, box: box))
+            // Safe-zone toggle: off → standard title-safe → social envelope.
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    let all = EditorModel.SafeZoneMode.allCases
+                    let i = all.firstIndex(of: model.safeZones) ?? 0
+                    model.safeZones = all[(i + 1) % all.count]
+                } label: {
+                    Image(systemName: "rectangle.dashed")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(model.safeZones == .off ? Theme.txtMuted : Theme.accent)
+                        .padding(7)
+                        .background(Circle().fill(.black.opacity(0.35)))
+                }
+                .padding(8)
+            }
             .contentShape(Rectangle())
-            .onTapGesture {
+            // Tap routing (local coords == canvas coords — applied BEFORE the
+            // centering frame): commit text edit > select layer under finger >
+            // tap-away deselect > fullscreen.
+            .onTapGesture { location in
                 if model.selectedLyricClip != nil { model.selectedID = nil }   // commit text edit
+                else if model.canvasSelect(at: location, box: box) { }         // canvas layer select/cycle
+                else if model.selectedID != nil { model.selectedID = nil }     // tap-away deselect
                 else { withAnimation(.bouncy(duration: 0.45, extraBounce: 0.2)) { fullscreen = true } }
             }
+            .frame(maxWidth: .infinity)   // centre horizontally
     }
 
     /// Fit the timeline to its tracks (ruler + lanes + spacing + vpad), so lower
@@ -434,6 +392,24 @@ private struct ClipActionBar: View {
                     Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { showFade.toggle() } } label: {
                         Label("Fade", systemImage: "circle.righthalf.filled").font(.label(11)).tracking(0.5)
                     }.tint(showFade || fadeIn > 0 || fadeOut > 0 ? Theme.accent : Theme.txtBody)
+                    Button { model.enterCropMode(clip.id) } label: {
+                        Label("Crop", systemImage: "crop").font(.label(11)).tracking(0.5)
+                    }.tint(clip.hasCrop ? Theme.accent : Theme.txtBody)
+                    Menu {
+                        Button { model.flipClip(clip.id, horizontal: true) } label: {
+                            Label(clip.flipH ? "Unflip Horizontal" : "Flip Horizontal",
+                                  systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+                        }
+                        Button { model.flipClip(clip.id, horizontal: false) } label: {
+                            Label(clip.flipV ? "Unflip Vertical" : "Flip Vertical",
+                                  systemImage: "arrow.up.and.down.righttriangle.up.righttriangle.down")
+                        }
+                        Divider()
+                        Button("Reset Transform") { model.resetTransform(clip.id) }
+                    } label: {
+                        Label("Xform", systemImage: "arrow.up.left.and.down.right.magnifyingglass")
+                            .font(.label(11)).tracking(0.5)
+                    }.tint(Theme.txtBody)
                 }
                 Button { model.splitAtPlayhead() } label: {
                     Label("Split", systemImage: "scissors").font(.label(11)).tracking(0.5)

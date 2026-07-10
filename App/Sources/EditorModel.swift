@@ -28,7 +28,9 @@ final class EditorModel: ObservableObject {
     // Projection cache (rendered by screens; re-derived from the engine).
     @Published var tracks: [Track] = []
     @Published var chapters: [ChapterMarker] = []
-    @Published var selectedID: String?
+    @Published var selectedID: String? {
+        didSet { if oldValue != selectedID { syncCanvasSelection() } }
+    }
     @Published var activeSheet: EditorSheet?
     @Published var format: Format
     @Published var bpm: Double = 120
@@ -101,6 +103,7 @@ final class EditorModel: ObservableObject {
         tracks = snap.uiTracks(media: { [weak self] in self?.mediaInfo[$0] },
                                resolve: { [weak self] in self?.resolveMedia($0) })
         if let sel = selectedID, locate(sel) == nil { selectedID = nil }
+        if let cid = cropEditID, locate(cid) == nil { cancelCrop() }   // crop target vanished
 
         // Probe any media the projection references that AVFoundation hasn't
         // seen yet (true duration + filmstrip), then re-derive. Keyed by the
@@ -112,6 +115,17 @@ final class EditorModel: ObservableObject {
 
         if rebuildPlayer { Task { await rebuildVideo() } }
         syncLiveFX()
+    }
+
+    /// Mirror the UI selection into the engine — desktop select_clip semantics:
+    /// the canvas selection, i.e. the clip whose transform handles show.
+    /// Fire-and-forget (selection is runtime-only, never part of the project).
+    private func syncCanvasSelection() {
+        if let a = selectedID.flatMap(address) {
+            engine.send("select_clip", ["track": a.track, "clip": a.clip])
+        } else {
+            engine.send("select_clip", ["clip": -1])
+        }
     }
 
     /// Resolve an engine source path to a readable URL. A saved .pms carries
@@ -127,12 +141,20 @@ final class EditorModel: ObservableObject {
     private func probeMedia(paths: [String]) async {
         for path in paths {
             guard let url = resolveMedia(path) else { continue }
-            let dur = (try? await AVURLAsset(url: url).load(.duration))?.seconds ?? 0
+            let asset = AVURLAsset(url: url)
+            let dur = (try? await asset.load(.duration))?.seconds ?? 0
             guard dur > 0 else { continue }
+            // Display size for the canvas bbox aspect-fit (rotation-corrected).
+            var size: CGSize?
+            if let vt = try? await asset.loadTracks(withMediaType: .video).first,
+               let (ns, tf) = try? await vt.load(.naturalSize, .preferredTransform) {
+                let s = CGRect(origin: .zero, size: ns).applying(tf).size
+                size = CGSize(width: abs(s.width), height: abs(s.height))
+            }
             let n = max(1, min(24, Int(dur / 1.5)))
             let strip = await VideoPlayback.filmstrip(for: url, count: n,
                                                       cacheDir: ProjectStore.cacheDir(project.id))
-            mediaInfo[path] = MediaInfo(duration: dur, thumbs: strip)
+            mediaInfo[path] = MediaInfo(duration: dur, thumbs: strip, size: size)
         }
         tracks = lastSnapshot.uiTracks(media: { [weak self] in self?.mediaInfo[$0] },
                                        resolve: { [weak self] in self?.resolveMedia($0) })
@@ -154,6 +176,168 @@ final class EditorModel: ObservableObject {
             refresh(rebuildPlayer: rebuildPlayer)
             return nil
         }
+    }
+
+    // MARK: - Canvas transform gestures (CANVAS_PLAN.md stage 3)
+    //
+    // One gesture = one engine history entry: begin_batch → throttled
+    // set_clip_props → end_batch + a single refresh. During the drag the
+    // engine mutates live (the device renderer shows it next frame) and the
+    // local projection is patched in place so the overlay tracks the finger
+    // without a full re-decode per tick.
+
+    private var canvasGestureActive = false
+    private var canvasGestureLastSend = Date.distantPast
+    private var canvasGesturePending: (id: String, props: [String: Any])?
+    private static let canvasGestureSendInterval = 1.0 / 30.0
+
+    func beginCanvasGesture() {
+        guard !canvasGestureActive else { return }
+        canvasGestureActive = true
+        canvasGesturePending = nil
+        engine.send("begin_batch", ["label": "Canvas edit"])
+    }
+
+    func updateCanvasGesture(_ id: String, _ props: [String: Any]) {
+        guard canvasGestureActive else { return }
+        applyCanvasPropsLocally(id, props)
+        if Date().timeIntervalSince(canvasGestureLastSend) >= Self.canvasGestureSendInterval {
+            sendCanvasProps(id, props)
+        } else {
+            // coalesce; merged keys keep the newest value
+            var merged = canvasGesturePending?.id == id ? canvasGesturePending!.props : [:]
+            for (k, v) in props { merged[k] = v }
+            canvasGesturePending = (id, merged)
+        }
+    }
+
+    func endCanvasGesture() {
+        guard canvasGestureActive else { return }
+        if let p = canvasGesturePending { sendCanvasProps(p.id, p.props) }
+        canvasGestureActive = false
+        engine.send("end_batch", [:])
+        undoDepth += 1
+        redoDepth = 0
+        refresh(rebuildPlayer: false)   // transforms never touch the AVComposition
+        rebuildLayers()                 // text placement lives in the raster → re-submit
+    }
+
+    private func sendCanvasProps(_ id: String, _ props: [String: Any]) {
+        guard let a = address(id) else { return }
+        let ops = props.map { ["track": a.track, "clip": a.clip,
+                               "prop": $0.key, "value": $0.value] as [String: Any] }
+        engine.send("set_clip_props", ["ops": ops])
+        canvasGestureLastSend = Date()
+        canvasGesturePending = nil
+    }
+
+    /// Patch the in-memory projection so the overlay follows the finger.
+    private func applyCanvasPropsLocally(_ id: String, _ props: [String: Any]) {
+        guard let r = locate(id), r.kind == .clip else { return }
+        var c = tracks[r.track].clips[r.index]
+        func d(_ v: Any?) -> Double? {
+            (v as? Double) ?? (v as? Int).map(Double.init) ?? (v as? NSNumber)?.doubleValue
+        }
+        for (k, v) in props {
+            switch k {
+            case "pos_x":    c.posX = d(v) ?? c.posX
+            case "pos_y":    c.posY = d(v) ?? c.posY
+            case "scale_x":  c.scaleX = d(v) ?? c.scaleX
+            case "scale_y":  c.scaleY = d(v) ?? c.scaleY
+            case "rotation": c.rotation = d(v) ?? c.rotation
+            case "crop_l":   c.cropL = max(0, min(d(v) ?? 0, 0.95 - c.cropR))
+            case "crop_t":   c.cropT = max(0, min(d(v) ?? 0, 0.95 - c.cropB))
+            case "crop_r":   c.cropR = max(0, min(d(v) ?? 0, 0.95 - c.cropL))
+            case "crop_b":   c.cropB = max(0, min(d(v) ?? 0, 0.95 - c.cropT))
+            case "flip_h":   c.flipH = v as? Bool ?? c.flipH
+            case "flip_v":   c.flipV = v as? Bool ?? c.flipV
+            case "font_size":  c.fontSize = d(v) ?? c.fontSize
+            case "sub_pos":    c.subPos = (v as? Int) ?? c.subPos
+            case "sub_pos_x":  c.subPosX = d(v) ?? c.subPosX
+            case "sub_pos_y":  c.subPosY = d(v) ?? c.subPosY
+            case "sub_anchor_h": c.subAnchorH = (v as? Int) ?? c.subAnchorH
+            case "sub_wrap_w": c.subWrapW = d(v) ?? c.subWrapW
+            default: break
+            }
+        }
+        tracks[r.track].clips[r.index] = c
+    }
+
+    // MARK: - Canvas view toggles + one-shot transform actions (stage 6)
+
+    enum SafeZoneMode: CaseIterable { case off, standard, social }
+    /// Runtime-only, like desktop show_social_safe — never serialized.
+    @Published var safeZones: SafeZoneMode = .off
+
+    func flipClip(_ id: String, horizontal: Bool) {
+        guard let r = locate(id), r.kind == .clip, let a = address(id) else { return }
+        let c = tracks[r.track].clips[r.index]
+        _ = mutate("set_clip_prop", ["track": a.track, "clip": a.clip,
+                                     "prop": horizontal ? "flip_h" : "flip_v",
+                                     "value": horizontal ? !c.flipH : !c.flipV],
+                   rebuildPlayer: false)
+    }
+
+    /// Back to the engine defaults: centred, unit scale, no rotation/crop/flips.
+    func resetTransform(_ id: String) {
+        guard let a = address(id) else { return }
+        func op(_ p: String, _ v: Any) -> [String: Any] {
+            ["track": a.track, "clip": a.clip, "prop": p, "value": v]
+        }
+        _ = mutate("set_clip_props", ["ops": [
+            op("pos_x", 0.5), op("pos_y", 0.5),
+            op("scale_x", 1.0), op("scale_y", 1.0), op("rotation", 0.0),
+            op("crop_l", 0.0), op("crop_t", 0.0), op("crop_r", 0.0), op("crop_b", 0.0),
+            op("flip_h", false), op("flip_v", false),
+        ]], rebuildPlayer: false)
+    }
+
+    // MARK: - Crop-edit mode (CANVAS_PLAN.md stage 4)
+    //
+    // Runtime-only, like desktop crop_edit_track/clip. The whole mode is ONE
+    // engine batch: enter → begin_batch, handle drags stream set_clip_props,
+    // Apply → end_batch (one history entry), Cancel → abort_batch (engine
+    // rolls back to the entry snapshot).
+
+    @Published var cropEditID: String?
+    var cropEditClip: Clip? {
+        guard let id = cropEditID, let r = locate(id), r.kind == .clip else { return nil }
+        return tracks[r.track].clips[r.index]
+    }
+
+    func enterCropMode(_ id: String) {
+        guard cropEditID == nil, trackKind(ofClip: id) == .video else { return }
+        selectedID = id
+        cropEditID = id
+        canvasGestureActive = true          // reuse the throttled commit path
+        canvasGesturePending = nil
+        engine.send("begin_batch", ["label": "Crop"])
+    }
+
+    func applyCrop() {
+        guard cropEditID != nil else { return }
+        if let p = canvasGesturePending { sendCanvasProps(p.id, p.props) }
+        canvasGestureActive = false
+        cropEditID = nil
+        engine.send("end_batch", [:])
+        undoDepth += 1
+        redoDepth = 0
+        refresh(rebuildPlayer: false)
+    }
+
+    func cancelCrop() {
+        guard cropEditID != nil else { return }
+        canvasGesturePending = nil
+        canvasGestureActive = false
+        cropEditID = nil
+        engine.send("abort_batch", [:])
+        refresh(rebuildPlayer: false)       // restore the engine's rolled-back truth
+    }
+
+    /// Flush the coalesced tail of a crop drag (crop mode has no per-drag
+    /// end_batch — the mode itself is the batch).
+    func flushCanvasGesture() {
+        if let p = canvasGesturePending { sendCanvasProps(p.id, p.props) }
     }
 
     // MARK: - Track scaffolding (created lazily, engine-side)
@@ -351,6 +535,7 @@ final class EditorModel: ObservableObject {
         layers?.rebuild(tracks: tracks, snapshot: lastSnapshot,
                         primaryEngineTrack: primaryVideoEngineTrack ?? -1,
                         excludingText: selectedLyricClip?.address,
+                        canvas: CGSize(width: format.pixelSize.w, height: format.pixelSize.h),
                         resolveMedia: { [weak self] in self?.resolveMedia($0) })
         layers?.transport(playhead: playhead, playing: isPlaying)
     }
@@ -591,6 +776,33 @@ final class EditorModel: ObservableObject {
                 selectedID = EngineClipAddress(track: ti, clip: ci).idString
             }
             activeSheet = nil
+        }
+    }
+
+    /// Land a recorded take at the playhead and weld the record-time look over
+    /// its span as a coupled Multi-FX brick — the take file stays raw (filters
+    /// are non-destructive; export bakes them), the look stays editable.
+    func placeRecordedTake(_ path: String, look entries: [[String: Any]]) {
+        Task {
+            let dur = (try? await AVURLAsset(url: URL(fileURLWithPath: path)).load(.duration))?.seconds ?? 0
+            guard dur > 0 else {
+                engine.lastError = "Take failed to read back."
+                return
+            }
+            guard let ti = ensureTrack(.video) else { return }
+            let start = firstFreeStart(onTrack: tracks.firstIndex { $0.engineIndex == ti } ?? 0,
+                                       preferred: playhead, duration: dur)
+            guard let r = mutate("add_clip", ["track": ti, "type": "video",
+                                              "start": start, "end": start + dur, "text": path]),
+                  let ci = r["clip"] as? Int else { return }
+            if !entries.isEmpty {
+                // Overlapping the host clip's span couples the brick to it
+                // (same contract as FXSheet's Glass placement).
+                _ = mutate("add_multifx_brick", ["track": ti, "start": start,
+                                                 "end": start + dur, "effects": entries],
+                           rebuildPlayer: false)
+            }
+            selectedID = EngineClipAddress(track: ti, clip: ci).idString
         }
     }
 

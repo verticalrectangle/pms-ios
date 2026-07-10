@@ -95,7 +95,7 @@ bypass into engine internals.
 - **`validate_glsl`** — Test-compile a GLSL fragment shader body without registering it as a runtime effect. Returns {ok: bool, error?: string}. Useful before writing a shader to disk.
 - **`verify_clips`** — Seek to each time and snapshot to visually confirm clip content. Use after placing video clips from transcript timestamps â pass the midpoint of each clip. Re
 
-## Effects (109) — via `add_effect_brick` / `set_clip_fx`
+## Effects (133) — via `add_effect_brick` / `set_clip_fx`
 
 - **Pixelate** (`pixelate`, Glitch) — `size` [1.0–64.0] (default 12.0)
 - **Film Grain** (`film_grain`, Film) — `intensity` [0.0–1.0] (default 0.4), `size` [0.5–4.0] (default 1.0)
@@ -206,6 +206,30 @@ bypass into engine internals.
 - **Retro Beauty** (`retro_beauty`, Beauty) — `glow` [0.0–1.0] (default 0.6), `fade` [0.0–1.0] (default 0.5), `blush` [0.0–1.0] (default 0.35)
 - **2016** (`insta_2016`, Color) — `fade` [0.0–1.0] (default 0.45), `pop` [0.0–1.0] (default 0.6), `warmth` [-1.0–1.0] (default 0.35)
 - **Glass Skin** (`glass_skin`, Beauty) — `radius` [1.0–6.0] (default 3.5), `gloss` [0.0–1.0] (default 0.5)
+- **Porcelain** (`porcelain_skin`, Makeup) — `smooth` [0.0–1.0] (default 0.7), `brighten` [0.0–0.5] (default 0.15), `warmth` [-1.0–1.0] (default 0.05)
+- **Blush Doll** (`blush_doll`, Makeup) — `blush` [0.0–1.0] (default 0.5), `smooth` [0.0–1.0] (default 0.5), `tint` [0.0–1.0] (default 0.5)
+- **Honey Glow** (`honey_glow`, Makeup) — `glow` [0.0–1.0] (default 0.6), `warmth` [0.0–1.0] (default 0.5), `lift` [0.0–1.0] (default 0.3)
+- **Soft Glam** (`soft_glam`, Makeup) — `glam` [0.0–1.0] (default 0.6), `split` [0.0–1.0] (default 0.5), `sparkle` [0.0–1.0] (default 0.3)
+- **Acid Trip** (`acid_trip`, Trippy) — `trip` [0.0–1.0] (default 0.6), `speed` [0.0–4.0] (default 1.0), `wobble` [0.0–1.0] (default 0.4)
+- **Liquid Marble** (`liquid_marble`, Trippy) — `flow` [0.0–1.0] (default 0.5), `scale` [1.0–10.0] (default 4.0), `speed` [0.0–4.0] (default 1.0)
+- **Fractal Mirror** (`fractal_mirror`, Trippy) — `folds` [1.0–6.0] (default 4.0), `drift` [0.0–1.0] (default 0.3), `zoom` [0.0–1.0] (default 0.2)
+- **Breathe** (`breathe_warp`, Trippy) — `breathe` [0.0–1.0] (default 0.5), `rate` [0.0–4.0] (default 1.0), `chroma` [0.0–1.0] (default 0.3)
+- **Melt Drip** (`melt_drip`, Trippy) — `melt` [0.0–1.0] (default 0.5), `drip` [0.0–1.0] (default 0.5), `haze` [0.0–1.0] (default 0.3)
+- **Neon City** (`neon_city`, Cyberpunk) — `neon` [0.0–1.0] (default 0.7), `scanline` [0.0–1.0] (default 0.3), `streak` [0.0–1.0] (default 0.4)
+- **Chrome Pulse** (`chrome_pulse`, Cyberpunk) — `chrome` [0.0–1.0] (default 0.6), `pulse` [0.0–4.0] (default 1.0), `edge` [0.0–1.0] (default 0.5)
+- **HUD Glitch** (`hud_glitch`, Cyberpunk) — `hud` [0.0–1.0] (default 0.5), `dropout` [0.0–1.0] (default 0.3), `tint` [0.0–1.0] (default 0.5)
+- **Night Drive** (`night_drive`, Cyberpunk) — `night` [0.0–1.0] (default 0.7), `sodium` [0.0–1.0] (default 0.5), `flare` [0.0–1.0] (default 0.4)
+- **Chroma Key Pro** (`chroma_key`, Chroma) — `chroma_key_r` [0.0–1.0] (default 0.0), `chroma_key_g` [0.0–1.0] (default 1.0), `chroma_key_b` [0.0–1.0] (default 0.0), `chroma_key_threshold` [0.0–1.0] (default 0.3), `chroma_key_softness` [0.001–1.0] (default 0.15)
+- **Chroma Melt** (`chroma_melt`, Chroma) — `chroma_melt_r` [0.0–1.0] (default 0.0), `chroma_melt_g` [0.0–1.0] (default 1.0), `chroma_melt_b` [0.0–1.0] (default 0.0), `chroma_melt_threshold` [0.0–1.0] (default 0.3), `chroma_melt_persist` [0.0–0.98] (default 0.88)
+- **Chroma Echo** (`chroma_echo`, Chroma) — `chroma_echo_r` [0.0–1.0] (default 0.0), `chroma_echo_g` [0.0–1.0] (default 1.0), `chroma_echo_b` [0.0–1.0] (default 0.0), `chroma_echo_threshold` [0.0–1.0] (default 0.3), `chroma_echo_persist` [0.0–0.98] (default 0.92)
+- **Chroma Frame** (`chroma_frame`, Chroma) — `chroma_frame_r` [0.0–1.0] (default 0.0), `chroma_frame_g` [0.0–1.0] (default 1.0), `chroma_frame_b` [0.0–1.0] (default 0.0), `chroma_frame_threshold` [0.0–1.0] (default 0.3), `chroma_frame_taps` [1.0–8.0] (default 4.0), `chroma_frame_spacing` [0.02–1.0] (default 0.12), `chroma_frame_falloff` [0.2–0.98] (default 0.75)
+- **Color Grade** (`grade`, Color) — `brightness` [-1.0–1.0] (default 0.0), `contrast` [0.0–3.0] (default 1.0), `saturation` [0.0–3.0] (default 1.0), `hue` [-180.0–180.0] (default 0.0)
+- **Blur** (`blur`, Tools) — `blur` [0.0–14.0] (default 6.0)
+- **Vignette** (`vignette`, Film) — `vignette` [0.0–1.0] (default 0.4)
+- **Glitch (Classic)** (`glitch`, Glitch) — `glitch_chroma` [0.0–20.0] (default 8.0), `glitch_jitter` [0.0–1.0] (default 0.3), `glitch_corruption` [0.0–1.0] (default 0.2), `glitch_corruption_bleed` [0.0–1.0] (default 0.0)
+- **VHS (Classic)** (`vhs`, Film) — `vhs_noise` [0.0–1.0] (default 0.3), `vhs_bleed` [0.0–20.0] (default 8.0), `vhs_tracking` [0.0–1.0] (default 0.3)
+- **Light Leak (Classic)** (`light_leak`, Light) — `leak_intensity` [0.0–1.0] (default 0.6), `leak_speed` [0.0–4.0] (default 1.0)
+- **Datamosh (Classic)** (`datamosh`, Glitch) — `datamosh_intensity` [0.0–1.0] (default 0.6), `datamosh_spread` [0.0–1.0] (default 0.3)
 
 ## Engine lifecycle (not agent tools — C ABI, see pms_engine.h)
 

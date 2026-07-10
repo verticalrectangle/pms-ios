@@ -25,7 +25,7 @@ struct EffectDef: Identifiable, Hashable {
 }
 
 enum EffectCatalog {
-    // Video effects (109) — from effects/mcp_manifest.json, manifest order.
+    // Video effects (133) — from effects/mcp_manifest.json, manifest order.
     static let video: [EffectDef] = [
         EffectDef(
             id: "pixelate",
@@ -1191,6 +1191,276 @@ enum EffectCatalog {
                 .init(key: "gloss", label: "Gloss", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
             ]
         ),
+        EffectDef(
+            id: "porcelain_skin",
+            name: "Porcelain",
+            category: "Makeup",
+            description: "Edge-aware skin smoothing  ·  brighten + even tone  ·  studio finish",
+            params: [
+                .init(key: "smooth", label: "Smoothing", min: 0.0, max: 1.0, def: 0.7, format: "%.2f"),
+                .init(key: "brighten", label: "Brighten", min: 0.0, max: 0.5, def: 0.15, format: "%.2f"),
+                .init(key: "warmth", label: "Warmth", min: -1.0, max: 1.0, def: 0.05, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "blush_doll",
+            name: "Blush Doll",
+            category: "Makeup",
+            description: "Rosy blush wash + soft skin + doll-bright eyes  ·  peach or pink",
+            params: [
+                .init(key: "blush", label: "Blush", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+                .init(key: "smooth", label: "Smoothing", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+                .init(key: "tint", label: "Peach ↔ Pink", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "honey_glow",
+            name: "Honey Glow",
+            category: "Makeup",
+            description: "Golden-hour warmth  ·  soft bloom halo  ·  lifted warm shadows",
+            params: [
+                .init(key: "glow", label: "Glow", min: 0.0, max: 1.0, def: 0.6, format: "%.2f"),
+                .init(key: "warmth", label: "Warmth", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+                .init(key: "lift", label: "Shadow Lift", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "soft_glam",
+            name: "Soft Glam",
+            category: "Makeup",
+            description: "Evening glam  ·  teal/champagne split tone  ·  glitter speculars",
+            params: [
+                .init(key: "glam", label: "Smoothing", min: 0.0, max: 1.0, def: 0.6, format: "%.2f"),
+                .init(key: "split", label: "Split Tone", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+                .init(key: "sparkle", label: "Sparkle", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "acid_trip",
+            name: "Acid Trip",
+            category: "Trippy",
+            description: "Luma-banded hue cycling + UV wobble  ·  iridescent drift",
+            params: [
+                .init(key: "trip", label: "Trip Depth", min: 0.0, max: 1.0, def: 0.6, format: "%.2f"),
+                .init(key: "speed", label: "Speed", min: 0.0, max: 4.0, def: 1.0, format: "%.2f"),
+                .init(key: "wobble", label: "Wobble", min: 0.0, max: 1.0, def: 0.4, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "liquid_marble",
+            name: "Liquid Marble",
+            category: "Trippy",
+            description: "Domain-warped ink flow  ·  wet marbled refraction",
+            params: [
+                .init(key: "flow", label: "Flow", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+                .init(key: "scale", label: "Swirl Scale", min: 1.0, max: 10.0, def: 4.0, format: "%.1f"),
+                .init(key: "speed", label: "Speed", min: 0.0, max: 4.0, def: 1.0, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "fractal_mirror",
+            name: "Fractal Mirror",
+            category: "Trippy",
+            description: "Recursive kaleido folds  ·  living mandala from the frame",
+            params: [
+                .init(key: "folds", label: "Folds", min: 1.0, max: 6.0, def: 4.0, format: "%.0f"),
+                .init(key: "drift", label: "Drift", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+                .init(key: "zoom", label: "Breathe Zoom", min: 0.0, max: 1.0, def: 0.2, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "breathe_warp",
+            name: "Breathe",
+            category: "Trippy",
+            description: "Radial breathing zoom  ·  edge chroma bloom  ·  dreamstate",
+            params: [
+                .init(key: "breathe", label: "Depth", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+                .init(key: "rate", label: "Rate", min: 0.0, max: 4.0, def: 1.0, format: "%.2f"),
+                .init(key: "chroma", label: "Edge Chroma", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "melt_drip",
+            name: "Melt Drip",
+            category: "Trippy",
+            description: "Columns sag like molten wax  ·  heat-haze shimmer",
+            params: [
+                .init(key: "melt", label: "Melt", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+                .init(key: "drip", label: "Drip Ragged", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+                .init(key: "haze", label: "Heat Haze", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "neon_city",
+            name: "Neon City",
+            category: "Cyberpunk",
+            description: "Teal/magenta duotone + scanlines + neon streak bloom",
+            params: [
+                .init(key: "neon", label: "Grade", min: 0.0, max: 1.0, def: 0.7, format: "%.2f"),
+                .init(key: "scanline", label: "Scanlines", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+                .init(key: "streak", label: "Neon Streaks", min: 0.0, max: 1.0, def: 0.4, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "chrome_pulse",
+            name: "Chrome Pulse",
+            category: "Cyberpunk",
+            description: "Liquid-metal tone curve  ·  pulsing cyan rim glow",
+            params: [
+                .init(key: "chrome", label: "Metallize", min: 0.0, max: 1.0, def: 0.6, format: "%.2f"),
+                .init(key: "pulse", label: "Pulse Rate", min: 0.0, max: 4.0, def: 1.0, format: "%.2f"),
+                .init(key: "edge", label: "Rim Glow", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "hud_glitch",
+            name: "HUD Glitch",
+            category: "Cyberpunk",
+            description: "Interface overlay  ·  cyan tint  ·  digital block dropouts",
+            params: [
+                .init(key: "hud", label: "HUD Lines", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+                .init(key: "dropout", label: "Dropouts", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+                .init(key: "tint", label: "Cyan Tint", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "night_drive",
+            name: "Night Drive",
+            category: "Cyberpunk",
+            description: "Blue-hour grade  ·  sodium highlights  ·  anamorphic flares",
+            params: [
+                .init(key: "night", label: "Grade", min: 0.0, max: 1.0, def: 0.7, format: "%.2f"),
+                .init(key: "sodium", label: "Sodium Highs", min: 0.0, max: 1.0, def: 0.5, format: "%.2f"),
+                .init(key: "flare", label: "Flares", min: 0.0, max: 1.0, def: 0.4, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "chroma_key",
+            name: "Chroma Key Pro",
+            category: "Chroma",
+            description: "Clean color-range keyer  ·  composite over the layer below  ·  spill kill",
+            params: [
+                .init(key: "chroma_key_r", label: "Key R", min: 0.0, max: 1.0, def: 0.0, format: "%.2f"),
+                .init(key: "chroma_key_g", label: "Key G", min: 0.0, max: 1.0, def: 1.0, format: "%.2f"),
+                .init(key: "chroma_key_b", label: "Key B", min: 0.0, max: 1.0, def: 0.0, format: "%.2f"),
+                .init(key: "chroma_key_threshold", label: "Threshold", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+                .init(key: "chroma_key_softness", label: "Edge Softness", min: 0.001, max: 1.0, def: 0.15, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "chroma_melt",
+            name: "Chroma Melt",
+            category: "Chroma",
+            description: "Trippy chroma smear  ·  keyed feedback trail  ·  motion melts sideways",
+            params: [
+                .init(key: "chroma_melt_r", label: "Key R", min: 0.0, max: 1.0, def: 0.0, format: "%.2f"),
+                .init(key: "chroma_melt_g", label: "Key G", min: 0.0, max: 1.0, def: 1.0, format: "%.2f"),
+                .init(key: "chroma_melt_b", label: "Key B", min: 0.0, max: 1.0, def: 0.0, format: "%.2f"),
+                .init(key: "chroma_melt_threshold", label: "Threshold", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+                .init(key: "chroma_melt_persist", label: "Persist", min: 0.0, max: 0.98, def: 0.88, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "chroma_echo",
+            name: "Chroma Echo",
+            category: "Chroma",
+            description: "Keyed feedback echo  ·  stacks past frames (crisp ghosts)",
+            params: [
+                .init(key: "chroma_echo_r", label: "Key R", min: 0.0, max: 1.0, def: 0.0, format: "%.2f"),
+                .init(key: "chroma_echo_g", label: "Key G", min: 0.0, max: 1.0, def: 1.0, format: "%.2f"),
+                .init(key: "chroma_echo_b", label: "Key B", min: 0.0, max: 1.0, def: 0.0, format: "%.2f"),
+                .init(key: "chroma_echo_threshold", label: "Threshold", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+                .init(key: "chroma_echo_persist", label: "Persist", min: 0.0, max: 0.98, def: 0.92, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "chroma_frame",
+            name: "Chroma Frame",
+            category: "Chroma",
+            description: "Keyed multi-tap delay  ·  discrete frame echoes  ·  beat-syncable",
+            params: [
+                .init(key: "chroma_frame_r", label: "Key R", min: 0.0, max: 1.0, def: 0.0, format: "%.2f"),
+                .init(key: "chroma_frame_g", label: "Key G", min: 0.0, max: 1.0, def: 1.0, format: "%.2f"),
+                .init(key: "chroma_frame_b", label: "Key B", min: 0.0, max: 1.0, def: 0.0, format: "%.2f"),
+                .init(key: "chroma_frame_threshold", label: "Threshold", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+                .init(key: "chroma_frame_taps", label: "Taps", min: 1.0, max: 8.0, def: 4.0, format: "%.0f"),
+                .init(key: "chroma_frame_spacing", label: "Spacing (s)", min: 0.02, max: 1.0, def: 0.12, format: "%.2f"),
+                .init(key: "chroma_frame_falloff", label: "Falloff", min: 0.2, max: 0.98, def: 0.75, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "grade",
+            name: "Color Grade",
+            category: "Color",
+            description: "Classic grade  ·  brightness / contrast / saturation / hue",
+            params: [
+                .init(key: "brightness", label: "Brightness", min: -1.0, max: 1.0, def: 0.0, format: "%.2f"),
+                .init(key: "contrast", label: "Contrast", min: 0.0, max: 3.0, def: 1.0, format: "%.2f"),
+                .init(key: "saturation", label: "Saturation", min: 0.0, max: 3.0, def: 1.0, format: "%.2f"),
+                .init(key: "hue", label: "Hue", min: -180.0, max: 180.0, def: 0.0, format: "%.0f deg"),
+            ]
+        ),
+        EffectDef(
+            id: "blur",
+            name: "Blur",
+            category: "Tools",
+            description: "Soft gaussian-style blur  ·  dreamy diffusion",
+            params: [
+                .init(key: "blur", label: "Radius", min: 0.0, max: 14.0, def: 6.0, format: "%.1f px"),
+            ]
+        ),
+        EffectDef(
+            id: "vignette",
+            name: "Vignette",
+            category: "Film",
+            description: "Darkened corners  ·  cinematic frame focus",
+            params: [
+                .init(key: "vignette", label: "Amount", min: 0.0, max: 1.0, def: 0.4, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "glitch",
+            name: "Glitch (Classic)",
+            category: "Glitch",
+            description: "RGB split + row jitter + block corruption  ·  the original",
+            params: [
+                .init(key: "glitch_chroma", label: "Chroma (px)", min: 0.0, max: 20.0, def: 8.0, format: "%.0f px"),
+                .init(key: "glitch_jitter", label: "Jitter", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+                .init(key: "glitch_corruption", label: "Corruption", min: 0.0, max: 1.0, def: 0.2, format: "%.2f"),
+                .init(key: "glitch_corruption_bleed", label: "Corruption Bleed", min: 0.0, max: 1.0, def: 0.0, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "vhs",
+            name: "VHS (Classic)",
+            category: "Film",
+            description: "Chroma bleed + grain + tracking glitch  ·  worn-tape look",
+            params: [
+                .init(key: "vhs_noise", label: "Noise", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+                .init(key: "vhs_bleed", label: "Bleed (px)", min: 0.0, max: 20.0, def: 8.0, format: "%.0f px"),
+                .init(key: "vhs_tracking", label: "Tracking", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "light_leak",
+            name: "Light Leak (Classic)",
+            category: "Light",
+            description: "Drifting warm flares  ·  analog film leak",
+            params: [
+                .init(key: "leak_intensity", label: "Intensity", min: 0.0, max: 1.0, def: 0.6, format: "%.2f"),
+                .init(key: "leak_speed", label: "Speed", min: 0.0, max: 4.0, def: 1.0, format: "%.2f"),
+            ]
+        ),
+        EffectDef(
+            id: "datamosh",
+            name: "Datamosh (Classic)",
+            category: "Glitch",
+            description: "Saturation-matted chroma drag  ·  compression corruption look",
+            params: [
+                .init(key: "datamosh_intensity", label: "Intensity", min: 0.0, max: 1.0, def: 0.6, format: "%.2f"),
+                .init(key: "datamosh_spread", label: "Spread", min: 0.0, max: 1.0, def: 0.3, format: "%.2f"),
+            ]
+        ),
     ]
 
     // Audio effects (5) — engine vocabulary ids;
@@ -1269,5 +1539,9 @@ enum EffectCatalog {
         "Motion",
         "Beauty",
         "Tools",
+        "Makeup",
+        "Trippy",
+        "Cyberpunk",
+        "Chroma",
     ]
 }

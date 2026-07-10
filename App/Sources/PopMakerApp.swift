@@ -28,16 +28,23 @@ struct RootView: View {
     @EnvironmentObject var engine: EngineStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var openProject: Project?
+    @State private var openIntoRecord = false   // Home's camera button → editor with RecordView up
 
     var body: some View {
         // Native navigation: Home is the root, the editor is a pushed detail —
         // so it gets the system nav bar (back + share) and bottom bar for free,
         // with proper Liquid Glass + safe-area handling on iOS 26.
         NavigationStack {
-            HomeView { p in openProject = p }
-                .navigationDestination(item: $openProject) { project in
-                    EditorView(project: project, engine: engine)
-                }
+            HomeView { p in
+                openIntoRecord = false
+                openProject = p
+            } onRecord: { p in
+                openIntoRecord = true
+                openProject = p
+            }
+            .navigationDestination(item: $openProject) { project in
+                EditorView(project: project, engine: engine, autoRecord: openIntoRecord)
+            }
         }
         .tint(Theme.accent)
         .preferredColorScheme(Palette.shared.scheme)   // nil in system mode → iOS drives
