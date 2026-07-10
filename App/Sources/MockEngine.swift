@@ -274,6 +274,15 @@ final class MockEngine {
         case "set_live_fx":
             return ok([:])
 
+        // Record-mode camera plumbing (no-op render path in the mock).
+        case "clear_layer_frames":
+            return ok([:])
+        case "face_track_enable":
+            return ok(["on": (params["on"] as? Bool) ?? true, "models_present": false])
+        case "face_debug":
+            return ok(["models_present": false, "feed_enabled": false,
+                       "valid": false, "score": 0.0, "has_blend": false])
+
         // Batches mirror the engine: one history entry per batch; abort rolls
         // back to the begin_batch snapshot.
         case "begin_batch":

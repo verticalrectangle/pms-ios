@@ -25,6 +25,15 @@ targets:
       - path: Shaders/msl
         type: folder
         buildPhase: resources
+      # Engine asset root (pms_create's asset_root points at
+      # <bundle>/EngineAssets). models/face/*.onnx = the bundled face stack
+      # (YuNet + MediaPipe landmarker v2 + blendshapes) — app_models_dir()'s
+      # asset-root-wins rule finds them, so makeup filters work offline on
+      # first launch. Fetched/converted by pop-maker-studio
+      # tools/fetch_face_models.py.
+      - path: Engine/EngineAssets
+        type: folder
+        buildPhase: resources
     settings:
       base:
         SWIFT_VERSION: "5.10"

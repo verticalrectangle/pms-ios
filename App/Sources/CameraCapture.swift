@@ -40,6 +40,29 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var audioConverter: AVAudioConverter?
     private var converterInputFormat: AVAudioFormat?
 
+    // Latest camera frame, retained for tap-to-sample (chroma key picking).
+    private let frameLock = NSLock()
+    private var latestFrame: CVPixelBuffer?
+
+    /// Sample the BGRA pixel at normalized buffer coords (0–1, top-left
+    /// origin). Returns 0–1 RGB. Thread-safe; nil before the first frame.
+    func sampleColor(atNormalized pt: CGPoint) -> (r: Double, g: Double, b: Double)? {
+        frameLock.lock()
+        let frame = latestFrame
+        frameLock.unlock()
+        guard let frame else { return nil }
+        CVPixelBufferLockBaseAddress(frame, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(frame, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(frame) else { return nil }
+        let w = CVPixelBufferGetWidth(frame), h = CVPixelBufferGetHeight(frame)
+        let stride = CVPixelBufferGetBytesPerRow(frame)
+        let x = min(w - 1, max(0, Int(pt.x * CGFloat(w))))
+        let y = min(h - 1, max(0, Int(pt.y * CGFloat(h))))
+        let p = base.advanced(by: y * stride + x * 4).assumingMemoryBound(to: UInt8.self)
+        // BGRA byte order.
+        return (Double(p[2]) / 255.0, Double(p[1]) / 255.0, Double(p[0]) / 255.0)
+    }
+
     // Person matte: bounded-cadence Vision segmentation on its own queue so
     // inference never stalls frame delivery.
     var matteEnabled = false
@@ -48,6 +71,12 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var matteInFlight = false
     private var lastMatteHostTime: Double = 0
     private let matteInterval = 1.0 / 15.0   // ≤15 fps preview segmentation
+
+    // Filtered take (record mode): when set, video frames are re-rendered
+    // through the engine and encoded by the recorder (WYSIWYG — looks baked
+    // into the pixels); audio passes through to it. The raw startTake path
+    // below stays for unfiltered captures.
+    var filteredRecorder: FilteredTakeRecorder?
 
     // Take recording: AVAssetWriter muxes the same delegate sample buffers
     // (video h264, mic AAC) into a .mov in the project's media dir. iOS owns
@@ -130,7 +159,9 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     func stop() {
         if takeWriter != nil { stopTake { _ in } }   // never leave a writer dangling
+        if let rec = filteredRecorder { filteredRecorder = nil; rec.finish { _ in } }
         videoQueue.async { self.session.stopRunning() }
+        frameLock.lock(); latestFrame = nil; frameLock.unlock()
         engine?.submitPersonMatte(nil, hostTime: 0)
         engine?.clearContent()
     }
@@ -201,15 +232,24 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                        from connection: AVCaptureConnection) {
         if output is AVCaptureAudioDataOutput {
             submitMic(sampleBuffer)
-            appendTake(sampleBuffer, isVideo: false)
+            if let rec = filteredRecorder { rec.appendAudio(sampleBuffer) }
+            else { appendTake(sampleBuffer, isVideo: false) }
             return
         }
         // Video frames → the engine's Metal compositor (live canvas preview).
         guard output is AVCaptureVideoDataOutput,
               let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        let host = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
+        let pts  = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let host = pts.seconds
+        frameLock.lock(); latestFrame = pb; frameLock.unlock()
         engine?.submitCameraFrame(pb, rotation: needsEngineRotation ? 1 : 0, hostTime: host)
-        appendTake(sampleBuffer, isVideo: true)
+        if let rec = filteredRecorder {
+            // Filtered take: render THROUGH the engine on the render thread
+            // (main), after this frame's submit; encoder gates drop when busy.
+            DispatchQueue.main.async { rec.appendRenderedFrame(at: pts) }
+        } else {
+            appendTake(sampleBuffer, isVideo: true)
+        }
         if matteEnabled { kickMatte(pb, hostTime: host) }
     }
 

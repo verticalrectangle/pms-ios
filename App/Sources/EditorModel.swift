@@ -1141,10 +1141,15 @@ final class EditorModel: ObservableObject {
 
     func deleteBrick(_ id: String) { deleteSelected(id) }
 
+    /// While RecordView owns the live stack (record-scoped looks), timeline
+    /// refreshes must not clobber it — RecordView sets this for its lifetime.
+    var liveFXSuspended = false
+
     /// Push the current video-FX stack to the Metal render adapter. Built from
     /// the ENGINE projection (never a separate Swift brick array); goes away
     /// once pms_render derives the same stack from AppState directly.
     func syncLiveFX() {
+        guard !liveFXSuspended else { return }
         var stack: [[String: Any]] = []
         for tr in tracks {
             for b in tr.bricks {
