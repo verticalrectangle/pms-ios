@@ -360,7 +360,10 @@ struct RecordView: View {
             }
         }
         engine.send("set_live_fx", ["fx": stack])
-        engine.send("face_track_enable", ["on": lookUsesFace])
+        // Track up to 4 faces so group shots get the look on everyone; the
+        // worker costs one landmark run per face per frame, so this stays 1
+        // face ≈ 1 cost when only one person is in frame.
+        engine.send("face_track_enable", ["on": lookUsesFace, "max_faces": 4])
         camera?.matteEnabled = lookUsesMatte
     }
 

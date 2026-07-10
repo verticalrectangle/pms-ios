@@ -235,6 +235,38 @@ any face work). Then 1 → 2 → 3 → 4 with per-stage gates.
     Mac metal-render-test PASS (all cases incl. k/l/n/o); xcframework
     rebuilt; sim (ENGINE_MOCK) + device builds SUCCEEDED with all 16 face
     assets verified inside the .app bundle.
+- 2026-07-10 (perf/robustness pass — the tracking requirements):
+  - **Multi-face**: YuNet decode now returns top-N boxes (greedy NMS, IoU
+    0.4); the worker keeps up to 4 independent `FaceTrack`s (per-track
+    smoothed obs, detector-box geometry, redetect cadence, miss decay);
+    detections associate to tracks by center distance, unmatched boxes seed
+    new tracks. Cold start keeps the both-orientations arbitration.
+    `face_track_latest_all()` returns every face; the Metal face branch
+    applies the look to each. `face_track_set_max_faces` (1..4, default 2;
+    the record UI asks for 4) — cost is one landmark run per face per frame.
+  - **Latency**: read-time lag compensation — each track carries a
+    per-landmark velocity field (px/s, EMA); consumers get landmarks
+    extrapolated to the render instant (clamped to 2 frames), so makeup
+    rides a moving face instead of trailing the worker. Existing
+    velocity-adaptive per-landmark smoothing (no jitter at rest, snaps in
+    motion), detect-sparse/track-dense loop, and the roll ladder (±180°
+    head tilt recovery) are unchanged underneath.
+  - **Observability**: `face_debug` now reports n_faces, worker_cycle_ms,
+    landmark_ms, read_age_ms — the latency budget is measurable on device,
+    not guessed. `face-smoke <img> <root> N` benches the full pipeline
+    (Linux desktop: 18.9 ms avg full detect+landmark+blendshapes; 2015
+    Intel Mac: 55.7 ms — tracking mode runs only the landmark share, ~1/3;
+    A-series NEON is expected 2-4× the Intel Mac).
+  - **Battery/robustness**: side-feed fully gated off when no
+    face look is active; stride-2 downscale before the tracker; matte at
+    ≤15 fps; front/back both feed the same path (front arrives mirrored at
+    the connection, landmarks live in the displayed frame's space);
+    lighting/occlusion handled by conf gates + skin-chroma gates + blink
+    fade; guards (upright, collapse-sanity) per track.
+  - Gates re-run: Linux build + engine-smoke + face-smoke PASS;
+    metal-render-test PASS (a corrupted incremental build on the Mac
+    produced a red-herring segfault mid-investigation — full reconfigure
+    builds pass at every commit); xcframework + device build SUCCEEDED.
   - Known gaps (next session candidates): face looks on TIMELINE playback of
     non-record footage (needs the face-cache port — takes are baked so this
     only matters for imported clips); desktop record-path parity for
