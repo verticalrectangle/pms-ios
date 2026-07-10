@@ -4,6 +4,7 @@
 //  can be decoupled (decouple_fx_brick); any brick can be deleted.
 
 import SwiftUI
+import UIKit
 
 struct InspectorView: View {
     @ObservedObject var model: EditorModel
@@ -14,14 +15,25 @@ struct InspectorView: View {
     var body: some View {
         if let sel, let bind = model.binding(forBrick: brickID) {
             let brick = sel.brick
-            VStack(alignment: .leading, spacing: 11) {
+            let defs = paramDefs(brick)
+            let maxH = UIScreen.main.bounds.height * 0.45
+            let content = VStack(alignment: .leading, spacing: 11) {
                 header(brick)
                 scopeRow(brick)
                 if brick.isChain { chainRow(brick) }
                 paramSliders(brick, bind: bind)
                 actions(brick)
             }
-            .padding(14)
+                .padding(14)
+            Group {
+                if defs.count > 4 {
+                    ScrollView { content }
+                        .frame(maxHeight: maxH)
+                        .scrollIndicators(.hidden)
+                } else {
+                    content
+                }
+            }
             .glass(18)
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .onAppear { model.loadBodyEffects() }   // body sliders need the defs
@@ -99,14 +111,10 @@ struct InspectorView: View {
         return EffectCatalog.byID[brick.chain.last ?? ""]?.params ?? []
     }
 
-    /// Sliders scroll internally past 4 params — the floating panel must never
-    /// grow past ~half the screen (it overlays the timeline, not the layout).
+    /// Sliders are part of the scrolling inspector panel; the panel caps at ~45% of
+    /// the screen height so it overlays the timeline instead of swallowing the canvas.
     private func paramSliders(_ brick: Brick, bind: Binding<Brick>) -> some View {
-        let defs = paramDefs(brick)
-        return ScrollView(defs.count > 4 ? .vertical : []) {
-            slidersColumn(brick, bind: bind, defs: defs)
-        }
-        .frame(maxHeight: defs.count > 4 ? 180 : nil)
+        slidersColumn(brick, bind: bind, defs: paramDefs(brick))
     }
 
     private func slidersColumn(_ brick: Brick, bind: Binding<Brick>,
