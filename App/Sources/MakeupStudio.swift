@@ -21,6 +21,8 @@ struct MakeupSpec: Codable, Equatable {
     var lipColor   = RGB(r: 0.95, g: 0.25, b: 0.35)
     // cyber extras
     var eyeGlow = 0.0, skinTint = 0.0, desat = 0.0, chrome = 0.0, scanlines = 0.0
+    var irisTint = 0.0
+    var irisColor = RGB(r: 0.3, g: 0.5, b: 0.8)
     // painted UV texture (models/face/makeup_*.png), nil = procedural only
     var makeupTex: String?
 
@@ -43,6 +45,7 @@ struct MakeupSpec: Codable, Equatable {
             "lip_r": lipColor.r, "lip_g": lipColor.g, "lip_b": lipColor.b,
             "eye_glow": eyeGlow, "skin_tint": skinTint, "desat": desat,
             "chrome": chrome, "scanlines": scanlines,
+            "iris_tint": irisTint, "iris_r": irisColor.r, "iris_g": irisColor.g, "iris_b": irisColor.b,
         ]
     }
 
@@ -66,6 +69,8 @@ struct MakeupSpec: Codable, Equatable {
         take("lip_r", &lipColor.r); take("lip_g", &lipColor.g); take("lip_b", &lipColor.b)
         take("eye_glow", &eyeGlow); take("skin_tint", &skinTint)
         take("desat", &desat); take("chrome", &chrome); take("scanlines", &scanlines)
+        take("iris_tint", &irisTint)
+        take("iris_r", &irisColor.r); take("iris_g", &irisColor.g); take("iris_b", &irisColor.b)
         self.makeupTex = makeupTex
     }
 }
@@ -175,6 +180,26 @@ struct MakeupStudioSheet: View {
         ("makeup_peach_brim.png", "Peach Brim"),
         ("makeup_honey_freckle.png", "Honey Freckle"),
         ("makeup_vivid_glam.png", "Vivid Glam"),
+        ("makeup_anime_doll.png", "Anime Doll"),
+        ("makeup_kawaii_glitter.png", "Kawaii Glitter"),
+        ("makeup_pastel_fairy.png", "Pastel Fairy"),
+        ("makeup_platinum_cat.png", "Platinum Cat"),
+        ("makeup_teal_smoke_doll.png", "Teal Smoke"),
+        ("makeup_rose_gold_doll.png", "Rose Gold"),
+        ("makeup_chocolate_crease.png", "Chocolate"),
+        ("makeup_soft_doe_red.png", "Doe Red"),
+        ("makeup_bronze_cat_eye.png", "Bronze Cat"),
+        ("makeup_kawaii_blush.png", "Kawaii Blush"),
+        ("makeup_peach_egirl_freckle.png", "Peach E-Girl"),
+        ("makeup_soft_amber_doll.png", "Amber Doll"),
+        ("makeup_gamer_belle.png", "Gamer Belle"),
+        ("makeup_glitter_cat_pink.png", "Glitter Cat"),
+        ("makeup_pastel_kitten.png", "Pastel Kitten"),
+        ("makeup_crescent_boho.png", "Boho"),
+        ("makeup_soft_amber_glow.png", "Amber Glow"),
+        ("makeup_dramatic_nude_glam.png", "Nude Glam"),
+        ("makeup_warm_bronze_teal.png", "Bronze Teal"),
+        ("makeup_grunge_fairy.png", "Grunge Fairy"),
     ]
 
     var body: some View {
@@ -227,6 +252,9 @@ struct MakeupStudioSheet: View {
                     row("Wing", $spec.lashWing)
                     row("Nose Blush", $spec.noseBlush)
                     row("Freckles", $spec.freckles)
+                    row("Eye Color", $spec.irisTint)
+                    ColorPicker("Iris Color", selection: colorBinding(\.irisColor),
+                                supportsOpacity: false)
                     row("Contour Shade", $spec.jawShade)
                 }
                 Section("Cyber") {

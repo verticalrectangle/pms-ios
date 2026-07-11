@@ -94,6 +94,26 @@ All IDs are stable snake case; each gets a generated `makeup_<id>.png`, an iOS r
 | grunge_smoke | Grunge Smoke | imperfect charcoal-brown smoke | texture-preserving; no morph | blurred matte |
 | midnight_goth | Midnight Goth | deeper dimensional black-plum eye | soft matte; subtle eye | black-cherry satin |
 | opal_fantasy | Opal Fantasy | restrained lavender/blue shift and pearl light | luminous; subtle eye | iridescent gloss |
+| anime_doll | Anime Doll | turquoise iris, doll lashes, graphic liner, glossy pink lip | satin; subtle eye | wet gloss |
+| kawaii_glitter | Kawaii Glitter | blue iris, glitter pink lid, graphic liner, doll lash | satin; subtle eye | gloss |
+| pastel_fairy | Pastel Fairy | violet iris, lavender lid, wispy lash, dark arched brow | satin; subtle eye | gloss |
+| platinum_cat | Platinum Cat | gray-blue iris, thin blonde brow, siren liner, cat lash | satin; subtle sculpt | satin |
+| teal_smoke_doll | Teal Smoke | teal-copper lid, stage lash, wing liner | satin-warm; subtle eye | gloss |
+| rose_gold_doll | Rose Gold | amber iris, champagne lid, doll lash, wing liner | satin; subtle eye | gloss |
+| chocolate_crease | Chocolate Crease | brown cut-crease, stage lash, dark brow, matte nude lip | satin; subtle sculpt | matte |
+| soft_doe_red | Doe Red | peach crease, wispy lash, tightline, red matte lip | pore-preserving; minimal morph | matte |
+| bronze_cat_eye | Bronze Cat | bronze lid, cat lash, siren liner, glossy pink-nude lip | satin; subtle sculpt | gloss |
+| kawaii_blush | Kawaii Blush | heavy band blush, doll lash, soft liner, glossy rose lip | satin; subtle eye | gloss |
+| peach_egirl_freckle | Peach E-Girl | hazel iris, band blush, freckles, wing liner, wispy lash | pore-preserving; minimal morph | balm |
+| soft_amber_doll | Amber Doll | amber iris, warm lid, doll lash, soft liner, glossy lip | satin; subtle eye | gloss |
+| gamer_belle | Gamer Belle | blue iris, band blush, freckles, doll lash, wing liner | satin; subtle eye | gloss |
+| glitter_cat_pink | Glitter Cat | blue iris, glitter pink lid, graphic liner, cat lash | satin; subtle eye | gloss |
+| pastel_kitten | Pastel Kitten | violet iris, pastel pink lid, wispy lash, wing liner | satin; subtle eye | satin |
+| crescent_boho | Boho Crescent | light blue iris, neutral lid, stage lash, soft liner | satin; minimal morph | satin |
+| soft_amber_glow | Amber Glow | amber iris, warm lid, wispy lash, soft liner | satin; subtle eye | gloss |
+| dramatic_nude_glam | Nude Glam | cut-crease, stage lash, wing liner, glossy nude lip | satin; subtle sculpt | gloss |
+| warm_bronze_teal | Bronze Teal | bronze lid + teal lower, stage lash, siren liner | satin-warm; subtle eye | gloss |
+| grunge_fairy | Grunge Fairy | hazel-green iris, dark smoke, wispy lash, graphic liner | texture-preserving; no morph | blurred matte |
 
 ### Stage 5 — iOS catalog and Studio
 
