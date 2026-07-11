@@ -51,6 +51,8 @@ struct RecordView: View {
     @State private var currentSegmentIndex: Int?
     @State private var finalizing = false
     @State private var placed = false
+    @State private var showPreview = false
+    @State private var previewSegments: [RecordedSegmentInfo] = []
     @State private var isTornDown = false
     @State private var isPressed = false
     @State private var holdTask: Task<Void, Never>?
@@ -88,7 +90,8 @@ struct RecordView: View {
                     .id(n)   // re-animate each tick
             }
 
-            VStack(spacing: 0) {
+            if !showPreview {
+                VStack(spacing: 0) {
                 topBar
                 if let errorText {
                     ErrorBanner(text: errorText) { self.errorText = nil }
@@ -108,10 +111,20 @@ struct RecordView: View {
                 if look != .none && !recording { intensityRow }
                 lookRail
                 recordRow
+                }
             }
             Color.white.opacity(flashOpacity)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
+            if showPreview {
+                CapturePreviewView(
+                    segments: previewSegments,
+                    onRetake: retakeFromPreview,
+                    onAddToProject: addToProjectFromPreview,
+                    onClose: closeFromPreview
+                )
+                .transition(.opacity)
+            }
         }
         .statusBarHidden()
         .onAppear { resetState(); claimFramePath(); startCamera() }
@@ -436,6 +449,7 @@ struct RecordView: View {
     /// frame. A tap-picked key overrides the chroma entries' matte mode; an
     /// active Studio spec overrides the look's face entry wholesale.
     private func pushLive() {
+        guard engine.isReady else { return }   // no engine yet → no-op (simulator early launch)
         var stack = FilterLooks.liveStack(for: look, intensity: intensity)
         if let k = keyOverride {
             stack = stack.map { e in
@@ -482,6 +496,8 @@ struct RecordView: View {
         photoInFlight = nil
         currentRecorder = nil
         currentSegmentIndex = nil
+        showPreview = false
+        previewSegments.removeAll()
     }
 
 
@@ -632,13 +648,38 @@ struct RecordView: View {
     private func doneTapped() {
         guard canDone, !finalizing else { return }
         finalizing = true
-        let ordered = segments.map { (path: $0.url.path, duration: $0.duration!) }
+        previewSegments = segments.compactMap {
+            guard let dur = $0.duration else { return nil }
+            return RecordedSegmentInfo(id: $0.index, url: $0.url, duration: dur)
+        }
+        camera?.stop()
+        camera = nil
+        engine.send("face_track_enable", ["on": false])
+        withAnimation { showPreview = true }
+        finalizing = false
+    }
+
+    private func retakeFromPreview() {
+        for seg in previewSegments { try? FileManager.default.removeItem(at: seg.url) }
+        previewSegments.removeAll()
+        segments.removeAll()
+        nextSegmentIndex = 0
+        errorText = nil
+        showPreview = false
+        startCamera()
+    }
+
+    private func addToProjectFromPreview() {
+        let ordered = previewSegments.map { (path: $0.url.path, duration: $0.duration) }
         guard model.placeRecordedTakes(ordered) else {
-            finalizing = false
             errorText = "Could not place recorded segments."
             return
         }
         placed = true
+        dismiss()
+    }
+
+    private func closeFromPreview() {
         dismiss()
     }
 
@@ -697,6 +738,7 @@ struct RecordView: View {
 
     private func teardown() {
         isTornDown = true
+        showPreview = false
         recording = false
         recordStart = nil
         currentRecorder = nil
@@ -716,6 +758,8 @@ struct RecordView: View {
         if !placed {
             for segment in segments { try? FileManager.default.removeItem(at: segment.url) }
             segments.removeAll()
+            for seg in previewSegments { try? FileManager.default.removeItem(at: seg.url) }
+            previewSegments.removeAll()
             if let photoInFlight {
                 try? FileManager.default.removeItem(at: photoInFlight.url)
                 self.photoInFlight = nil

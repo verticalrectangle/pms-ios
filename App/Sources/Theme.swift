@@ -124,6 +124,23 @@ extension View {
 
     /// Press feedback matching the HTML: compress + brighten, no glow.
     func pressable() -> some View { buttonStyle(GlassPressStyle()) }
+    @ViewBuilder
+    func liquidGlassCircle(interactive: Bool = true, tint: Color? = nil) -> some View {
+        if #available(iOS 26, *) {
+            if let tint {
+                self.glassEffect(.regular.tint(tint).interactive(), in: .circle)
+            } else {
+                self.glassEffect(.regular.interactive(), in: .circle)
+            }
+        } else {
+            self.background(
+                Circle().fill(.ultraThinMaterial)
+            )
+            .overlay(
+                Circle().strokeBorder(Theme.ink.opacity(0.16), lineWidth: 1)
+            )
+        }
+    }
 }
 
 struct GlassPressStyle: ButtonStyle {

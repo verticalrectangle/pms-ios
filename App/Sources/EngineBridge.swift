@@ -62,6 +62,11 @@ final class EngineStore: ObservableObject {
     /// False when pms_create/ABI validation failed — screens show a hard error.
     @Published private(set) var healthy = false
 
+    /// True when the C engine handle exists and is safe to command. Use this
+    /// before fire-and-forget sends that may race app launch (pms_create can
+    /// still be in progress when RecordView's first `pushLive()` fires).
+    var isReady: Bool { engine != nil }
+
     func start() {
         guard engine == nil else { return }
 #if ENGINE_MOCK

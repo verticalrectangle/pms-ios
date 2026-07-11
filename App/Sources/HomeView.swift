@@ -108,7 +108,22 @@ struct HomeView: View {
             }
             .padding(.horizontal, 18)
             .padding(.top, 60)
-            .padding(.bottom, 40)
+            .padding(.bottom, 100)
+        }
+        .overlay(alignment: .bottom) {
+            if let onRecord {
+                Button {
+                    onRecord(Project.blank())
+                } label: {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(Theme.txt)
+                        .frame(width: 64, height: 64)
+                        .liquidGlassCircle(interactive: true, tint: Theme.accentA(0.3))
+                }
+                .pressable()
+                .padding(.bottom, 28)
+            }
         }
         .scrollIndicators(.hidden)
         .background(AtmosphereView().ignoresSafeArea())
@@ -204,41 +219,24 @@ struct HomeView: View {
     }
 
     private var newProjectButton: some View {
-        HStack(spacing: 11) {
-            Button {
-                onOpen(Project.blank())
-            } label: {
-                HStack(spacing: 14) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                        .frame(width: 46, height: 46)
-                        .glass(13, active: true)
-                    Text("New Project").font(.disp(18)).textCase(.uppercase).foregroundStyle(.white)
-                    Spacer()
-                    Image(systemName: "chevron.right").foregroundStyle(Theme.txtGhost)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity)
-                .glass(18)
+        Button {
+            onOpen(Project.blank())
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "plus")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 46, height: 46)
+                    .glass(13, active: true)
+                Text("New Project").font(.disp(18)).textCase(.uppercase).foregroundStyle(.white)
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(Theme.txtGhost)
             }
-            .pressable()
-
-            // Straight to the camera: a fresh project with RecordView already up.
-            if let onRecord {
-                Button {
-                    onRecord(Project.blank())
-                } label: {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(Color(red: 1, green: 0.35, blue: 0.35))
-                        .frame(width: 46, height: 46)
-                        .padding(16)
-                        .glass(18)
-                }
-                .pressable()
-            }
+            .padding(16)
+            .frame(maxWidth: .infinity)
+            .glass(18)
         }
+        .pressable()
     }
 }
 
