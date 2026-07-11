@@ -259,8 +259,8 @@ struct MakeupStudioSheet: View {
 
     private func stylePicker(_ label: String, _ value: Binding<Double>, names: [String]) -> some View {
         let binding = Binding<Int>(
-            get: { min(max(Int(value.wrappedValue), 0), names.count - 1) },
-            set: { newValue in value.wrappedValue = Double(newValue); onChange() }
+            get { min(max(Int(value.wrappedValue), 0), names.count - 1) },
+            set { value.wrappedValue = Double($0); onChange() }
         )
         return HStack(spacing: 10) {
             Text(label).font(.label(12)).foregroundStyle(Theme.txt)
