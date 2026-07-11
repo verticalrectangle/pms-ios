@@ -59,9 +59,9 @@ MOUTH_INNER = [
 MOUTH_MEAN_MAX = 80.0
 MOUTH_MAX_MAX = 150
 
-# Legacy standalone plate; the remaining 32 makeup_*.png files form the
-# generated variant set from tools/gen_makeup_elements.py.
-DOUYIN_PNG = "makeup_douyin.png"
+# Legacy standalone plate; now generated alongside the other plates in
+# gen_makeup_elements.py. Kept as a doc comment for history.
+# DOUYIN_PNG = "makeup_douyin.png"
 
 
 def error(errors, msg):
@@ -292,13 +292,6 @@ def main():
             f"expected {expected_tex_count} face_fx makeup textures, "
             f"found {len(face_fx_texs)}"
         ))
-
-    # The 32 generated plates plus the standalone douyin plate.
-    if DOUYIN_PNG not in face_fx_texs:
-        error(errors, f"'{DOUYIN_PNG}' not referenced by any face_fx look")
-    generated_texs = face_fx_texs - {DOUYIN_PNG}
-    if len(generated_texs) != 32:
-        error(errors, f"generated plate set size is {len(generated_texs)}, expected 32")
 
     # ── Files on disk match references and Studio picker ────────────────────
     if not os.path.isdir(args.assets_dir):
