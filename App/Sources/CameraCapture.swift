@@ -153,7 +153,7 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         do {
             try cam.lockForConfiguration()
             if cam.isLowLightBoostSupported {
-                cam.isLowLightBoostEnabled = true
+                cam.automaticallyEnablesLowLightBoostWhenAvailable = true
             }
             cam.unlockForConfiguration()
         } catch {
