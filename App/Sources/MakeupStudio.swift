@@ -16,7 +16,7 @@ struct MakeupSpec: Codable, Equatable {
         lipsPlump = 0.04, chinSmooth = 0.3, jawShade = 0.0
     // procedural makeup
     var blush = 0.15, lip = 0.12, lash = 0.35, liner = 0.2, lashWing = 0.2,
-        lashGloss = 0.0, lashStyle = 0.0, linerStyle = 0.0,
+        lashGloss = 0.0, lashStyle = 1.0, linerStyle = 1.0,
         noseBlush = 0.0, freckles = 0.0, lipGrad = 1.0
     var blushColor = RGB(r: 1.0, g: 0.45, b: 0.55)
     var lipColor   = RGB(r: 0.95, g: 0.25, b: 0.35)
