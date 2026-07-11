@@ -46,6 +46,7 @@ struct RecordView: View {
     @State private var nextSegmentIndex: Int = 0
     @State private var segments: [RecordedSegment] = []
     @State private var inFlight: [Int: InFlight] = [:]
+    @State private var photoInFlight: PhotoInFlight?
     @State private var currentRecorder: FilteredTakeRecorder?
     @State private var currentSegmentIndex: Int?
     @State private var finalizing = false
@@ -335,7 +336,7 @@ struct RecordView: View {
                 .background(Circle().fill(.black.opacity(0.35)))
         }
         .pressable()
-        .disabled(countdown != nil || finalizing || recording)
+        .disabled(countdown != nil || finalizing || recording || photoInFlight != nil)
     }
 
     private var doneButton: some View {
@@ -472,6 +473,7 @@ struct RecordView: View {
         nextSegmentIndex = 0
         segments.removeAll()
         inFlight.removeAll()
+        photoInFlight = nil
         currentRecorder = nil
         currentSegmentIndex = nil
     }
@@ -540,10 +542,10 @@ struct RecordView: View {
     }
 
     private func capturePhoto() {
-        guard !isTornDown, !finalizing, !recording, camera != nil else { return }
+        guard !isTornDown, !finalizing, !recording, photoInFlight == nil, camera != nil else { return }
         let width = 720, height = 1280
         let url = ProjectStore.mediaDir(model.project.id)
-            .appendingPathComponent("\(UUID().uuidString).png")
+            .appendingPathComponent("\(UUID().uuidString).mov")
         let attrs: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey as String: width,
@@ -568,48 +570,30 @@ struct RecordView: View {
         }
         engine.render(into: tex)
         engine.renderWait()
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-            CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-            errorText = "Photo capture failed to lock buffer."
-            return
-        }
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        let buffer = UnsafeMutableBufferPointer(start: baseAddress.assumingMemoryBound(to: UInt8.self), count: height * bytesPerRow)
-        let imageData = Data(buffer)
-        guard let provider = CGDataProvider(data: imageData as CFData) else {
-            CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-            errorText = "Photo capture failed to create image provider."
-            return
-        }
-        CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue)
-        guard let cgImage = CGImage(
-                width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
-                bytesPerRow: bytesPerRow, space: colorSpace, bitmapInfo: bitmapInfo,
-                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
-            errorText = "Photo capture failed to create CGImage."
-            return
-        }
-        let uiImage = UIImage(cgImage: cgImage)
-        guard let data = uiImage.pngData() else {
-            errorText = "Photo capture failed to encode PNG."
-            return
-        }
-        do {
-            try data.write(to: url)
-        } catch {
-            errorText = "Photo capture failed to save: \(error.localizedDescription)"
-            return
-        }
+
         let index = nextSegmentIndex
         nextSegmentIndex += 1
-        segments.append(RecordedSegment(index: index, url: url, duration: 3.0, kind: .photo))
-        segments.sort { $0.index < $1.index }
+        let writer = StillVideoWriter(pixelBuffer: pixelBuffer, url: url, duration: 3.0)
+        photoInFlight = PhotoInFlight(index: index, url: url, writer: writer)
+
         haptic()
         if flashEnabled { showFlash() }
         playShutterSound()
+
+        writer.write { [self] outputURL in
+            guard photoInFlight?.index == index else { return }
+            photoInFlight = nil
+            if isTornDown {
+                if !placed, let outputURL { try? FileManager.default.removeItem(at: outputURL) }
+                return
+            }
+            guard let outputURL else {
+                errorText = "Photo capture failed to write video."
+                return
+            }
+            segments.append(RecordedSegment(index: index, url: outputURL, duration: 3.0, kind: .video))
+            segments.sort { $0.index < $1.index }
+        }
     }
 
     private func startHold() {
@@ -690,15 +674,15 @@ struct RecordView: View {
     }
 
     private var canDone: Bool {
-        !segments.isEmpty && inFlight.isEmpty && segments.allSatisfy { $0.duration != nil }
+        !segments.isEmpty && inFlight.isEmpty && photoInFlight == nil && segments.allSatisfy { $0.duration != nil }
     }
 
     private var totalCount: Int {
-        segments.count + inFlight.count
+        segments.count + inFlight.count + (photoInFlight != nil ? 1 : 0)
     }
 
     private var totalDuration: TimeInterval {
-        segments.compactMap { $0.duration }.reduce(0, +) + (recording ? elapsed : 0)
+        segments.compactMap { $0.duration }.reduce(0, +) + (recording ? elapsed : 0) + (photoInFlight != nil ? 3.0 : 0)
     }
 
     private func dismiss() {
@@ -726,6 +710,10 @@ struct RecordView: View {
         if !placed {
             for segment in segments { try? FileManager.default.removeItem(at: segment.url) }
             segments.removeAll()
+            if let photoInFlight {
+                try? FileManager.default.removeItem(at: photoInFlight.url)
+                self.photoInFlight = nil
+            }
         }
         camera?.stop()
         camera = nil
@@ -755,6 +743,11 @@ private struct RecordedSegment: Identifiable {
     var duration: Double?
     let kind: SegmentKind
     var id: Int { index }
+}
+private struct PhotoInFlight {
+    let index: Int
+    let url: URL
+    let writer: StillVideoWriter
 }
 
 private struct InFlight {
