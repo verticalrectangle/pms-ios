@@ -23,6 +23,24 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             }
         }
     }
+    enum CapturePreset {
+        case hd720, hd1080, hd4K
+        var avPreset: AVCaptureSession.Preset {
+            switch self {
+            case .hd720:  return AVCaptureSession.Preset.hd1280x720
+            case .hd1080: return AVCaptureSession.Preset.hd1920x1080
+            case .hd4K:   return AVCaptureSession.Preset.hd4K3840x2160
+            }
+        }
+    }
+
+    enum CaptureOrientation {
+        case portrait, landscape  // portrait = rotate sensor 90°, landscape = sensor-native 0°
+    }
+
+    static func recordingBitrate(width: Int, height: Int) -> Int {
+        min(max(width * height * 6, 8_000_000), 12_000_000)
+    }
 
     private let session = AVCaptureSession()
     private let videoQueue = DispatchQueue(label: "pms.camera")
@@ -35,6 +53,13 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// True when the connection could not rotate to portrait — then (and only
     /// then) the engine is told to rotate.
     private var needsEngineRotation = false
+
+    // Thermal / low-power adaptation state.
+    private var thermalObserver: NSObjectProtocol?
+    private var powerObserver: NSObjectProtocol?
+    private var currentPreset: CapturePreset = .hd1080
+    private var currentPosition: AVCaptureDevice.Position = .front
+    private var currentOrientation: CaptureOrientation = .portrait
 
     // Mic → engine capture-injection ring (AVAudioConverter per input format).
     private var audioConverter: AVAudioConverter?
@@ -101,12 +126,16 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
     }
 
-    func start(position: AVCaptureDevice.Position = .front) throws {
+    func start(position: AVCaptureDevice.Position = .front,
+               preset: CapturePreset = .hd1080,
+               orientation: CaptureOrientation = .portrait) throws {
+        currentPosition = position
+        currentOrientation = orientation
+
         session.beginConfiguration()
         var committed = false
         defer { if !committed { session.commitConfiguration() } }   // failure-safe cleanup
 
-        session.sessionPreset = .hd1280x720           // tracker-friendly; takes record at this res
         session.inputs.forEach(session.removeInput)
         guard let cam = AVCaptureDevice.default(.builtInWideAngleCamera,
                                                 for: .video, position: position),
@@ -118,6 +147,17 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             session.addInput(try AVCaptureDeviceInput(device: mic))
         } catch {
             throw CaptureError.configuration(error.localizedDescription)
+        }
+
+        // Low-light boost helps contour tracking in dim scenes. Non-fatal.
+        do {
+            try cam.lockForConfiguration()
+            if cam.isLowLightBoostSupported {
+                cam.isLowLightBoostEnabled = true
+            }
+            cam.unlockForConfiguration()
+        } catch {
+            // Continue with default exposure.
         }
 
         if videoOutput == nil {
@@ -138,12 +178,31 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             audioOutput = audio
         }
 
-        // Output upright PORTRAIT frames (the sensor is landscape). 90° gives a
-        // 720×1280 buffer that fills the 9:16 canvas; mirror the front camera.
+        // Pick the highest preset the active camera supports, with a safe fallback.
+        func resolvePreset(_ preset: CapturePreset) throws -> CapturePreset {
+            let candidates: [CapturePreset]
+            switch preset {
+            case .hd4K:   candidates = [.hd4K, .hd1080, .hd720]
+            case .hd1080: candidates = [.hd1080, .hd720]
+            case .hd720:  candidates = [.hd720]
+            }
+            for p in candidates {
+                if session.canSetSessionPreset(p.avPreset) { return p }
+            }
+            throw CaptureError.configuration("camera does not support \(preset.avPreset.rawValue)")
+        }
+        let chosen = try resolvePreset(preset)
+        currentPreset = chosen
+        session.sessionPreset = chosen.avPreset
+
+        // Rotate to portrait for .portrait/.square (face fills more frame);
+        // sensor-native landscape for .landscape. Mirror the front camera.
+        let shouldRotate = (orientation == .portrait)
         needsEngineRotation = true
         if let conn = videoOutput?.connection(with: .video) {
-            if conn.isVideoRotationAngleSupported(90) {
-                conn.videoRotationAngle = 90
+            let angle: CGFloat = shouldRotate ? 90 : 0
+            if conn.isVideoRotationAngleSupported(angle) {
+                conn.videoRotationAngle = angle
                 needsEngineRotation = false
             }
             if conn.isVideoMirroringSupported {
@@ -155,15 +214,54 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         session.commitConfiguration()
         committed = true
         videoQueue.async { self.session.startRunning() }
+
+        if thermalObserver == nil {
+            startThermalMonitoring()
+        }
     }
 
     func stop() {
+        if thermalObserver != nil { NotificationCenter.default.removeObserver(thermalObserver!); thermalObserver = nil }
+        if powerObserver != nil { NotificationCenter.default.removeObserver(powerObserver!); powerObserver = nil }
         if takeWriter != nil { stopTake { _ in } }   // never leave a writer dangling
         if let rec = filteredRecorder { filteredRecorder = nil; rec.finish { _ in } }
         videoQueue.async { self.session.stopRunning() }
         frameLock.lock(); latestFrame = nil; frameLock.unlock()
         engine?.submitPersonMatte(nil, hostTime: 0)
         engine?.clearContent()
+    }
+
+    // MARK: thermal / power adaptation
+
+    private func startThermalMonitoring() {
+        let nc = NotificationCenter.default
+        thermalObserver = nc.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification,
+                                         object: nil, queue: nil) { [weak self] _ in
+            self?.adaptToConditions()
+        }
+        powerObserver = nc.addObserver(forName: Notification.Name.NSProcessInfoPowerStateDidChange,
+                                       object: nil, queue: nil) { [weak self] _ in
+            self?.adaptToConditions()
+        }
+        adaptToConditions()
+    }
+
+    private func adaptToConditions() {
+        let info = ProcessInfo.processInfo
+        let stressed = info.thermalState == .serious || info.thermalState == .critical
+                    || info.isLowPowerModeEnabled
+        let target: CapturePreset = stressed ? .hd720 : .hd1080
+        guard target != currentPreset else { return }
+        currentPreset = target
+        // Reconfigure on the video queue — don't stop the session.
+        videoQueue.async { [weak self] in
+            guard let self else { return }
+            self.session.beginConfiguration()
+            if self.session.canSetSessionPreset(target.avPreset) {
+                self.session.sessionPreset = target.avPreset
+            }
+            self.session.commitConfiguration()
+        }
     }
 
     // MARK: take recording
@@ -173,10 +271,17 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         guard takeWriter == nil else { return }
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let (w, h): (Int, Int) = {
+            frameLock.lock(); defer { frameLock.unlock() }
+            if let frame = latestFrame {
+                return (CVPixelBufferGetWidth(frame), CVPixelBufferGetHeight(frame))
+            }
+            return (1080, 1920)
+        }()
         let video = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: 720, AVVideoHeightKey: 1280,
-            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 8_000_000],
+            AVVideoWidthKey: w, AVVideoHeightKey: h,
+            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: CameraCapture.recordingBitrate(width: w, height: h)],
         ])
         video.expectsMediaDataInRealTime = true
         let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: [
@@ -299,6 +404,8 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         lastMatteHostTime = hostTime
         matteQueue.async { [weak self] in
             guard let self else { return }
+            let recording = self.filteredRecorder != nil
+            self.visionMatte.quality = recording ? .accurate : .balanced
             let matte = self.visionMatte.matte(for: frame)
             self.engine?.submitPersonMatte(matte, hostTime: hostTime)
             self.videoQueue.async { self.matteInFlight = false }

@@ -13,21 +13,36 @@ import Vision
 import CoreVideo
 
 final class VisionMatte {
+    enum Quality {
+        case balanced, accurate
+        var visionLevel: VNGeneratePersonSegmentationRequest.QualityLevel {
+            switch self {
+            case .balanced: return .balanced
+            case .accurate: return .accurate
+            }
+        }
+    }
+    var quality: Quality = .balanced
+
     // One sequence handler for the session — Vision uses it for temporal
     // stability across frames (less matte flicker than per-frame handlers).
     private let sequence = VNSequenceRequestHandler()
     private let request: VNGeneratePersonSegmentationRequest = {
         let r = VNGeneratePersonSegmentationRequest()
-        r.qualityLevel = .balanced          // .accurate for export passes
+        r.qualityLevel = .balanced
         r.outputPixelFormat = kCVPixelFormatType_OneComponent8
         return r
     }()
 
+    func matte(for frame: CVPixelBuffer) -> CVPixelBuffer? {
+        matte(for: frame, quality: quality.visionLevel)
+    }
+
     /// Returns an 8-bit alpha matte for the frame, or nil when no person.
     /// The returned buffer is owned by the request until the next perform —
     /// the caller must hand it to the engine (which retains) before returning.
-    func matte(for frame: CVPixelBuffer,
-               quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced)
+    private func matte(for frame: CVPixelBuffer,
+                       quality: VNGeneratePersonSegmentationRequest.QualityLevel)
         -> CVPixelBuffer? {
         request.qualityLevel = quality
         do {

@@ -23,7 +23,7 @@ final class FilteredTakeRecorder {
     private var finished = false
     let width: Int, height: Int
 
-    init?(engine: EngineStore, url: URL, width: Int = 720, height: Int = 1280) {
+    init?(engine: EngineStore, url: URL, width: Int, height: Int) {
         self.engine = engine
         self.width = width; self.height = height
         try? FileManager.default.removeItem(at: url)
@@ -32,7 +32,7 @@ final class FilteredTakeRecorder {
         videoIn = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width, AVVideoHeightKey: height,
-            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 8_000_000],
+            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: CameraCapture.recordingBitrate(width: width, height: height)],
         ])
         videoIn.expectsMediaDataInRealTime = true
         audioIn = AVAssetWriterInput(mediaType: .audio, outputSettings: [

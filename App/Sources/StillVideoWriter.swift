@@ -33,7 +33,7 @@ final class StillVideoWriter {
                 AVVideoWidthKey: width,
                 AVVideoHeightKey: height,
                 AVVideoCompressionPropertiesKey: [
-                    AVVideoAverageBitRateKey: 8_000_000
+                    AVVideoAverageBitRateKey: CameraCapture.recordingBitrate(width: width, height: height)
                 ]
             ]
 
