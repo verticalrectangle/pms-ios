@@ -95,7 +95,7 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private let visionMatte = VisionMatte()
     private var matteInFlight = false
     private var lastMatteHostTime: Double = 0
-    private let matteInterval = 1.0 / 15.0   // ≤15 fps preview segmentation
+    private let matteInterval = 1.0 / 30.0   // ≤30 fps preview segmentation
 
     // Filtered take (record mode): when set, video frames are re-rendered
     // through the engine and encoded by the recorder (WYSIWYG — looks baked
@@ -154,6 +154,14 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             try cam.lockForConfiguration()
             if cam.isLowLightBoostSupported {
                 cam.automaticallyEnablesLowLightBoostWhenAvailable = true
+            }
+            // 60fps capture: halves inter-frame latency. The MTKView already renders
+            // at 60 (preferredFramesPerSecond=60), so every vsync gets fresh data.
+            if cam.activeFormat.videoSupportedFrameRateRanges.contains(where: {
+                $0.minFrameDuration <= CMTime(value: 1, timescale: 60)
+            }) {
+                cam.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 60)
+                cam.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 60)
             }
             cam.unlockForConfiguration()
         } catch {
