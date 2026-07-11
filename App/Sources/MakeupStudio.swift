@@ -16,6 +16,7 @@ struct MakeupSpec: Codable, Equatable {
         lipsPlump = 0.04, chinSmooth = 0.3, jawShade = 0.0
     // procedural makeup
     var blush = 0.15, lip = 0.12, lash = 0.35, liner = 0.2, lashWing = 0.2,
+        lashGloss = 0.0, lashStyle = 0.0, linerStyle = 0.0,
         noseBlush = 0.0, freckles = 0.0, lipGrad = 1.0
     var blushColor = RGB(r: 1.0, g: 0.45, b: 0.55)
     var lipColor   = RGB(r: 0.95, g: 0.25, b: 0.35)
@@ -37,7 +38,9 @@ struct MakeupSpec: Codable, Equatable {
             "eyes": eyes, "cheek": cheek, "vline": vline, "nose": nose,
             "lips_plump": lipsPlump, "chin_smooth": chinSmooth, "jaw_shade": jawShade,
             "blush": blush, "lip": lip, "lash": lash, "liner": liner,
-            "lash_wing": lashWing, "nose_blush": noseBlush, "freckles": freckles,
+            "lash_wing": lashWing, "lash_gloss": lashGloss,
+            "lash_style": lashStyle, "liner_style": linerStyle,
+            "nose_blush": noseBlush, "freckles": freckles,
             "lip_grad": lipGrad,
             "blush_r": blushColor.r, "blush_g": blushColor.g, "blush_b": blushColor.b,
             "lip_r": lipColor.r, "lip_g": lipColor.g, "lip_b": lipColor.b,
@@ -60,6 +63,8 @@ struct MakeupSpec: Codable, Equatable {
         take("chin_smooth", &chinSmooth); take("jaw_shade", &jawShade)
         take("blush", &blush); take("lip", &lip); take("lash", &lash)
         take("liner", &liner); take("lash_wing", &lashWing)
+        take("lash_gloss", &lashGloss)
+        take("lash_style", &lashStyle); take("liner_style", &linerStyle)
         take("nose_blush", &noseBlush); take("freckles", &freckles)
         take("lip_grad", &lipGrad)
         take("blush_r", &blushColor.r); take("blush_g", &blushColor.g); take("blush_b", &blushColor.b)
@@ -157,6 +162,9 @@ struct MakeupStudioSheet: View {
         ("makeup_opal_fantasy.png", "Opal Fantasy"),
     ]
 
+    static let lashStyleNames = ["Tightline", "Wispy", "Doll", "Cat", "Stage"]
+    static let linerStyleNames = ["Tightline", "Soft", "Wing", "Siren", "Graphic", "Smudged"]
+
     var body: some View {
         NavigationStack {
             List {
@@ -205,6 +213,9 @@ struct MakeupStudioSheet: View {
                     row("Lashes", $spec.lash)
                     row("Eyeliner", $spec.liner)
                     row("Wing", $spec.lashWing)
+                    row("Lash Gloss", $spec.lashGloss)
+                    stylePicker("Lash Style", $spec.lashStyle, names: Self.lashStyleNames)
+                    stylePicker("Liner Style", $spec.linerStyle, names: Self.linerStyleNames)
                     row("Nose Blush", $spec.noseBlush)
                     row("Freckles", $spec.freckles)
                     row("Contour Shade", $spec.jawShade)
@@ -244,6 +255,25 @@ struct MakeupStudioSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationBackgroundInteraction(.enabled(upThrough: .large))   // camera stays live behind
+    }
+
+    private func stylePicker(_ label: String, _ value: Binding<Double>, names: [String]) -> some View {
+        let binding = Binding<Int>(
+            get { min(max(Int(value.wrappedValue), 0), names.count - 1) },
+            set { value.wrappedValue = Double($0); onChange() }
+        )
+        return HStack(spacing: 10) {
+            Text(label).font(.label(12)).foregroundStyle(Theme.txt)
+                .frame(width: 104, alignment: .leading)
+            Picker(label, selection: binding) {
+                ForEach(0..<names.count, id: \.self) { i in
+                    Text(names[i]).tag(i)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(Theme.accent)
+            Spacer()
+        }
     }
 
     private func row(_ label: String, _ value: Binding<Double>, max: Double = 1.0) -> some View {
