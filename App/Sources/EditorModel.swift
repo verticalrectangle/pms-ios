@@ -508,7 +508,7 @@ final class EditorModel: ObservableObject {
             video = v
         }
         wireBaseFrameSink()
-        await video?.load(segments: segs, audioOnly: audioOnlySegments, seekTo: seekTo)
+        await video?.load(segments: segs, audioOnly: audioOnlySegments, seekTo: seekTo, size: CGSize(width: format.pixelSize.w, height: format.pixelSize.h))
         videoDuration = video?.duration
         videoLoaded = true
     }

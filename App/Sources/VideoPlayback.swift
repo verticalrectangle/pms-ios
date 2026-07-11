@@ -48,6 +48,9 @@ final class VideoPlayback {
     private var suppressTicks = false   // ignore the transient 0 during a reload
     private weak var engine: EngineStore?
     private(set) var duration: Double = 0
+    private var segments: [Segment] = []
+    private var imageBuffers: [URL: CVPixelBuffer] = [:]
+    private var size: CGSize = CGSize(width: 1080, height: 1920)
 
     /// (currentTime, isPlaying) — the AVPlayer clock, for the transport.
     var onTick: ((Double, Bool) -> Void)?
@@ -56,6 +59,7 @@ final class VideoPlayback {
         let url: URL; let start: Double; let sourceStart: Double; let duration: Double
         var speed: Double = 1        // timeline seconds consume `speed` source seconds
         var fadeIn: Double = 0; var fadeOut: Double = 0
+        var isImage: Bool { ImageDecoder.isImageURL(url) }
     }
 
     init(engine: EngineStore) {
@@ -87,7 +91,7 @@ final class VideoPlayback {
     /// `audioOnly`: clips whose SOUND plays but whose pixels are engine layers
     /// (audio-track clips; overlay video audio is a v1 gap per the plan).
     static func buildComposition(_ segments: [Segment], titles: [Clip] = [],
-                                 audioOnly: [Segment] = []) async throws -> (AVMutableComposition, AVMutableVideoComposition?) {
+                                 audioOnly: [Segment] = [], size: CGSize = CGSize(width: 1080, height: 1920)) async throws -> (AVMutableComposition, AVMutableVideoComposition?) {
         let comp = AVMutableComposition()
         let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
@@ -100,38 +104,42 @@ final class VideoPlayback {
                 vTrack?.insertEmptyTimeRange(gap)
                 aTrack?.insertEmptyTimeRange(gap)
             }
-            let asset = AVURLAsset(url: seg.url)
-            // Source range consumed = timeline duration × speed; the inserted
-            // range is then scaled back to the timeline duration (retime).
             let speed = max(0.01, seg.speed)
             let srcRange = CMTimeRange(start: CMTime(seconds: seg.sourceStart, preferredTimescale: 600),
                                        duration: CMTime(seconds: seg.duration * speed, preferredTimescale: 600))
             let tlDuration = CMTime(seconds: seg.duration, preferredTimescale: 600)
-            do {
-                if let sv = try await asset.loadTracks(withMediaType: .video).first {
-                    try vTrack?.insertTimeRange(srcRange, of: sv, at: clipStart)
-                    // Propagate the source track's orientation transform. AVComposition tracks
-                    // do NOT inherit preferredTransform on insert, so portrait phone clips
-                    // would render sideways unless we copy it over.
-                    if !firstVideoTransformSet {
-                        vTrack?.preferredTransform = try await sv.load(.preferredTransform)
-                        firstVideoTransformSet = true
+            if seg.isImage {
+                let imageRange = CMTimeRange(start: clipStart, duration: tlDuration)
+                vTrack?.insertEmptyTimeRange(imageRange)
+                aTrack?.insertEmptyTimeRange(imageRange)
+            } else {
+                let asset = AVURLAsset(url: seg.url)
+                do {
+                    if let sv = try await asset.loadTracks(withMediaType: .video).first {
+                        try vTrack?.insertTimeRange(srcRange, of: sv, at: clipStart)
+                        // Propagate the source track's orientation transform. AVComposition tracks
+                        // do NOT inherit preferredTransform on insert, so portrait phone clips
+                        // would render sideways unless we copy it over.
+                        if !firstVideoTransformSet {
+                            vTrack?.preferredTransform = try await sv.load(.preferredTransform)
+                            firstVideoTransformSet = true
+                        }
+                        if speed != 1 {
+                            vTrack?.scaleTimeRange(CMTimeRange(start: clipStart, duration: srcRange.duration),
+                                                   toDuration: tlDuration)
+                        }
                     }
-                    if speed != 1 {
-                        vTrack?.scaleTimeRange(CMTimeRange(start: clipStart, duration: srcRange.duration),
-                                               toDuration: tlDuration)
+                    if let sa = try await asset.loadTracks(withMediaType: .audio).first {
+                        try aTrack?.insertTimeRange(srcRange, of: sa, at: clipStart)
+                        if speed != 1 {
+                            aTrack?.scaleTimeRange(CMTimeRange(start: clipStart, duration: srcRange.duration),
+                                                   toDuration: tlDuration)
+                        }
                     }
+                } catch {
+                    // Propagate — a silently skipped clip reads as data loss.
+                    throw CompositionError.insertFailed(seg.url.lastPathComponent, error.localizedDescription)
                 }
-                if let sa = try await asset.loadTracks(withMediaType: .audio).first {
-                    try aTrack?.insertTimeRange(srcRange, of: sa, at: clipStart)
-                    if speed != 1 {
-                        aTrack?.scaleTimeRange(CMTimeRange(start: clipStart, duration: srcRange.duration),
-                                               toDuration: tlDuration)
-                    }
-                }
-            } catch {
-                // Propagate — a silently skipped clip reads as data loss.
-                throw CompositionError.insertFailed(seg.url.lastPathComponent, error.localizedDescription)
             }
             cursor = CMTimeAdd(clipStart, tlDuration)
         }
@@ -169,9 +177,10 @@ final class VideoPlayback {
         // correctly ORIENTED (the auto videoComposition mishandles the phone's
         // rotation transform → sideways), and it's where fades + titles apply.
         // For a plain clip the handler is a pass-through.
-        var size = CGSize(width: 1080, height: 1920)
+        var size = size
         if let v = try? await comp.loadTracks(withMediaType: .video).first,
-           let n = try? await v.load(.naturalSize), let tf = try? await v.load(.preferredTransform) {
+           let n = try? await v.load(.naturalSize), n.width > 0, n.height > 0,
+           let tf = try? await v.load(.preferredTransform) {
             let r = n.applying(tf); size = CGSize(width: abs(r.width), height: abs(r.height))
         }
         let titleLayers: [(clip: Clip, image: CIImage)] = titles.compactMap { c in
@@ -217,17 +226,20 @@ final class VideoPlayback {
     /// edit (trim/split/delete) calls this. Preserves the play position.
     /// Rapid edits cancel each other: only the newest rebuild installs.
     func load(segments: [Segment], titles: [Clip] = [], audioOnly: [Segment] = [],
-              seekTo: Double? = nil) async {
+              seekTo: Double? = nil, size: CGSize = CGSize(width: 1080, height: 1920)) async {
         loadGeneration += 1
         let gen = loadGeneration
         let wasPlaying = player.rate > 0
         let at = seekTo.map { CMTime(seconds: $0, preferredTimescale: 600) } ?? player.currentTime()
         suppressTicks = true   // swallow the item-swap's transient 0 until the seek lands
+        self.size = size
+        imageBuffers.removeAll()
+        self.segments = segments
 
         let comp: AVMutableComposition
         let vc: AVMutableVideoComposition?
         do {
-            (comp, vc) = try await Self.buildComposition(segments, titles: titles, audioOnly: audioOnly)
+            (comp, vc) = try await Self.buildComposition(segments, titles: titles, audioOnly: audioOnly, size: size)
         } catch {
             engine?.lastError = error.localizedDescription
             suppressTicks = false
@@ -295,11 +307,27 @@ final class VideoPlayback {
     private func pushFrame(hostTime: CFTimeInterval = CACurrentMediaTime()) {
         guard !suspended, let out = output else { return }
         let itemTime = out.itemTime(forHostTime: hostTime)
+        let t = itemTime.seconds
+        if let s = imageSegmentAt(t) {
+            guard let pb = imagePixelBuffer(for: s.url) else { return }
+            if let frameSink { frameSink(pb, t) }
+            else { engine?.submitCameraFrame(pb, rotation: 0, hostTime: t) }
+            return
+        }
         guard out.hasNewPixelBuffer(forItemTime: itemTime),
               let pb = out.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil)
         else { return }
-        if let frameSink { frameSink(pb, itemTime.seconds) }
-        else { engine?.submitCameraFrame(pb, rotation: 0, hostTime: itemTime.seconds) }
+        if let frameSink { frameSink(pb, t) }
+        else { engine?.submitCameraFrame(pb, rotation: 0, hostTime: t) }
+    }
+    private func imageSegmentAt(_ t: Double) -> Segment? {
+        segments.first(where: { $0.isImage && t >= $0.start && t < $0.start + $0.duration })
+    }
+    private func imagePixelBuffer(for url: URL) -> CVPixelBuffer? {
+        if let cached = imageBuffers[url] { return cached }
+        guard let pb = ImageDecoder.pixelBuffer(from: url) else { return nil }
+        imageBuffers[url] = pb
+        return pb
     }
 }
 
@@ -393,19 +421,32 @@ enum VideoExporter {
                                    engine: EngineStore, size: (w: Int, h: Int),
                                    isCancelled: @escaping () -> Bool = { false },
                                    progress: @escaping (Double) -> Void) async throws -> URL {
-        let (comp, vc0) = try await VideoPlayback.buildComposition(segments, audioOnly: audioOnly)
+        let (comp, vc0) = try await VideoPlayback.buildComposition(segments, audioOnly: audioOnly, size: CGSize(width: size.w, height: size.h))
 
-        // Static text layers: submit once; the engine windows them by clip span.
-        // Rasters use the export canvas size so placement fractions land on
-        // the same pixels as the preview raster (TextLayoutModel).
+        // Static text and image layers: submit once; the engine windows them by clip span.
+        // Images are decoded to their natural pixel size and the engine scales them.
+        let canvasSize = CGSize(width: size.w, height: size.h)
         for t in texts {
-            let pb = await LayerFeeder.rasterText(t.clipModel,
-                                                  canvas: CGSize(width: size.w, height: size.h))
-            engine.submitLayerFrame(track: t.track, clip: t.clip, pb, hostTime: -1)   // static layer: no scene-clock update
+            let pb = await LayerFeeder.rasterText(t.clipModel, canvas: canvasSize)
+            engine.submitLayerFrame(track: t.track, clip: t.clip, pb, hostTime: -1)
         }
-        // Overlay readers: sequential decode over each clip's source range.
+        var imageBaseClips = Set<Int>()
+        for seg in segments where ImageDecoder.isImageURL(seg.url) {
+            if let span = baseSpans.first(where: { $0.start == seg.start && $0.end == seg.start + seg.duration }) {
+                guard let pb = ImageDecoder.pixelBuffer(from: seg.url) else { continue }
+                engine.submitLayerFrame(track: span.track, clip: span.clip, pb, hostTime: -1)
+                imageBaseClips.insert(span.clip)
+            }
+        }
         var overlayReaders: [OverlayFrameSource] = []
-        for o in overlays { overlayReaders.append(try await OverlayFrameSource(o)) }
+        for o in overlays {
+            if ImageDecoder.isImageURL(o.url) {
+                guard let pb = ImageDecoder.pixelBuffer(from: o.url) else { continue }
+                engine.submitLayerFrame(track: o.track, clip: o.clip, pb, hostTime: -1)
+            } else {
+                overlayReaders.append(try await OverlayFrameSource(o))
+            }
+        }
         let ovl = overlayReaders
         let duration = comp.duration.seconds
         guard duration > 0 else { throw ExportError.emptyTimeline }
@@ -506,8 +547,11 @@ enum VideoExporter {
                     let pt = CMSampleBufferGetPresentationTimeStamp(sb)
                     let t = pt.seconds
                     if let span = baseSpans.first(where: { t >= $0.start && t < $0.end }) ?? baseSpans.last {
-                        // Scene path: the base frame is the primary track's layer...
-                        engine.submitLayerFrame(track: span.track, clip: span.clip, ipb, hostTime: t)
+                        if imageBaseClips.contains(span.clip) {
+                            // image base is a static layer; the composition frame is empty
+                        } else {
+                            engine.submitLayerFrame(track: span.track, clip: span.clip, ipb, hostTime: t)
+                        }
                     } else {
                         // ...no layered project → legacy single-content path.
                         engine.submitCameraFrame(ipb, rotation: 0, hostTime: t)

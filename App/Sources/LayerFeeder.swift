@@ -51,6 +51,7 @@ final class LayerFeeder {
 
     private var overlays: [OverlaySource] = []
     private var textKeys: [EngineClipAddress: String] = [:]   // what raster each address holds
+    private var imageLayers: [EngineClipAddress: CVPixelBuffer] = [:]
     private var playing = false
     private var playhead: Double = 0
     private var suspendedForExport = false
@@ -96,9 +97,22 @@ final class LayerFeeder {
         for o in overlays { o.player.pause(); o.player.replaceCurrentItem(with: nil) }
         overlays.removeAll()
         var skipped = 0
+        var liveImages: Set<EngineClipAddress> = []
         for tr in tracks where tr.kind == .video && tr.engineIndex != primaryEngineTrack {
             for c in tr.clips {
                 guard let a = c.address, let url = c.sourceURL else { continue }
+                if ImageDecoder.isImageURL(url) {
+                    liveImages.insert(a)
+                    if imageLayers[a] == nil {
+                        if let pb = ImageDecoder.pixelBuffer(from: url) {
+                            engine?.submitLayerFrame(track: a.track, clip: a.clip, pb, hostTime: -1)
+                            imageLayers[a] = pb
+                        } else {
+                            engine?.submitLayerFrame(track: a.track, clip: a.clip, nil, hostTime: -1)
+                        }
+                    }
+                    continue
+                }
                 if overlays.count >= Self.overlayVideoCap { skipped += 1; continue }
                 overlays.append(OverlaySource(url: url, address: a,
                                               clipStart: c.start, clipEnd: c.end,
@@ -107,6 +121,11 @@ final class LayerFeeder {
         }
         if skipped > 0 {
             engine?.lastError = "Layer budget: \(skipped) overlay video clip\(skipped == 1 ? "" : "s") beyond the \(Self.overlayVideoCap)-layer cap aren't rendered."
+        }
+        // Clear stale image layers
+        for (a, _) in imageLayers where !liveImages.contains(a) {
+            engine?.submitLayerFrame(track: a.track, clip: a.clip, nil, hostTime: -1)
+            imageLayers.removeValue(forKey: a)
         }
 
         // Text layers: raster + submit once per content change; stale ones clear.
