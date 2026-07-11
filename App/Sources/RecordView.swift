@@ -11,6 +11,9 @@
 // recorder, so all state updates stay on the main queue.
 import SwiftUI
 import AVFoundation
+import CoreVideo
+import Metal
+import AudioToolbox
 
 struct RecordView: View {
     @ObservedObject var engine: EngineStore
@@ -48,6 +51,10 @@ struct RecordView: View {
     @State private var finalizing = false
     @State private var placed = false
     @State private var isTornDown = false
+    @State private var isPressed = false
+    @State private var holdTask: Task<Void, Never>?
+    @State private var flashEnabled = false
+    @State private var flashOpacity = 0.0
 
     private let ticker = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
@@ -101,6 +108,9 @@ struct RecordView: View {
                 lookRail
                 recordRow
             }
+            Color.white.opacity(flashOpacity)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
         }
         .statusBarHidden()
         .onAppear { resetState(); claimFramePath(); startCamera() }
@@ -153,6 +163,13 @@ struct RecordView: View {
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Capsule().fill(.black.opacity(0.35)))
             Spacer()
+            Button { flashEnabled.toggle(); haptic() } label: {
+                Image(systemName: flashEnabled ? "bolt.fill" : "bolt")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(flashEnabled ? Theme.accent : .white)
+                    .padding(10)
+                    .background(Circle().fill(.black.opacity(0.35)))
+            }
             Button { timerArmed.toggle(); haptic() } label: {
                 Image(systemName: timerArmed ? "timer.circle.fill" : "timer")
                     .font(.system(size: 16, weight: .semibold))
@@ -257,9 +274,10 @@ struct RecordView: View {
     }
 
     private var recordRow: some View {
-        HStack(spacing: 28) {
+        HStack(spacing: 20) {
             undoButton
             recordButton
+            photoButton
             doneButton
         }
         .padding(.bottom, 26)
@@ -267,17 +285,33 @@ struct RecordView: View {
     }
 
     private var recordButton: some View {
-        Button(action: recordTapped) {
-            ZStack {
-                Circle().strokeBorder(.white.opacity(0.9), lineWidth: 4)
-                    .frame(width: 74, height: 74)
-                RoundedRectangle(cornerRadius: recording ? 7 : 30)
-                    .fill(Color(red: 1, green: 0.27, blue: 0.27))
-                    .frame(width: recording ? 30 : 60, height: recording ? 30 : 60)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: recording)
-            }
+        ZStack {
+            Circle().strokeBorder(.white.opacity(0.9), lineWidth: 4)
+                .frame(width: 74, height: 74)
+            RoundedRectangle(cornerRadius: recording ? 7 : 30)
+                .fill(Color(red: 1, green: 0.27, blue: 0.27))
+                .frame(width: recording ? 30 : 60, height: recording ? 30 : 60)
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: recording)
         }
-        .pressable()
+        .scaleEffect(isPressed ? 0.97 : 1)
+        .brightness(isPressed ? 0.06 : 0)
+        .animation(.spring(response: 0.22, dampingFraction: 0.7), value: isPressed)
+        .contentShape(Circle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !isPressed && countdown == nil && !finalizing && !isTornDown {
+                        isPressed = true
+                        startHold()
+                    }
+                }
+                .onEnded { _ in
+                    isPressed = false
+                    holdTask?.cancel()
+                    holdTask = nil
+                    if recording { stopRecording() }
+                }
+        )
         .disabled(countdown != nil || finalizing)
     }
 
@@ -291,6 +325,17 @@ struct RecordView: View {
         }
         .disabled(segments.isEmpty || finalizing)
         .pressable()
+    }
+    private var photoButton: some View {
+        Button(action: capturePhoto) {
+            Image(systemName: "camera")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(.black.opacity(0.35)))
+        }
+        .pressable()
+        .disabled(countdown != nil || finalizing || recording)
     }
 
     private var doneButton: some View {
@@ -421,6 +466,9 @@ struct RecordView: View {
         elapsed = 0
         countdown = nil
         errorText = nil
+        isPressed = false
+        holdTask = nil
+        flashOpacity = 0
         nextSegmentIndex = 0
         segments.removeAll()
         inFlight.removeAll()
@@ -428,10 +476,6 @@ struct RecordView: View {
         currentSegmentIndex = nil
     }
 
-    private func recordTapped() {
-        if recording { stopRecording(); return }
-        if timerArmed { runCountdown(3) } else { startRecording() }
-    }
 
     private func runCountdown(_ n: Int) {
         guard n > 0 else {
@@ -488,13 +532,113 @@ struct RecordView: View {
                 errorText = "Take failed to write."
                 return
             }
-            segments.append(RecordedSegment(index: index, url: url, duration: nil))
+            segments.append(RecordedSegment(index: index, url: url, duration: nil, kind: .video))
             segments.sort { $0.index < $1.index }
             measureDuration(url: url, index: index)
         }
         haptic()
     }
 
+    private func capturePhoto() {
+        guard !isTornDown, !finalizing, !recording, camera != nil else { return }
+        let width = 720, height = 1280
+        let url = ProjectStore.mediaDir(model.project.id)
+            .appendingPathComponent("\(UUID().uuidString).png")
+        let attrs: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height,
+            kCVPixelBufferMetalCompatibilityKey as String: true,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+        ]
+        var pb: CVPixelBuffer?
+        guard CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, attrs as CFDictionary, &pb) == kCVReturnSuccess,
+              let pixelBuffer = pb else {
+            errorText = "Photo capture failed to create buffer."
+            return
+        }
+        var cache: CVMetalTextureCache?
+        CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, engine.device, nil, &cache)
+        var cvTex: CVMetalTexture?
+        guard let cache,
+              CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, cache, pixelBuffer, nil, .bgra8Unorm, width, height, 0, &cvTex) == kCVReturnSuccess,
+              let cv = cvTex, let tex = CVMetalTextureGetTexture(cv) else {
+            errorText = "Photo capture failed to create Metal texture."
+            return
+        }
+        engine.render(into: tex)
+        engine.renderWait()
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+            errorText = "Photo capture failed to lock buffer."
+            return
+        }
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        let buffer = UnsafeMutableBufferPointer(start: baseAddress.assumingMemoryBound(to: UInt8.self), count: height * bytesPerRow)
+        let imageData = Data(buffer)
+        guard let provider = CGDataProvider(data: imageData as CFData) else {
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+            errorText = "Photo capture failed to create image provider."
+            return
+        }
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue)
+        guard let cgImage = CGImage(
+                width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: bytesPerRow, space: colorSpace, bitmapInfo: bitmapInfo,
+                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
+            errorText = "Photo capture failed to create CGImage."
+            return
+        }
+        let uiImage = UIImage(cgImage: cgImage)
+        guard let data = uiImage.pngData() else {
+            errorText = "Photo capture failed to encode PNG."
+            return
+        }
+        do {
+            try data.write(to: url)
+        } catch {
+            errorText = "Photo capture failed to save: \(error.localizedDescription)"
+            return
+        }
+        let index = nextSegmentIndex
+        nextSegmentIndex += 1
+        segments.append(RecordedSegment(index: index, url: url, duration: 3.0, kind: .photo))
+        segments.sort { $0.index < $1.index }
+        haptic()
+        if flashEnabled { showFlash() }
+        playShutterSound()
+    }
+
+    private func startHold() {
+        holdTask?.cancel()
+        holdTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard isPressed, !recording, !finalizing, !isTornDown else { return }
+            if timerArmed {
+                runCountdown(3)
+            } else {
+                startRecording()
+            }
+        }
+    }
+
+    private func showFlash() {
+        withAnimation(.easeOut(duration: 0.08)) {
+            flashOpacity = 1.0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            withAnimation(.easeOut(duration: 0.25)) {
+                flashOpacity = 0.0
+            }
+        }
+    }
+
+    private func playShutterSound() {
+        AudioServicesPlaySystemSound(1108)
+    }
     private func doneTapped() {
         guard canDone, !finalizing else { return }
         finalizing = true
@@ -528,6 +672,7 @@ struct RecordView: View {
                 }
                 if status == .loaded, seconds > 0 {
                     if let i = segments.firstIndex(where: { $0.index == index }) {
+                        guard segments[i].kind == .video else { return }
                         segments[i].duration = seconds
                         haptic()
                     } else {
@@ -602,10 +747,13 @@ struct RecordView: View {
     }
 }
 
+private enum SegmentKind { case video, photo }
+
 private struct RecordedSegment: Identifiable {
     let index: Int
     let url: URL
     var duration: Double?
+    let kind: SegmentKind
     var id: Int { index }
 }
 
