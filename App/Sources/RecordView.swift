@@ -194,7 +194,7 @@ struct RecordView: View {
     private var intensityRow: some View {
         HStack(spacing: 10) {
             Image(systemName: "dial.low").font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
-            Slider(value: $intensity, in: 0.05...1).tint(Theme.accent)
+            Slider(value: $intensity, in: 0.05...1.5).tint(Theme.accent)
             Text("\(Int(intensity * 100))%").font(.num(11)).foregroundStyle(.white.opacity(0.8))
                 .frame(width: 40, alignment: .trailing)
             if lookUsesFace {
@@ -401,7 +401,8 @@ struct RecordView: View {
                 let c = CameraCapture(engine: engine)
                 c.matteEnabled = lookUsesMatte
                 do {
-                    try c.start(position: position)
+                    try c.start(position: position, preset: .hd1080,
+                                orientation: captureOrientation(for: model.format))
                     camera = c
                     pushLive()
                 } catch {
@@ -411,9 +412,14 @@ struct RecordView: View {
         }
     }
 
+    private func captureOrientation(for format: Format) -> CameraCapture.CaptureOrientation {
+        format == .landscape ? .landscape : .portrait
+    }
+
     private func flipCamera() {
         position = (position == .front) ? .back : .front
-        do { try camera?.start(position: position); haptic() }
+        do { try camera?.start(position: position, preset: .hd1080,
+                               orientation: captureOrientation(for: model.format)); haptic() }
         catch { errorText = error.localizedDescription }
     }
 
@@ -497,7 +503,7 @@ struct RecordView: View {
         // WYSIWYG: every camera frame is re-rendered through the engine's
         // live-FX stack and encoded — the look is IN the recorded pixels
         // (makeup, matte trails, everything), exactly as previewed.
-        guard let rec = FilteredTakeRecorder(engine: engine, url: url) else {
+        guard let rec = FilteredTakeRecorder(engine: engine, url: url, width: model.format.pixelSize.w, height: model.format.pixelSize.h) else {
             errorText = "Take recorder failed to start."
             return
         }
@@ -543,7 +549,7 @@ struct RecordView: View {
 
     private func capturePhoto() {
         guard !isTornDown, !finalizing, !recording, photoInFlight == nil, camera != nil else { return }
-        let width = 720, height = 1280
+        let (width, height) = model.format.pixelSize
         let url = ProjectStore.mediaDir(model.project.id)
             .appendingPathComponent("\(UUID().uuidString).mov")
         let attrs: [String: Any] = [

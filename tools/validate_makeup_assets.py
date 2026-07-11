@@ -248,8 +248,8 @@ def main():
     ]
     makeup_ids = [lk["id"] for lk in makeup_looks]
 
-    if len(makeup_ids) != 35:
-        error(errors, f"Makeup rail has {len(makeup_ids)} presets, expected 35")
+    if len(makeup_ids) != 55:
+        error(errors, f"Makeup rail has {len(makeup_ids)} presets, expected 55")
     if len(set(makeup_ids)) != len(makeup_ids):
         seen = set()
         dups = {x for x in makeup_ids if x in seen or seen.add(x)}
@@ -286,7 +286,7 @@ def main():
 
     # ── face_fx textures and wiring ─────────────────────────────────────────
     face_fx_texs = {lk["makeupTex"] for lk in makeup_looks if lk["makeupTex"]}
-    expected_tex_count = 35 - 2  # natural and belle are procedural; the rest use a plate
+    expected_tex_count = 55 - 2  # natural and belle are procedural; the rest use a plate
     if len(face_fx_texs) != expected_tex_count:
         error(errors, (
             f"expected {expected_tex_count} face_fx makeup textures, "

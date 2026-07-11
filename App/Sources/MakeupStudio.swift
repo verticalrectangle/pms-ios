@@ -15,7 +15,7 @@ struct MakeupSpec: Codable, Equatable {
     var eyes = 0.08, cheek = 0.05, vline = 0.10, nose = 0.10,
         lipsPlump = 0.04, chinSmooth = 0.3, jawShade = 0.0
     // procedural makeup
-    var blush = 0.15, lip = 0.12, lash = 0.35, liner = 0.2, lashWing = 0.2,
+    var blush = 0.25, lip = 0.20, lash = 0.50, liner = 0.40, lashWing = 0.30,
         noseBlush = 0.0, freckles = 0.0, lipGrad = 1.0
     var blushColor = RGB(r: 1.0, g: 0.45, b: 0.55)
     var lipColor   = RGB(r: 0.95, g: 0.25, b: 0.35)
@@ -155,6 +155,26 @@ struct MakeupStudioSheet: View {
         ("makeup_grunge_smoke.png", "Grunge Smoke"),
         ("makeup_midnight_goth.png", "Midnight Goth"),
         ("makeup_opal_fantasy.png", "Opal Fantasy"),
+        ("makeup_teal_wing.png", "Teal Wing"),
+        ("makeup_bronze_glam.png", "Bronze Glam"),
+        ("makeup_gamer_girl.png", "Gamer Girl"),
+        ("makeup_copper_smoke.png", "Copper Smoke"),
+        ("makeup_coral_flush.png", "Coral Flush"),
+        ("makeup_champagne_wing.png", "Champagne Wing"),
+        ("makeup_fairy_doll.png", "Fairy Doll"),
+        ("makeup_warm_sculpt.png", "Warm Sculpt"),
+        ("makeup_pink_freckle.png", "Pink Freckle"),
+        ("makeup_soft_korean.png", "Soft Korean"),
+        ("makeup_glitter_wing.png", "Glitter Wing"),
+        ("makeup_berry_stain.png", "Berry Stain"),
+        ("makeup_sunburn_girl.png", "Sunburn Girl"),
+        ("makeup_mocha_wing.png", "Mocha Wing"),
+        ("makeup_rose_liner.png", "Rose Liner"),
+        ("makeup_amber_smoke.png", "Amber Smoke"),
+        ("makeup_punk_wing.png", "Punk Wing"),
+        ("makeup_peach_brim.png", "Peach Brim"),
+        ("makeup_honey_freckle.png", "Honey Freckle"),
+        ("makeup_vivid_glam.png", "Vivid Glam"),
     ]
 
     var body: some View {
