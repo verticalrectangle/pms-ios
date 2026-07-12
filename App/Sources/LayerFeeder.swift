@@ -15,6 +15,7 @@ import AVFoundation
 import CoreVideo
 import CoreText
 import QuartzCore
+import SwiftUI
 import UIKit
 
 /// Loads bundled custom display fonts (.ttf in App/Resources/Fonts) and
@@ -25,16 +26,15 @@ enum DisplayFonts {
 
     static func registerAll() {
         guard !registered else { return }
-        registered = true
-        guard let fontsURL = Bundle.main.urls(forResourcesWithExtension: "ttf", directory: "Fonts") else { return }
+        guard let fontsURL = Bundle.main.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") else { return }
         for url in fontsURL {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
             let base = url.deletingPathExtension().lastPathComponent
             let sanitized = base.lowercased().replacingOccurrences(of: "[^a-z0-9]", with: "_", options: .regularExpression)
-            // After registration, find the actual PostScript name by family.
-            if let desc = CTFontManagerCreateFontDescriptorFromURL(url as CFURL) {
-                let postScript = CTFontDescriptorCopyAttribute(desc, kCTFontNameAttribute) as? String
-                if let ps = postScript { loaded[sanitized] = ps }
+            // After registration, get the PostScript name via CTFont.
+            let ctFont = CTFontCreateWithURL(url as CFURL, 12, nil)
+            if let ps = CTFontCopyPostScriptName(ctFont) as String? {
+                loaded[sanitized] = ps
             }
         }
     }
