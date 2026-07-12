@@ -127,11 +127,12 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
     /// The engine accepts one-plane BGRA textures only, so map and rotate here
     /// rather than interpreting Y as four BGRA pixels in the Metal compositor.
     ///
-    /// Coordinate contract (locked): portrait is UNMIRRORED. Person's left
-    /// lands on the RIGHT of the buffer (larger X). Do NOT mirror here to
-    /// "match selfie" — the engine's ARKit→MediaPipe map is person-L/R and
-    /// assumes this unmirrored frame. Mirroring the preview without flipping
-    /// the map (or vice versa) swaps eye makeup.
+    /// Coordinate contract: portrait is UNMIRRORED. Person's left lands on
+    /// the RIGHT of the buffer (larger X). The engine's ARKit→MediaPipe
+    /// correspondence (generated arkit_mp_map.h) is index-based and
+    /// anatomical, so makeup stays correct under any convention — but the
+    /// frame and the projected mesh below MUST use the same one. If you ever
+    /// mirror this buffer (selfie preview), mirror projectPoint results too.
     private func portraitBGRAFrame(from source: CVPixelBuffer) -> CVPixelBuffer? {
         let width = CVPixelBufferGetHeight(source)
         let height = CVPixelBufferGetWidth(source)

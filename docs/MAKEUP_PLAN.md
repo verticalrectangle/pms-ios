@@ -282,3 +282,26 @@ any face work). Then 1 → 2 → 3 → 4 with per-stage gates.
   unmirrored ARKit coordinate contract in map header + `ARKitCameraCapture`.
   Gate: `tools/test_arkit_landmark_map.py` (topology + critical MP cases).
   Still requires Mac xcframework rebuild to ship to device.
+- 2026-07-12 (correspondence rewrite — supersedes the two entries above):
+  the hand-typed `arkit_landmark_map.h` had person-L/R systematically
+  INVERTED (verified against canonical geometry: both meshes face +z with
+  +y up, so +x = person's left in both; the table mapped MP 33 → ARKit 1069
+  which sits at x=+45). Every "swap L/R" patch in the history was fighting
+  this root error. Whole heuristic chain deleted (hand table, runtime
+  landmark discovery, IDW fill, screen-space snap, first-frame-cached UV
+  remap). Replacement: `tools/gen_arkit_mp_map.py` computes the exact
+  correspondence OFFLINE from the canonical rest-pose meshes
+  (`tools/arkit_face_canonical.obj`, an ARFaceGeometry neutral dump, +
+  `canonical_face_model.obj`) via anatomical-anchor Umeyama fit (RMS 5.3mm;
+  x-flipped hypothesis 22.7mm — self-validating L/R) → generated
+  `src/generated/arkit_mp_map.h`: `k_arkit_mp_uv[1220][2]` (MediaPipe-atlas
+  UV per ARKit vertex, feeds the Metal makeup mesh pass) and
+  `k_mp_from_arkit[478]` (barycentric weights over ARKit verts per MP
+  landmark — `arkit_face.cpp` now evaluates all 478 positions exactly, in
+  one loop, pose/expression independent). Coordinate contract unchanged:
+  unmirrored portrait, person's left on the buffer's right; correctness no
+  longer depends on it since the correspondence is anatomical end-to-end.
+  Gate: `arkit-map-smoke` (CMake target; run with
+  `tools/arkit_face_canonical.obj`) asserts anatomical placement and would
+  have caught the inversion. Old gate `test_arkit_landmark_map.py` removed
+  with the table it tested.
