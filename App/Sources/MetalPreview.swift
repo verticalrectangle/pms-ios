@@ -132,15 +132,22 @@ struct LyricOverlay: View {
                         // the text shape — only scratches inside the letterform.
                         Canvas { ctx, size in
                             let frame = Int(timeline.date.timeIntervalSinceReferenceDate * 24)
-                            for i in 0..<20 {
+                            // Vertical scratches (default)
+                            for i in 0..<24 {
                                 let sx = CGFloat(Self.hash01(i, frame)) * size.width
-                                let sy = CGFloat(Self.hash01(i + 7, frame)) * size.height
-                                let ang = (CGFloat(Self.hash01(i + 13, frame)) - 0.5) * .pi * 0.4
-                                let len = size.width * (0.3 + CGFloat(Self.hash01(i + 19, frame)) * 0.7)
+                                let jitter = (CGFloat(Self.hash01(i + 13, frame)) - 0.5) * size.height * 0.04
                                 var p = Path()
-                                p.move(to: CGPoint(x: sx, y: sy))
-                                p.addLine(to: CGPoint(x: sx + cos(ang) * len,
-                                                      y: sy + sin(ang) * len))
+                                p.move(to: CGPoint(x: sx, y: 0))
+                                p.addLine(to: CGPoint(x: sx + jitter, y: size.height))
+                                ctx.stroke(p, with: .color(.white), lineWidth: 2.0)
+                            }
+                            // Horizontal scratches (for crossbars / horizontal areas)
+                            for i in 0..<8 {
+                                let sy = CGFloat(Self.hash01(i + 7, frame)) * size.height
+                                let jitter = (CGFloat(Self.hash01(i + 19, frame)) - 0.5) * size.width * 0.04
+                                var p = Path()
+                                p.move(to: CGPoint(x: 0, y: sy))
+                                p.addLine(to: CGPoint(x: size.width, y: sy + jitter))
                                 ctx.stroke(p, with: .color(.white), lineWidth: 2.0)
                             }
                         }

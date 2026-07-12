@@ -372,16 +372,25 @@ final class LayerFeeder {
         ctx.scaleBy(x: 1, y: -1)
         let lay = TextLayoutModel.layout(c.label, clip: c, in: canvas)
 
-        // ── 1. Draw white scratch lines across the text area ─────────────
-        let nScratches = 20 + frame % 12
-        for i in 0..<nScratches {
+        // ── 1. Draw white scratch lines: mostly vertical, some horizontal ─
+        // The .destinationIn mask below naturally shows vertical scratches
+        // in vertical parts of the letter and horizontal scratches in
+        // horizontal bars (e.g. the crossbar of an 'A' or 'H').
+        let nVertical = 24 + frame % 10
+        let nHorizontal = 8 + frame % 6
+        // Vertical scratches: random x, span full text height
+        for i in 0..<nVertical {
             let sx = CGFloat(hash01(i, frame)) * lay.rect.width
+            let jitter = (CGFloat(hash01(i + 13, frame)) - 0.5) * lay.rect.height * 0.04
+            ctx.move(to: CGPoint(x: lay.rect.minX + sx, y: lay.rect.minY))
+            ctx.addLine(to: CGPoint(x: lay.rect.minX + sx + jitter, y: lay.rect.maxY))
+        }
+        // Horizontal scratches: random y, span full text width
+        for i in 0..<nHorizontal {
             let sy = CGFloat(hash01(i + 7, frame)) * lay.rect.height
-            let ang = (CGFloat(hash01(i + 13, frame)) - 0.5) * .pi * 0.4
-            let len = lay.rect.width * (0.3 + CGFloat(hash01(i + 19, frame)) * 0.7)
-            ctx.move(to: CGPoint(x: lay.rect.minX + sx, y: lay.rect.minY + sy))
-            ctx.addLine(to: CGPoint(x: lay.rect.minX + sx + cos(ang) * len,
-                                    y: lay.rect.minY + sy + sin(ang) * len))
+            let jitter = (CGFloat(hash01(i + 19, frame)) - 0.5) * lay.rect.width * 0.04
+            ctx.move(to: CGPoint(x: lay.rect.minX, y: lay.rect.minY + sy))
+            ctx.addLine(to: CGPoint(x: lay.rect.maxX, y: lay.rect.minY + sy + jitter))
         }
         ctx.setStrokeColor(UIColor.white.cgColor)
         ctx.setLineWidth(2.0)
