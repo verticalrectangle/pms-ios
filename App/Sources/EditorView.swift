@@ -46,6 +46,7 @@ struct EditorView: View {
 
     @State private var fullscreen = false
     @State private var showRecord = false   // full-screen camera capture (RecordView)
+    @State private var recordCoverActive = false  // opaque veil until the RecordView cover is up (prevents translucent flash)
     @State private var pickerItem: PhotosPickerItem?
     @StateObject private var keyboard = KeyboardObserver()
     @Environment(\.scenePhase) private var scenePhase
@@ -55,7 +56,7 @@ struct EditorView: View {
         self.projectName = project.isNew ? "" : project.name   // unnamed until saved with a title
         self.autoRecord = autoRecord
         _model = StateObject(wrappedValue: EditorModel(project: project, engine: engine))
-        _showRecord = State(initialValue: autoRecord)   // Home's camera button lands here recording-ready
+        _recordCoverActive = State(initialValue: autoRecord)   // veil up from the first frame; cleared when the cover dismisses
     }
 
     private var t: Double { model.playhead }
@@ -149,6 +150,10 @@ struct EditorView: View {
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedLyricClip?.id)
         .background(AtmosphereView().ignoresSafeArea())
+        // autoRecord: an opaque veil covers the editor's Atmosphere + Liquid Glass
+        // until the fullScreenCover finishes presenting — without it they flash
+        // through during the cover's slide-up. Cleared in onChange(showRecord).
+        .overlay { if recordCoverActive { Color.black.ignoresSafeArea() } }
         // Tap empty space while editing a title → commit + dismiss keyboard (text
         // is saved live). Gated so it never interferes with normal use.
         .onTapGesture { if model.selectedLyricClip != nil { model.selectedID = nil } }
@@ -160,9 +165,10 @@ struct EditorView: View {
         }
         .onChange(of: scenePhase) { _, p in if p != .active { model.save() } }  // + on background
         .onAppear {
-            // NavigationStack may initialize this destination before its
-            // full-screen cover can be presented. Re-apply the home camera
-            // intent after the destination is on screen.
+            // showRecord starts false so this is a real false→true transition
+            // (setting it from init may not fire the cover if the destination
+            // isn't in the window hierarchy yet). The recordCoverActive veil
+            // hides the editor until the cover is up.
             if autoRecord { showRecord = true }
         }
         // Native bars step aside as the preview expands to fullscreen; the dock
@@ -229,6 +235,7 @@ struct EditorView: View {
         .fullScreenCover(isPresented: $showRecord) {
             RecordView(engine: engine, model: model, isPresented: $showRecord)
         }
+        .onChange(of: showRecord) { _, presented in if !presented { recordCoverActive = false } }
         .sheet(item: $model.activeSheet) { sheet in
             switch sheet {
             case .media:  MediaSheet(model: model)
