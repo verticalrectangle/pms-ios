@@ -395,11 +395,10 @@ final class LayerFeeder {
     /// Per-frame scratch-raw raster: each letter IS scratches. We render each
     /// glyph to a small coverage bitmap, sample it, and draw parallel hatch
     /// lines (vertical by default, horizontal for wide glyphs) only where the
-    /// glyph has alpha. At each coverage transition we draw a short
-    /// perpendicular outline mark. All strokes use rough, variable parameters
-    /// that re-randomize per frame at 24fps. No mask tricks — the letters are
-    /// literally drawn from scratch lines. Per-letter staggered pop: each
-    /// letter snaps on at its stagger time.
+    /// glyph has alpha. Sparse spacing + thin strokes keep letters legible;
+    /// jitter + gaps add the hand-scratched feel. No mask tricks — the letters
+    /// are literally drawn from scratch lines. Hard cut on/off per letter
+    /// (staggered, no fade).
     static func rasterScratchRawText(_ c: Clip, canvas: CGSize = CGSize(width: 1080, height: 1920),
                                      frame: Int) -> CVPixelBuffer? {
         guard !c.label.isEmpty else { return nil }
@@ -428,12 +427,13 @@ final class LayerFeeder {
         let localT = Double(frame) / 24.0
         let stagger = 0.06
         let threshold: UInt8 = 50
-        let spacing = 3
+        let spacing = 5
         let para = NSMutableParagraphStyle(); para.alignment = lay.alignment
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font, .foregroundColor: UIColor.white, .paragraphStyle: para,
         ]
         let glyphH = lay.fontSize * 1.2
+        let strokeCol = UIColor.white.cgColor
 
         var gi = 0
         var curX = lay.rect.minX
@@ -442,11 +442,9 @@ final class LayerFeeder {
             let charW = (charStr as NSString).size(withAttributes: attrs).width
             if ch == " " { curX += charW; continue }
 
-            // Per-letter staggered pop
+            // Hard cut: letter is on or off, no fade
             let et = localT - Double(gi) * stagger
             if et < 0 { curX += charW; gi += 1; continue }
-            let a = CGFloat(min(1.0, et / 0.06))
-            let strokeCol = UIColor(white: 1, alpha: a).cgColor
 
             // Render glyph to small bitmap for coverage sampling
             let bmpW = max(2, Int(charW) + 4)
@@ -476,28 +474,18 @@ final class LayerFeeder {
                 let sy = glyphH / CGFloat(bmpH)
                 let horizontal = charW > glyphH * 1.3
 
-                // Hatch + outline marks
+                // Interior hatch only — sparse, thin, rough
                 if horizontal {
                     for y in stride(from: 0, to: bmpH, by: spacing) {
                         var seg = -1
                         for x in 0...bmpW {
                             let c = (x < bmpW) ? cov[y * bmpW + x] : UInt8(0)
                             if c > threshold {
-                                if seg < 0 {
-                                    seg = x
-                                    let ei = y / spacing
-                                    let mk = 2 + CGFloat(Self.hash01(gi * 71 + ei, frame + 7)) * 3
-                                    let mt = 1 + CGFloat(Self.hash01(gi * 97 + ei, frame + 31)) * 1.5
-                                    let mx = curX + CGFloat(x) * sx, my = lay.rect.minY + CGFloat(y) * sy
-                                    ctx.setStrokeColor(strokeCol); ctx.setLineWidth(mt)
-                                    ctx.move(to: CGPoint(x: mx, y: my - mk * sy))
-                                    ctx.addLine(to: CGPoint(x: mx, y: my + mk * sy))
-                                    ctx.strokePath()
-                                }
+                                if seg < 0 { seg = x }
                             } else if seg >= 0 {
                                 let si = y / spacing
                                 if Self.hash01(gi * 17 + si, frame) > 0.08 {
-                                    let th = 1.5 + CGFloat(Self.hash01(gi * 31 + si, frame + 13)) * 2.5
+                                    let th = 1 + CGFloat(Self.hash01(gi * 31 + si, frame + 13)) * 1
                                     let jy = (CGFloat(Self.hash01(gi * 43 + si, frame + 27)) - 0.5) * 2
                                     ctx.setStrokeColor(strokeCol); ctx.setLineWidth(th)
                                     ctx.move(to: CGPoint(x: curX + CGFloat(seg) * sx,
@@ -506,14 +494,6 @@ final class LayerFeeder {
                                                          y: lay.rect.minY + CGFloat(y) * sy + jy))
                                     ctx.strokePath()
                                 }
-                                let ei = y / spacing
-                                let mk = 2 + CGFloat(Self.hash01(gi * 83 + ei, frame + 19)) * 3
-                                let mt = 1 + CGFloat(Self.hash01(gi * 113 + ei, frame + 43)) * 1.5
-                                let mx = curX + CGFloat(x - 1) * sx, my = lay.rect.minY + CGFloat(y) * sy
-                                ctx.setStrokeColor(strokeCol); ctx.setLineWidth(mt)
-                                ctx.move(to: CGPoint(x: mx, y: my - mk * sy))
-                                ctx.addLine(to: CGPoint(x: mx, y: my + mk * sy))
-                                ctx.strokePath()
                                 seg = -1
                             }
                         }
@@ -524,21 +504,11 @@ final class LayerFeeder {
                         for y in 0...bmpH {
                             let c = (y < bmpH) ? cov[y * bmpW + x] : UInt8(0)
                             if c > threshold {
-                                if seg < 0 {
-                                    seg = y
-                                    let ei = x / spacing
-                                    let mk = 2 + CGFloat(Self.hash01(gi * 71 + ei, frame + 7)) * 3
-                                    let mt = 1 + CGFloat(Self.hash01(gi * 97 + ei, frame + 31)) * 1.5
-                                    let mx = curX + CGFloat(x) * sx, my = lay.rect.minY + CGFloat(y) * sy
-                                    ctx.setStrokeColor(strokeCol); ctx.setLineWidth(mt)
-                                    ctx.move(to: CGPoint(x: mx - mk * sx, y: my))
-                                    ctx.addLine(to: CGPoint(x: mx + mk * sx, y: my))
-                                    ctx.strokePath()
-                                }
+                                if seg < 0 { seg = y }
                             } else if seg >= 0 {
                                 let si = x / spacing
                                 if Self.hash01(gi * 17 + si, frame) > 0.08 {
-                                    let th = 1.5 + CGFloat(Self.hash01(gi * 31 + si, frame + 13)) * 2.5
+                                    let th = 1 + CGFloat(Self.hash01(gi * 31 + si, frame + 13)) * 1
                                     let jx = (CGFloat(Self.hash01(gi * 43 + si, frame + 27)) - 0.5) * 2
                                     ctx.setStrokeColor(strokeCol); ctx.setLineWidth(th)
                                     ctx.move(to: CGPoint(x: curX + CGFloat(x) * sx + jx,
@@ -547,14 +517,6 @@ final class LayerFeeder {
                                                          y: lay.rect.minY + CGFloat(y - 1) * sy))
                                     ctx.strokePath()
                                 }
-                                let ei = x / spacing
-                                let mk = 2 + CGFloat(Self.hash01(gi * 83 + ei, frame + 19)) * 3
-                                let mt = 1 + CGFloat(Self.hash01(gi * 113 + ei, frame + 43)) * 1.5
-                                let mx = curX + CGFloat(x) * sx, my = lay.rect.minY + CGFloat(y - 1) * sy
-                                ctx.setStrokeColor(strokeCol); ctx.setLineWidth(mt)
-                                ctx.move(to: CGPoint(x: mx - mk * sx, y: my))
-                                ctx.addLine(to: CGPoint(x: mx + mk * sx, y: my))
-                                ctx.strokePath()
                                 seg = -1
                             }
                         }

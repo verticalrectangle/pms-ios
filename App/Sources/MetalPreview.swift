@@ -139,7 +139,7 @@ struct LyricOverlay: View {
                         HStack(spacing: 0) {
                             ForEach(Array(c.label.enumerated()), id: \.offset) { idx, ch in
                                 let et = localT - Double(idx) * stagger
-                                let a = et < 0 ? 0.0 : min(1.0, et / 0.06)
+                                let a = et < 0 ? 0.0 : 1.0
                                 Text(String(ch))
                                     .font(DisplayFonts.swiftUIFont(c.subFont, size: lay.fontSize))
                                     .foregroundColor(.white)
