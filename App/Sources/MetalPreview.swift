@@ -128,22 +128,28 @@ struct LyricOverlay: View {
                             }
                         }
                     } else if c.clipStyle == "scratch-raw" {
-                        // The Scratchy font provides the distressed look;
-                        // per-frame position jitter creates the "boiling"
-                        // hand-scratched animation feel.
+                        // Preview approximation: the Scratchy font provides the
+                        // distressed look. The actual scratch-line rendering is
+                        // in the engine layer (rasterScratchRawText). Here we
+                        // approximate the per-letter staggered pop by showing
+                        // each letter as it arrives.
                         let frame = Int(timeline.date.timeIntervalSinceReferenceDate * 24)
-                        let jx = (CGFloat(Self.hash01(frame, 1)) - 0.5) * lay.rect.width * 0.01
-                        let jy = (CGFloat(Self.hash01(frame, 2)) - 0.5) * lay.rect.height * 0.01
-                        Text(c.label.isEmpty ? " " : c.label)
-                            .font(DisplayFonts.swiftUIFont(c.subFont, size: lay.fontSize))
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(c.subAnchorH == 0 ? .leading :
-                                                    c.subAnchorH == 2 ? .trailing : .center)
-                            .frame(width: lay.rect.width, height: lay.rect.height,
-                                   alignment: c.subAnchorH == 0 ? .leading :
-                                              c.subAnchorH == 2 ? .trailing : .center)
-                            .offset(x: jx, y: jy)
-                            .position(x: lay.rect.midX, y: lay.rect.midY)
+                        let localT = Double(frame) / 24.0
+                        let stagger = 0.06
+                        HStack(spacing: 0) {
+                            ForEach(Array(c.label.enumerated()), id: \.offset) { idx, ch in
+                                let et = localT - Double(idx) * stagger
+                                let a = et < 0 ? 0.0 : min(1.0, et / 0.06)
+                                Text(String(ch))
+                                    .font(DisplayFonts.swiftUIFont(c.subFont, size: lay.fontSize))
+                                    .foregroundColor(.white)
+                                    .opacity(a)
+                            }
+                        }
+                        .frame(width: lay.rect.width, height: lay.rect.height,
+                               alignment: c.subAnchorH == 0 ? .leading :
+                                          c.subAnchorH == 2 ? .trailing : .center)
+                        .position(x: lay.rect.midX, y: lay.rect.midY)
                     } else {
                         baseText
                     }

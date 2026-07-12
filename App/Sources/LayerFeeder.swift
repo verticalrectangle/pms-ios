@@ -392,10 +392,14 @@ final class LayerFeeder {
         return pb
     }
 
-    /// Per-frame scratch-raw raster: the Scratchy font provides the distressed
-    /// look; we add per-frame position jitter ("boil") so the text vibrates
-    /// like hand-scratched animation. No scratch line overlay — the font IS
-    /// the scratches.
+    /// Per-frame scratch-raw raster: each letter IS scratches. We render each
+    /// glyph to a small coverage bitmap, sample it, and draw parallel hatch
+    /// lines (vertical by default, horizontal for wide glyphs) only where the
+    /// glyph has alpha. At each coverage transition we draw a short
+    /// perpendicular outline mark. All strokes use rough, variable parameters
+    /// that re-randomize per frame at 24fps. No mask tricks — the letters are
+    /// literally drawn from scratch lines. Per-letter staggered pop: each
+    /// letter snaps on at its stagger time.
     static func rasterScratchRawText(_ c: Clip, canvas: CGSize = CGSize(width: 1080, height: 1920),
                                      frame: Int) -> CVPixelBuffer? {
         guard !c.label.isEmpty else { return nil }
@@ -418,20 +422,148 @@ final class LayerFeeder {
         UIGraphicsPushContext(ctx)
         ctx.translateBy(x: 0, y: CGFloat(height))
         ctx.scaleBy(x: 1, y: -1)
-        // Per-frame jitter: small random offset that changes every frame
-        // at ~24fps to create the "boiling" hand-scratched feel.
-        let jx = (CGFloat(hash01(frame, 1)) - 0.5) * canvas.width * 0.004
-        let jy = (CGFloat(hash01(frame, 2)) - 0.5) * canvas.height * 0.004
+
         let lay = TextLayoutModel.layout(c.label, clip: c, in: canvas)
-        let rect = lay.rect.offsetBy(dx: jx, dy: jy)
+        let font = DisplayFonts.font(c.subFont, size: lay.fontSize)
+        let localT = Double(frame) / 24.0
+        let stagger = 0.06
+        let threshold: UInt8 = 50
+        let spacing = 3
         let para = NSMutableParagraphStyle(); para.alignment = lay.alignment
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: DisplayFonts.font(c.subFont, size: lay.fontSize),
-            .foregroundColor: UIColor.white, .paragraphStyle: para,
-            .shadow: { let s = NSShadow(); s.shadowColor = UIColor.black.withAlphaComponent(0.55)
-                       s.shadowBlurRadius = canvas.width * 0.02; s.shadowOffset = .zero; return s }(),
+            .font: font, .foregroundColor: UIColor.white, .paragraphStyle: para,
         ]
-        (c.label as NSString).draw(in: rect, withAttributes: attrs)
+        let glyphH = lay.fontSize * 1.2
+
+        var gi = 0
+        var curX = lay.rect.minX
+        for ch in c.label {
+            let charStr = String(ch)
+            let charW = (charStr as NSString).size(withAttributes: attrs).width
+            if ch == " " { curX += charW; continue }
+
+            // Per-letter staggered pop
+            let et = localT - Double(gi) * stagger
+            if et < 0 { curX += charW; gi += 1; continue }
+            let a = CGFloat(min(1.0, et / 0.06))
+            let strokeCol = UIColor(white: 1, alpha: a).cgColor
+
+            // Render glyph to small bitmap for coverage sampling
+            let bmpW = max(2, Int(charW) + 4)
+            let bmpH = max(2, Int(glyphH) + 4)
+            var bmpData = [UInt8](repeating: 0, count: bmpW * bmpH * 4)
+            if let bmp = CGContext(data: &bmpData, width: bmpW, height: bmpH,
+                                   bitsPerComponent: 8, bytesPerRow: bmpW * 4,
+                                   space: CGColorSpaceCreateDeviceRGB(),
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue |
+                                               CGBitmapInfo.byteOrder32Little.rawValue) {
+                bmp.clear(CGRect(x: 0, y: 0, width: bmpW, height: bmpH))
+                UIGraphicsPushContext(bmp)
+                bmp.translateBy(x: 0, y: CGFloat(bmpH))
+                bmp.scaleBy(x: 1, y: -1)
+                (charStr as NSString).draw(in: CGRect(x: 2, y: 2, width: charW, height: glyphH),
+                                           withAttributes: attrs)
+                UIGraphicsPopContext()
+
+                // Flip coverage map so row 0 = top (matches main ctx)
+                var cov = [UInt8](repeating: 0, count: bmpW * bmpH)
+                for y in 0..<bmpH {
+                    for x in 0..<bmpW {
+                        cov[y * bmpW + x] = bmpData[((bmpH - 1 - y) * bmpW + x) * 4]
+                    }
+                }
+                let sx = charW / CGFloat(bmpW)
+                let sy = glyphH / CGFloat(bmpH)
+                let horizontal = charW > glyphH * 1.3
+
+                // Hatch + outline marks
+                if horizontal {
+                    for y in stride(from: 0, to: bmpH, by: spacing) {
+                        var seg = -1
+                        for x in 0...bmpW {
+                            let c = (x < bmpW) ? cov[y * bmpW + x] : UInt8(0)
+                            if c > threshold {
+                                if seg < 0 {
+                                    seg = x
+                                    let ei = y / spacing
+                                    let mk = 2 + CGFloat(Self.hash01(gi * 71 + ei, frame + 7)) * 3
+                                    let mt = 1 + CGFloat(Self.hash01(gi * 97 + ei, frame + 31)) * 1.5
+                                    let mx = curX + CGFloat(x) * sx, my = lay.rect.minY + CGFloat(y) * sy
+                                    ctx.setStrokeColor(strokeCol); ctx.setLineWidth(mt)
+                                    ctx.move(to: CGPoint(x: mx, y: my - mk * sy))
+                                    ctx.addLine(to: CGPoint(x: mx, y: my + mk * sy))
+                                    ctx.strokePath()
+                                }
+                            } else if seg >= 0 {
+                                let si = y / spacing
+                                if Self.hash01(gi * 17 + si, frame) > 0.08 {
+                                    let th = 1.5 + CGFloat(Self.hash01(gi * 31 + si, frame + 13)) * 2.5
+                                    let jy = (CGFloat(Self.hash01(gi * 43 + si, frame + 27)) - 0.5) * 2
+                                    ctx.setStrokeColor(strokeCol); ctx.setLineWidth(th)
+                                    ctx.move(to: CGPoint(x: curX + CGFloat(seg) * sx,
+                                                         y: lay.rect.minY + CGFloat(y) * sy + jy))
+                                    ctx.addLine(to: CGPoint(x: curX + CGFloat(x - 1) * sx,
+                                                         y: lay.rect.minY + CGFloat(y) * sy + jy))
+                                    ctx.strokePath()
+                                }
+                                let ei = y / spacing
+                                let mk = 2 + CGFloat(Self.hash01(gi * 83 + ei, frame + 19)) * 3
+                                let mt = 1 + CGFloat(Self.hash01(gi * 113 + ei, frame + 43)) * 1.5
+                                let mx = curX + CGFloat(x - 1) * sx, my = lay.rect.minY + CGFloat(y) * sy
+                                ctx.setStrokeColor(strokeCol); ctx.setLineWidth(mt)
+                                ctx.move(to: CGPoint(x: mx, y: my - mk * sy))
+                                ctx.addLine(to: CGPoint(x: mx, y: my + mk * sy))
+                                ctx.strokePath()
+                                seg = -1
+                            }
+                        }
+                    }
+                } else {
+                    for x in stride(from: 0, to: bmpW, by: spacing) {
+                        var seg = -1
+                        for y in 0...bmpH {
+                            let c = (y < bmpH) ? cov[y * bmpW + x] : UInt8(0)
+                            if c > threshold {
+                                if seg < 0 {
+                                    seg = y
+                                    let ei = x / spacing
+                                    let mk = 2 + CGFloat(Self.hash01(gi * 71 + ei, frame + 7)) * 3
+                                    let mt = 1 + CGFloat(Self.hash01(gi * 97 + ei, frame + 31)) * 1.5
+                                    let mx = curX + CGFloat(x) * sx, my = lay.rect.minY + CGFloat(y) * sy
+                                    ctx.setStrokeColor(strokeCol); ctx.setLineWidth(mt)
+                                    ctx.move(to: CGPoint(x: mx - mk * sx, y: my))
+                                    ctx.addLine(to: CGPoint(x: mx + mk * sx, y: my))
+                                    ctx.strokePath()
+                                }
+                            } else if seg >= 0 {
+                                let si = x / spacing
+                                if Self.hash01(gi * 17 + si, frame) > 0.08 {
+                                    let th = 1.5 + CGFloat(Self.hash01(gi * 31 + si, frame + 13)) * 2.5
+                                    let jx = (CGFloat(Self.hash01(gi * 43 + si, frame + 27)) - 0.5) * 2
+                                    ctx.setStrokeColor(strokeCol); ctx.setLineWidth(th)
+                                    ctx.move(to: CGPoint(x: curX + CGFloat(x) * sx + jx,
+                                                         y: lay.rect.minY + CGFloat(seg) * sy))
+                                    ctx.addLine(to: CGPoint(x: curX + CGFloat(x) * sx + jx,
+                                                         y: lay.rect.minY + CGFloat(y - 1) * sy))
+                                    ctx.strokePath()
+                                }
+                                let ei = x / spacing
+                                let mk = 2 + CGFloat(Self.hash01(gi * 83 + ei, frame + 19)) * 3
+                                let mt = 1 + CGFloat(Self.hash01(gi * 113 + ei, frame + 43)) * 1.5
+                                let mx = curX + CGFloat(x) * sx, my = lay.rect.minY + CGFloat(y - 1) * sy
+                                ctx.setStrokeColor(strokeCol); ctx.setLineWidth(mt)
+                                ctx.move(to: CGPoint(x: mx - mk * sx, y: my))
+                                ctx.addLine(to: CGPoint(x: mx + mk * sx, y: my))
+                                ctx.strokePath()
+                                seg = -1
+                            }
+                        }
+                    }
+                }
+            }
+            curX += charW
+            gi += 1
+        }
         UIGraphicsPopContext()
         return pb
     }
