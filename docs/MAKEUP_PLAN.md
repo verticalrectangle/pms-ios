@@ -274,3 +274,11 @@ any face work). Then 1 → 2 → 3 → 4 with per-stage gates.
     thumbnails; on-device QA (tracker latency, warp stability under motion,
     Studio slider feel) — needs a phone in hand.
 - 2026-07-12: latency-free tracking pass. ARKit TrueDepth front path (`ARKitCameraCapture`, `pms_submit_arkit_face`, `arkit_face.cpp`, `ARKitFaceRenderPlan`) + CoreML EP synchronous rear path (`face_track_run_sync_live`, `face_track_set_sync_mode`, `face_track_submit` host_time). Face cache version bumped to 9 (`face_track.cpp` writer, `face_cache.cpp` reader). Stub `arkit_face_mesh.h` UVs and `arkit_landmark_map.h` need on-device/Xcode values for correct ARKit makeup mapping.
+- 2026-07-12 (makeup-apply deep fix): front TrueDepth path was thrashing
+  because ARKit→MediaPipe mapping was sparse + partially wrong, and the
+  linked engine lib lagged the map fixes. Hard-mapped lower-lid chains from
+  mesh topology (`ARKIT_LOWER_LID_L/R`), brow runtime discovery, known-mask
+  IDW (no more `{0,0}` false-missing), zero-index search guards, locked
+  unmirrored ARKit coordinate contract in map header + `ARKitCameraCapture`.
+  Gate: `tools/test_arkit_landmark_map.py` (topology + critical MP cases).
+  Still requires Mac xcframework rebuild to ship to device.

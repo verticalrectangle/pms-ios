@@ -126,6 +126,12 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
     /// ARKit supplies bi-planar Y'CbCr frames in landscape sensor orientation.
     /// The engine accepts one-plane BGRA textures only, so map and rotate here
     /// rather than interpreting Y as four BGRA pixels in the Metal compositor.
+    ///
+    /// Coordinate contract (locked): portrait is UNMIRRORED. Person's left
+    /// lands on the RIGHT of the buffer (larger X). Do NOT mirror here to
+    /// "match selfie" — the engine's ARKit→MediaPipe map is person-L/R and
+    /// assumes this unmirrored frame. Mirroring the preview without flipping
+    /// the map (or vice versa) swaps eye makeup.
     private func portraitBGRAFrame(from source: CVPixelBuffer) -> CVPixelBuffer? {
         let width = CVPixelBufferGetHeight(source)
         let height = CVPixelBufferGetWidth(source)
