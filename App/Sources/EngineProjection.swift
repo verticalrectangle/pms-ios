@@ -34,6 +34,7 @@ struct EngineClipSnapshot: Identifiable {
     var fadeOut: Double
     var fontSize: Double
     var clipStyle: String
+    var subFont: String
     // Canvas transform (fractions of canvas; engine base values — keyframes
     // project separately). CANVAS_PLAN.md.
     var posX: Double
@@ -184,6 +185,7 @@ struct EngineProjectSnapshot {
             fadeOut: num(cj["fade_out"]) ?? 0,
             fontSize: num(cj["font_size"]) ?? 0,
             clipStyle: cj["clip_style"] as? String ?? "",
+            subFont: cj["sub_font"] as? String ?? "",
             posX: num(cj["pos_x"]) ?? 0.5,
             posY: num(cj["pos_y"]) ?? 0.5,
             scaleX: num(cj["scale_x"]) ?? 1,
@@ -297,8 +299,8 @@ extension EngineProjectSnapshot {
                 clip.subPos = c.subPos
                 clip.subPosX = c.subPosX; clip.subPosY = c.subPosY
                 clip.subAnchorH = c.subAnchorH
-                clip.subWrapW = c.subWrapW
                 clip.clipStyle = c.clipStyle
+                clip.subFont = c.subFont
                 track.clips.append(clip)
             }
             for b in t.fxBricks {

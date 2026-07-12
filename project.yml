@@ -34,6 +34,11 @@ targets:
       - path: Engine/EngineAssets
         type: folder
         buildPhase: resources
+      # Custom display fonts (typography presets). Loaded by name via
+      # UIFont(ptr:) after registering with CTFontManager.
+      - path: App/Resources/Fonts
+        type: folder
+        buildPhase: resources
     settings:
       base:
         SWIFT_VERSION: "5.10"

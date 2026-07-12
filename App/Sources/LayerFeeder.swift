@@ -13,8 +13,53 @@
 
 import AVFoundation
 import CoreVideo
+import CoreText
 import QuartzCore
 import UIKit
+
+/// Loads bundled custom display fonts (.ttf in App/Resources/Fonts) and
+/// resolves them by the same sanitized name the desktop engine uses.
+enum DisplayFonts {
+    private static var registered = false
+    private static var loaded: [String: String] = [:]   // sanitized name → PostScript name
+
+    static func registerAll() {
+        guard !registered else { return }
+        registered = true
+        guard let fontsURL = Bundle.main.urls(forResourcesWithExtension: "ttf", directory: "Fonts") else { return }
+        for url in fontsURL {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            let base = url.deletingPathExtension().lastPathComponent
+            let sanitized = base.lowercased().replacingOccurrences(of: "[^a-z0-9]", with: "_", options: .regularExpression)
+            // After registration, find the actual PostScript name by family.
+            if let desc = CTFontManagerCreateFontDescriptorFromURL(url as CFURL) {
+                let postScript = CTFontDescriptorCopyAttribute(desc, kCTFontNameAttribute) as? String
+                if let ps = postScript { loaded[sanitized] = ps }
+            }
+        }
+    }
+
+    /// Returns a UIFont for the given engine font id (e.g. "scratchl"),
+    /// falling back to system black weight if not found.
+    static func font(_ id: String, size: CGFloat, weight: UIFont.Weight = .black) -> UIFont {
+        registerAll()
+        if let ps = loaded[id], let f = UIFont(name: ps, size: size) { return f }
+        return UIFont.systemFont(ofSize: size, weight: weight)
+    }
+    /// Returns the PostScript name for SwiftUI's .font(.custom(...)) or nil
+    /// if the font isn't loaded (caller should fall back to system).
+    static func postScriptName(_ id: String) -> String? {
+        registerAll()
+        return loaded[id]
+    }
+    /// Returns a SwiftUI Font for the given engine font id, falling back
+    /// to system black weight.
+    static func swiftUIFont(_ id: String, size: CGFloat) -> Font {
+        registerAll()
+        if let ps = loaded[id] { return .custom(ps, size: size) }
+        return .system(size: size, weight: .black)
+    }
+}
 
 @MainActor
 final class LayerFeeder {
@@ -279,7 +324,8 @@ final class LayerFeeder {
         let lay = TextLayoutModel.layout(c.label, clip: c, in: canvas)
         let para = NSMutableParagraphStyle(); para.alignment = lay.alignment
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: lay.fontSize, weight: .black),
+            .font: c.subFont.isEmpty ? UIFont.systemFont(ofSize: lay.fontSize, weight: .black)
+                 : DisplayFonts.font(c.subFont, size: lay.fontSize),
             .foregroundColor: UIColor.white, .paragraphStyle: para,
             .shadow: { let s = NSShadow(); s.shadowColor = UIColor.black.withAlphaComponent(0.55)
                        s.shadowBlurRadius = canvas.width * 0.02; s.shadowOffset = .zero; return s }(),
@@ -345,9 +391,10 @@ final class LayerFeeder {
         return pb
     }
 
-    /// Per-frame scratch-raw raster: draw white scratch lines, then mask to the
-    /// text shape with `.destinationIn` — only scratches inside the letterform
-    /// survive. The letter IS the scratches, not a solid fill with scratches on top.
+    /// Per-frame scratch-raw raster: the Scratchy font provides the distressed
+    /// look; we add per-frame position jitter ("boil") so the text vibrates
+    /// like hand-scratched animation. No scratch line overlay — the font IS
+    /// the scratches.
     static func rasterScratchRawText(_ c: Clip, canvas: CGSize = CGSize(width: 1080, height: 1920),
                                      frame: Int) -> CVPixelBuffer? {
         guard !c.label.isEmpty else { return nil }
@@ -370,42 +417,20 @@ final class LayerFeeder {
         UIGraphicsPushContext(ctx)
         ctx.translateBy(x: 0, y: CGFloat(height))
         ctx.scaleBy(x: 1, y: -1)
+        // Per-frame jitter: small random offset that changes every frame
+        // at ~24fps to create the "boiling" hand-scratched feel.
+        let jx = (CGFloat(hash01(frame, 1)) - 0.5) * canvas.width * 0.004
+        let jy = (CGFloat(hash01(frame, 2)) - 0.5) * canvas.height * 0.004
         let lay = TextLayoutModel.layout(c.label, clip: c, in: canvas)
-
-        // ── 1. Draw white scratch lines: mostly vertical, some horizontal ─
-        // The .destinationIn mask below naturally shows vertical scratches
-        // in vertical parts of the letter and horizontal scratches in
-        // horizontal bars (e.g. the crossbar of an 'A' or 'H').
-        let nVertical = 24 + frame % 10
-        let nHorizontal = 8 + frame % 6
-        // Vertical scratches: random x, span full text height
-        for i in 0..<nVertical {
-            let sx = CGFloat(hash01(i, frame)) * lay.rect.width
-            let jitter = (CGFloat(hash01(i + 13, frame)) - 0.5) * lay.rect.height * 0.04
-            ctx.move(to: CGPoint(x: lay.rect.minX + sx, y: lay.rect.minY))
-            ctx.addLine(to: CGPoint(x: lay.rect.minX + sx + jitter, y: lay.rect.maxY))
-        }
-        // Horizontal scratches: random y, span full text width
-        for i in 0..<nHorizontal {
-            let sy = CGFloat(hash01(i + 7, frame)) * lay.rect.height
-            let jitter = (CGFloat(hash01(i + 19, frame)) - 0.5) * lay.rect.width * 0.04
-            ctx.move(to: CGPoint(x: lay.rect.minX, y: lay.rect.minY + sy))
-            ctx.addLine(to: CGPoint(x: lay.rect.maxX, y: lay.rect.minY + sy + jitter))
-        }
-        ctx.setStrokeColor(UIColor.white.cgColor)
-        ctx.setLineWidth(2.0)
-        ctx.strokePath()
-
-        // ── 2. Mask to text shape: keep only scratches inside the letters ─
-        ctx.setBlendMode(.destinationIn)
+        let rect = lay.rect.offsetBy(dx: jx, dy: jy)
         let para = NSMutableParagraphStyle(); para.alignment = lay.alignment
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: lay.fontSize, weight: .black),
+            .font: DisplayFonts.font(c.subFont, size: lay.fontSize),
             .foregroundColor: UIColor.white, .paragraphStyle: para,
+            .shadow: { let s = NSShadow(); s.shadowColor = UIColor.black.withAlphaComponent(0.55)
+                       s.shadowBlurRadius = canvas.width * 0.02; s.shadowOffset = .zero; return s }(),
         ]
-        (c.label as NSString).draw(in: lay.rect, withAttributes: attrs)
-        ctx.setBlendMode(.normal)
-
+        (c.label as NSString).draw(in: rect, withAttributes: attrs)
         UIGraphicsPopContext()
         return pb
     }

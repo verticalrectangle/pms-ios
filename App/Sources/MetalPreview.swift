@@ -128,40 +128,22 @@ struct LyricOverlay: View {
                             }
                         }
                     } else if c.clipStyle == "scratch-raw" {
-                        // Letters ARE scratches: white scratch lines masked to
-                        // the text shape — only scratches inside the letterform.
-                        Canvas { ctx, size in
-                            let frame = Int(timeline.date.timeIntervalSinceReferenceDate * 24)
-                            // Vertical scratches (default)
-                            for i in 0..<24 {
-                                let sx = CGFloat(Self.hash01(i, frame)) * size.width
-                                let jitter = (CGFloat(Self.hash01(i + 13, frame)) - 0.5) * size.height * 0.04
-                                var p = Path()
-                                p.move(to: CGPoint(x: sx, y: 0))
-                                p.addLine(to: CGPoint(x: sx + jitter, y: size.height))
-                                ctx.stroke(p, with: .color(.white), lineWidth: 2.0)
-                            }
-                            // Horizontal scratches (for crossbars / horizontal areas)
-                            for i in 0..<8 {
-                                let sy = CGFloat(Self.hash01(i + 7, frame)) * size.height
-                                let jitter = (CGFloat(Self.hash01(i + 19, frame)) - 0.5) * size.width * 0.04
-                                var p = Path()
-                                p.move(to: CGPoint(x: 0, y: sy))
-                                p.addLine(to: CGPoint(x: size.width, y: sy + jitter))
-                                ctx.stroke(p, with: .color(.white), lineWidth: 2.0)
-                            }
-                        }
-                        .frame(width: lay.rect.width, height: lay.rect.height)
-                        .mask {
-                            Text(c.label.isEmpty ? " " : c.label)
-                                .font(.system(size: lay.fontSize, weight: .black))
-                                .multilineTextAlignment(c.subAnchorH == 0 ? .leading :
-                                                        c.subAnchorH == 2 ? .trailing : .center)
-                                .frame(width: lay.rect.width, height: lay.rect.height,
-                                       alignment: c.subAnchorH == 0 ? .leading :
-                                                  c.subAnchorH == 2 ? .trailing : .center)
-                        }
-                        .position(x: lay.rect.midX, y: lay.rect.midY)
+                        // The Scratchy font provides the distressed look;
+                        // per-frame position jitter creates the "boiling"
+                        // hand-scratched animation feel.
+                        let frame = Int(timeline.date.timeIntervalSinceReferenceDate * 24)
+                        let jx = (CGFloat(Self.hash01(frame, 1)) - 0.5) * lay.rect.width * 0.01
+                        let jy = (CGFloat(Self.hash01(frame, 2)) - 0.5) * lay.rect.height * 0.01
+                        Text(c.label.isEmpty ? " " : c.label)
+                            .font(DisplayFonts.swiftUIFont(c.subFont, size: lay.fontSize))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(c.subAnchorH == 0 ? .leading :
+                                                    c.subAnchorH == 2 ? .trailing : .center)
+                            .frame(width: lay.rect.width, height: lay.rect.height,
+                                   alignment: c.subAnchorH == 0 ? .leading :
+                                              c.subAnchorH == 2 ? .trailing : .center)
+                            .offset(x: jx, y: jy)
+                            .position(x: lay.rect.midX, y: lay.rect.midY)
                     } else {
                         baseText
                     }

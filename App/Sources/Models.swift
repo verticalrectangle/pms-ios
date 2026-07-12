@@ -110,6 +110,7 @@ struct Clip: Identifiable, TimelineItem {
     var subAnchorH: Int = 1         // 0 left, 1 centre, 2 right
     var subWrapW: Double = 0.85
     var clipStyle: String = ""       // engine anim style: "fade"/"glitch"/"scratch"/…
+    var subFont: String = ""         // engine font id: "scratchl"/"archivoblack"/…
 }
 
 /// UI flavour of an FX brick — derived from the engine clip type + host lane.
