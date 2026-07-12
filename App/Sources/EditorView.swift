@@ -42,6 +42,7 @@ struct EditorView: View {
     @StateObject private var model: EditorModel
     @ObservedObject var engine: EngineStore
     private let projectName: String
+    private let autoRecord: Bool
 
     @State private var fullscreen = false
     @State private var showRecord = false   // full-screen camera capture (RecordView)
@@ -52,6 +53,7 @@ struct EditorView: View {
     init(project: Project, engine: EngineStore, autoRecord: Bool = false) {
         self.engine = engine
         self.projectName = project.isNew ? "" : project.name   // unnamed until saved with a title
+        self.autoRecord = autoRecord
         _model = StateObject(wrappedValue: EditorModel(project: project, engine: engine))
         _showRecord = State(initialValue: autoRecord)   // Home's camera button lands here recording-ready
     }
@@ -157,6 +159,12 @@ struct EditorView: View {
             model.layers?.stop()                                       // release overlay decoders
         }
         .onChange(of: scenePhase) { _, p in if p != .active { model.save() } }  // + on background
+        .onAppear {
+            // NavigationStack may initialize this destination before its
+            // full-screen cover can be presented. Re-apply the home camera
+            // intent after the destination is on screen.
+            if autoRecord { showRecord = true }
+        }
         // Native bars step aside as the preview expands to fullscreen; the dock
         // also hides while editing a title so the edit bar owns the bottom.
         .toolbar(fullscreen ? .hidden : .visible, for: .navigationBar)
