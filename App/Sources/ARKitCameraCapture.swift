@@ -29,11 +29,6 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
     private var portraitPool: CVPixelBufferPool?
     private var portraitSize = CGSize.zero
 
-    private let cameraLock = NSLock()
-    private var latestCamera: ARCamera?
-    private var cachedImageWidth: Int = 0
-    private var cachedImageHeight: Int = 0
-
     // Latest camera frame for tap-to-pick (chroma key colour sampling).
     private let frameLock = NSLock()
     private var latestFrame: CVPixelBuffer?
@@ -107,20 +102,68 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
         let imgW = CVPixelBufferGetWidth(pb)
         let imgH = CVPixelBufferGetHeight(pb)
 
-        cameraLock.lock()
-        latestCamera = frame.camera
-        cachedImageWidth = imgW
-        cachedImageHeight = imgH
-        cameraLock.unlock()
-
         frameLock.lock(); latestFrame = pb; frameLock.unlock()
         engine?.submitCameraFrame(pb, rotation: 0, hostTime: frame.timestamp)
+
+        // Face geometry is submitted HERE, from this frame's own camera and
+        // anchors, so landmarks and pixels can never desync. (The separate
+        // didUpdate-anchors callback projected through a cached camera from
+        // a different frame; worse, when fast motion made ARKit drop
+        // tracking, anchor updates stopped but the stale landmarks kept
+        // painting makeup onto fresh video — makeup floated off the face
+        // until tracking recovered.)
+        submitFaces(frame: frame, imgW: imgW, imgH: imgH)
 
         let pts = CMTime(seconds: frame.timestamp, preferredTimescale: 600)
         if let rec = filteredRecorder {
             DispatchQueue.main.async { rec.appendRenderedFrame(at: pts) }
         }
         if matteEnabled { kickMatte(pb, hostTime: frame.timestamp) }
+    }
+
+    private func submitFaces(frame: ARFrame, imgW: Int, imgH: Int) {
+        let viewport = CGSize(width: imgW, height: imgH)
+        // isTracked == false means ARKit lost the face (fast motion, out of
+        // frame): clear the slot so the engine falls back / hides makeup
+        // instead of painting with frozen landmarks.
+        let anchors = frame.anchors.compactMap { $0 as? ARFaceAnchor }
+                                   .filter { $0.isTracked }
+        guard let anchor = anchors.first else {
+            engine?.clearARKitFaces()
+            return
+        }
+        let camera = frame.camera
+        let vertices = UnsafeMutablePointer<Float>.allocate(capacity: 1220 * 2)
+        for (i, vertex) in anchor.geometry.vertices.enumerated() {
+            let world = anchor.transform * SIMD4<Float>(vertex, 1)
+            let projected = camera.projectPoint(
+                SIMD3<Float>(world.x, world.y, world.z),
+                orientation: .portrait,
+                viewportSize: viewport
+            )
+            vertices[i * 2] = Float(projected.x)
+            vertices[i * 2 + 1] = Float(projected.y)
+        }
+        // ARKit textureCoordinates are constant per topology (same every
+        // frame). Pass them so the engine's makeup mesh pass can map UV
+        // makeup textures onto the tracked face.
+        let texCoords = anchor.geometry.textureCoordinates
+        let uvs = UnsafeMutablePointer<Float>.allocate(capacity: 1220 * 2)
+        for (i, tc) in texCoords.enumerated() {
+            uvs[i * 2] = tc.x
+            uvs[i * 2 + 1] = tc.y
+        }
+        let blend = arkitBlendShapeArray(from: anchor.blendShapes)
+        blend.withUnsafeBufferPointer { blendPtr in
+            engine?.submitARKitFace(vertices: vertices,
+                                    uvs: uvs,
+                                    blendshapes: blendPtr.baseAddress!,
+                                    count: 1,
+                                    width: imgW,
+                                    height: imgH)
+        }
+        vertices.deallocate()
+        uvs.deallocate()
     }
 
     /// ARKit supplies bi-planar Y'CbCr frames in landscape sensor orientation.
@@ -166,51 +209,6 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
         ciContext.render(normalized, to: output, bounds: bounds,
                          colorSpace: CGColorSpaceCreateDeviceRGB())
         return output
-    }
-
-    func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-        cameraLock.lock()
-        let camera = latestCamera
-        let imgW = cachedImageWidth
-        let imgH = cachedImageHeight
-        cameraLock.unlock()
-        guard let camera = camera else { return }
-
-        let viewport = CGSize(width: imgW, height: imgH)
-        for anchor in anchors.compactMap({ $0 as? ARFaceAnchor }) {
-            let vertices = UnsafeMutablePointer<Float>.allocate(capacity: 1220 * 2)
-            for (i, vertex) in anchor.geometry.vertices.enumerated() {
-                let world = anchor.transform * SIMD4<Float>(vertex, 1)
-                let projected = camera.projectPoint(
-                    SIMD3<Float>(world.x, world.y, world.z),
-                    orientation: .portrait,
-                    viewportSize: viewport
-                )
-                vertices[i * 2] = Float(projected.x)
-                vertices[i * 2 + 1] = Float(projected.y)
-            }
-            // ARKit textureCoordinates are constant per topology (same every
-            // frame). Pass them so the engine's makeup mesh pass can map UV
-            // makeup textures onto the tracked face. Without these, every
-            // vertex samples the same texel → grey flicker overlay.
-            let texCoords = anchor.geometry.textureCoordinates
-            let uvs = UnsafeMutablePointer<Float>.allocate(capacity: 1220 * 2)
-            for (i, tc) in texCoords.enumerated() {
-                uvs[i * 2] = tc.x
-                uvs[i * 2 + 1] = tc.y
-            }
-            let blend = arkitBlendShapeArray(from: anchor.blendShapes)
-            blend.withUnsafeBufferPointer { blendPtr in
-                engine?.submitARKitFace(vertices: vertices,
-                                        uvs: uvs,
-                                        blendshapes: blendPtr.baseAddress!,
-                                        count: 1,
-                                        width: imgW,
-                                        height: imgH)
-            }
-            vertices.deallocate()
-            uvs.deallocate()
-        }
     }
 
     // MARK: audio passthrough to take writer / filtered recorder

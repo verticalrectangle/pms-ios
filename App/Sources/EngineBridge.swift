@@ -291,6 +291,16 @@ final class EngineStore: ObservableObject {
         #endif
     }
 
+    /// Drop the ARKit face slot (face lost / untracked): the engine falls
+    /// back to its other tiers or hides makeup instead of painting with
+    /// frozen landmarks.
+    func clearARKitFaces() {
+        guard let e = engine else { return }
+        #if !ENGINE_MOCK
+        pms_submit_arkit_face(e, nil, nil, nil, 0, 0, 0)
+        #endif
+    }
+
     /// Clear the composited content frame back to the empty (aurora) canvas.
     func clearContent() {
         guard let e = engine else { return }
