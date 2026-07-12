@@ -95,7 +95,7 @@ struct LyricOverlay: View {
     let clips: [Clip]
     let box: CGSize
     var body: some View {
-        TimelineView(.animation) { timeline in
+        SwiftUI.TimelineView(.animation) { timeline in
             ZStack {
                 ForEach(clips) { c in
                     let lay = TextLayoutModel.layout(c.label.isEmpty ? " " : c.label,
