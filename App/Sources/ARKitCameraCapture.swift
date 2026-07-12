@@ -182,7 +182,7 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
                     orientation: .portrait,
                     viewportSize: viewport
                 )
-                vertices[i * 2] = Float(imgW - projected.x)  // mirror X for selfie view
+                vertices[i * 2] = Float(imgW) - Float(projected.x)  // mirror X for selfie view
                 vertices[i * 2 + 1] = Float(projected.y)
             }
             // ARKit textureCoordinates are constant per topology (same every
