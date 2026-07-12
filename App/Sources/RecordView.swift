@@ -56,6 +56,7 @@ struct RecordView: View {
     @State private var isTornDown = false
     @State private var flashEnabled = false
     @State private var flashOpacity = 0.0
+    @State private var debugOverlay = false
 
     private let ticker = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
@@ -68,6 +69,13 @@ struct RecordView: View {
                     .aspectRatio(model.format.aspect, contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
+                    .onTapGesture(count: 3) {
+                        // Debug: landmark overlay (engine-drawn, exact render
+                        // coordinates) — alignment QA for the ARKit bridge.
+                        debugOverlay.toggle()
+                        engine.send("face_overlay", ["on": debugOverlay])
+                        keyHint = debugOverlay ? "Landmark overlay ON" : "Landmark overlay off"
+                    }
                     .onTapGesture(count: 2) {
                         guard lookHasChroma else { return }
                         keyOverride = nil
