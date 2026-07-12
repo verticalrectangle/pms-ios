@@ -395,10 +395,10 @@ final class LayerFeeder {
     /// Per-frame scratch-raw raster: each letter IS scratches. We render each
     /// glyph to a small coverage bitmap, sample it, and draw parallel hatch
     /// lines (vertical by default, horizontal for wide glyphs) only where the
-    /// glyph has alpha. Sparse spacing + thin strokes keep letters legible;
-    /// jitter + gaps add the hand-scratched feel. No mask tricks — the letters
-    /// are literally drawn from scratch lines. Hard cut on/off per letter
-    /// (staggered, no fade).
+    /// glyph has alpha. 3px spacing fills the letter shape for legibility;
+    /// jitter + gaps add the hand-scratched feel. Additionally scatters 6-10
+    /// low-alpha debris scratches around each glyph (overshooting the letter
+    /// edges) for raw "film scratch" energy. No mask tricks. Hard cut on/off.
     static func rasterScratchRawText(_ c: Clip, canvas: CGSize = CGSize(width: 1080, height: 1920),
                                      frame: Int) -> CVPixelBuffer? {
         guard !c.label.isEmpty else { return nil }
@@ -427,7 +427,7 @@ final class LayerFeeder {
         let localT = Double(frame) / 24.0
         let stagger = 0.06
         let threshold: UInt8 = 50
-        let spacing = 5
+        let spacing = 3
         let para = NSMutableParagraphStyle(); para.alignment = lay.alignment
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font, .foregroundColor: UIColor.white, .paragraphStyle: para,
@@ -474,7 +474,7 @@ final class LayerFeeder {
                 let sy = glyphH / CGFloat(bmpH)
                 let horizontal = charW > glyphH * 1.3
 
-                // Interior hatch only — sparse, thin, rough
+                // Interior hatch — 3px spacing, thin, rough
                 if horizontal {
                     for y in stride(from: 0, to: bmpH, by: spacing) {
                         var seg = -1
@@ -521,6 +521,27 @@ final class LayerFeeder {
                             }
                         }
                     }
+                }
+
+                // ── Scattered low-alpha debris scratches ─────────────────
+                // 6-10 short faint lines overshooting the glyph edges.
+                let glyphRect = CGRect(x: curX, y: lay.rect.minY, width: charW, height: glyphH)
+                let pad = max(charW, glyphH) * 0.15
+                let nDebris = 6 + Int(Self.hash01(gi, frame + 99) * 5)
+                for di in 0..<nDebris {
+                    let dx = (CGFloat(Self.hash01(gi * 61 + di, frame + 3)) - 0.5) * (charW + pad * 2)
+                    let dy = (CGFloat(Self.hash01(gi * 67 + di, frame + 11)) - 0.5) * (glyphH + pad * 2)
+                    let cx = glyphRect.midX + dx
+                    let cy = glyphRect.midY + dy
+                    let ang = (CGFloat(Self.hash01(gi * 73 + di, frame + 23)) - 0.5) * 1.2
+                    let len = max(charW, glyphH) * (0.1 + CGFloat(Self.hash01(gi * 79 + di, frame + 37)) * 0.25)
+                    let da = 0.2 + CGFloat(Self.hash01(gi * 83 + di, frame + 41)) * 0.2
+                    let dth = 0.5 + CGFloat(Self.hash01(gi * 89 + di, frame + 53)) * 1
+                    ctx.setStrokeColor(UIColor(white: 1, alpha: da).cgColor)
+                    ctx.setLineWidth(dth)
+                    ctx.move(to: CGPoint(x: cx, y: cy))
+                    ctx.addLine(to: CGPoint(x: cx + cos(ang) * len, y: cy + sin(ang) * len))
+                    ctx.strokePath()
                 }
             }
             curX += charW
