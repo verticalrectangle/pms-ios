@@ -2,6 +2,7 @@ import ARKit
 import AVFoundation
 import CoreMedia
 import CoreVideo
+import CoreImage
 import UIKit
 
 /// ARSession-based capture for the TrueDepth front camera. Replaces the
@@ -24,6 +25,9 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
     private let sessionQueue = DispatchQueue(label: "pms.arkit")
     private weak var engine: EngineStore?
     private let audioCapture = AudioCapture()
+    private let ciContext: CIContext
+    private var portraitPool: CVPixelBufferPool?
+    private var portraitSize = CGSize.zero
 
     private let cameraLock = NSLock()
     private var latestCamera: ARCamera?
@@ -45,6 +49,7 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
 
     init(engine: EngineStore) {
         self.engine = engine
+        ciContext = CIContext(mtlDevice: engine.device)
         super.init()
         session.delegate = self
         session.delegateQueue = sessionQueue
@@ -98,7 +103,7 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
     // MARK: ARSessionDelegate
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        let pb = frame.capturedImage
+        guard let pb = portraitBGRAFrame(from: frame.capturedImage) else { return }
         let imgW = CVPixelBufferGetWidth(pb)
         let imgH = CVPixelBufferGetHeight(pb)
 
@@ -116,6 +121,44 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
             DispatchQueue.main.async { rec.appendRenderedFrame(at: pts) }
         }
         if matteEnabled { kickMatte(pb, hostTime: frame.timestamp) }
+    }
+
+    /// ARKit supplies bi-planar Y'CbCr frames in landscape sensor orientation.
+    /// The engine accepts one-plane BGRA textures only, so map and rotate here
+    /// rather than interpreting Y as four BGRA pixels in the Metal compositor.
+    private func portraitBGRAFrame(from source: CVPixelBuffer) -> CVPixelBuffer? {
+        let width = CVPixelBufferGetHeight(source)
+        let height = CVPixelBufferGetWidth(source)
+        let size = CGSize(width: width, height: height)
+        if portraitPool == nil || portraitSize != size {
+            let attributes: [String: Any] = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: width,
+                kCVPixelBufferHeightKey as String: height,
+                kCVPixelBufferMetalCompatibilityKey as String: true,
+                kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+            ]
+            var pool: CVPixelBufferPool?
+            guard CVPixelBufferPoolCreate(kCFAllocatorDefault, nil,
+                                          attributes as CFDictionary, &pool) == kCVReturnSuccess else {
+                return nil
+            }
+            portraitPool = pool
+            portraitSize = size
+        }
+
+        guard let portraitPool else { return nil }
+        var output: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, portraitPool, &output) == kCVReturnSuccess,
+              let output else { return nil }
+
+        let portrait = CIImage(cvPixelBuffer: source).oriented(.right)
+        let bounds = CGRect(origin: .zero, size: size)
+        let normalized = portrait.transformed(by: .init(translationX: -portrait.extent.minX,
+                                                         y: -portrait.extent.minY))
+        ciContext.render(normalized, to: output, bounds: bounds,
+                         colorSpace: CGColorSpaceCreateDeviceRGB())
+        return output
     }
 
     func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
