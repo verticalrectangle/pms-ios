@@ -54,8 +54,6 @@ struct RecordView: View {
     @State private var showPreview = false
     @State private var previewSegments: [RecordedSegmentInfo] = []
     @State private var isTornDown = false
-    @State private var isPressed = false
-    @State private var holdTask: Task<Void, Never>?
     @State private var flashEnabled = false
     @State private var flashOpacity = 0.0
 
@@ -299,34 +297,20 @@ struct RecordView: View {
     }
 
     private var recordButton: some View {
-        ZStack {
-            Circle().strokeBorder(.white.opacity(0.9), lineWidth: 4)
-                .frame(width: 74, height: 74)
-            RoundedRectangle(cornerRadius: recording ? 7 : 30)
-                .fill(Color(red: 1, green: 0.27, blue: 0.27))
-                .frame(width: recording ? 30 : 60, height: recording ? 30 : 60)
-                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: recording)
+        Button(action: toggleRecording) {
+            ZStack {
+                Circle().strokeBorder(.white.opacity(0.9), lineWidth: 4)
+                    .frame(width: 74, height: 74)
+                RoundedRectangle(cornerRadius: recording ? 7 : 30)
+                    .fill(Color(red: 1, green: 0.27, blue: 0.27))
+                    .frame(width: recording ? 30 : 60, height: recording ? 30 : 60)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: recording)
+            }
         }
-        .scaleEffect(isPressed ? 0.97 : 1)
-        .brightness(isPressed ? 0.06 : 0)
-        .animation(.spring(response: 0.22, dampingFraction: 0.7), value: isPressed)
         .contentShape(Circle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    if !isPressed && countdown == nil && !finalizing && !isTornDown {
-                        isPressed = true
-                        startHold()
-                    }
-                }
-                .onEnded { _ in
-                    isPressed = false
-                    holdTask?.cancel()
-                    holdTask = nil
-                    if recording { stopRecording() }
-                }
-        )
-        .disabled(countdown != nil || finalizing)
+        .accessibilityLabel(recording ? "Stop recording" : "Start recording")
+        .disabled(camera == nil || countdown != nil || finalizing)
+        .pressable()
     }
 
     private var undoButton: some View {
@@ -344,12 +328,13 @@ struct RecordView: View {
         Button(action: capturePhoto) {
             Image(systemName: "camera")
                 .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(camera == nil ? .white.opacity(0.4) : .white)
                 .frame(width: 56, height: 56)
                 .background(Circle().fill(.black.opacity(0.35)))
         }
+        .accessibilityLabel("Take photo")
+        .disabled(camera == nil || countdown != nil || finalizing || recording || photoInFlight != nil)
         .pressable()
-        .disabled(countdown != nil || finalizing || recording || photoInFlight != nil)
     }
 
     private var doneButton: some View {
@@ -499,8 +484,6 @@ struct RecordView: View {
         elapsed = 0
         countdown = nil
         errorText = nil
-        isPressed = false
-        holdTask = nil
         flashOpacity = 0
         nextSegmentIndex = 0
         segments.removeAll()
@@ -630,16 +613,16 @@ struct RecordView: View {
         }
     }
 
-    private func startHold() {
-        holdTask?.cancel()
-        holdTask = Task {
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard isPressed, !recording, !finalizing, !isTornDown else { return }
-            if timerArmed {
-                runCountdown(3)
-            } else {
-                startRecording()
-            }
+    private func toggleRecording() {
+        if recording {
+            stopRecording()
+            return
+        }
+        guard camera != nil else { return }
+        if timerArmed {
+            runCountdown(3)
+        } else {
+            startRecording()
         }
     }
 
