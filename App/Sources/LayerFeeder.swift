@@ -31,10 +31,11 @@ enum DisplayFonts {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
             let base = url.deletingPathExtension().lastPathComponent
             let sanitized = base.lowercased().replacingOccurrences(of: "[^a-z0-9]", with: "_", options: .regularExpression)
-            // After registration, get the PostScript name via CTFont.
-            let ctFont = CTFontCreateWithURL(url as CFURL, 12, nil)
-            if let ps = CTFontCopyPostScriptName(ctFont) as String? {
-                loaded[sanitized] = ps
+            // After registration, get the PostScript name via CGFont.
+            if let data = try? Data(contentsOf: url),
+               let provider = CGDataProvider(data: data as CFData),
+               let cgFont = CGFont(provider) {
+                if let ps = cgFont.postScriptName as String? { loaded[sanitized] = ps }
             }
         }
     }
