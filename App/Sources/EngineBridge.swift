@@ -279,12 +279,15 @@ final class EngineStore: ObservableObject {
 
     /// Submit ARKit face anchor data (front camera, TrueDepth). Up to 4 faces.
     /// `vertices` is a flat [n_faces * 1220 * 2] Float array of 2D pixel coords.
+    /// `uvs` is a flat [n_faces * 1220 * 2] Float array of ARKit textureCoordinates
+    ///   (constant per topology — same every frame). May be nil if unavailable.
     /// `blendshapes` is a flat [n_faces * 52] Float array of blendshape coeffs.
-    func submitARKitFace(vertices: UnsafePointer<Float>, blendshapes: UnsafePointer<Float>,
+    func submitARKitFace(vertices: UnsafePointer<Float>, uvs: UnsafePointer<Float>?,
+                         blendshapes: UnsafePointer<Float>,
                          count: Int, width: Int, height: Int) {
         guard let e = engine else { return }
         #if !ENGINE_MOCK
-        pms_submit_arkit_face(e, vertices, blendshapes, Int32(count), Int32(width), Int32(height))
+        pms_submit_arkit_face(e, vertices, uvs, blendshapes, Int32(count), Int32(width), Int32(height))
         #endif
     }
 

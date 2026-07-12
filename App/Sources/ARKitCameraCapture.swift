@@ -182,15 +182,27 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
                 vertices[i * 2] = Float(projected.x)
                 vertices[i * 2 + 1] = Float(projected.y)
             }
+            // ARKit textureCoordinates are constant per topology (same every
+            // frame). Pass them so the engine's makeup mesh pass can map UV
+            // makeup textures onto the tracked face. Without these, every
+            // vertex samples the same texel → grey flicker overlay.
+            let texCoords = anchor.geometry.textureCoordinates
+            let uvs = UnsafeMutablePointer<Float>.allocate(capacity: 1220 * 2)
+            for (i, tc) in texCoords.enumerated() {
+                uvs[i * 2] = tc.x
+                uvs[i * 2 + 1] = tc.y
+            }
             let blend = arkitBlendShapeArray(from: anchor.blendShapes)
             blend.withUnsafeBufferPointer { blendPtr in
                 engine?.submitARKitFace(vertices: vertices,
+                                        uvs: uvs,
                                         blendshapes: blendPtr.baseAddress!,
                                         count: 1,
                                         width: imgW,
                                         height: imgH)
             }
             vertices.deallocate()
+            uvs.deallocate()
         }
     }
 
