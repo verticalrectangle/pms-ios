@@ -20,7 +20,7 @@ struct RecordView: View {
     @ObservedObject var model: EditorModel
     @Binding var isPresented: Bool
 
-    @State private var camera: CameraCapture?
+    @State private var camera: CameraCaptureProtocol?
     @State private var position: AVCaptureDevice.Position = .front
     @State private var recording = false
     @State private var recordStart: Date?
@@ -411,30 +411,37 @@ struct RecordView: View {
             case .failure(let e):
                 errorText = e.errorDescription
             case .success:
-                let c = CameraCapture(engine: engine)
-                c.matteEnabled = lookUsesMatte
+                let c: CameraCaptureProtocol
+                if self.position == .front && ARKitCameraCapture.isSupported {
+                    c = ARKitCameraCapture(engine: engine)
+                } else {
+                    c = CameraCapture(engine: engine)
+                }
+                c.matteEnabled = self.lookUsesMatte
                 do {
-                    try c.start(position: position, preset: .hd1080,
-                                orientation: captureOrientation(for: model.format))
-                    camera = c
-                    pushLive()
+                    try c.start(position: self.position, preset: .hd1080,
+                                orientation: self.captureOrientation(for: self.model.format))
+                    self.camera = c
+                    self.pushLive()
                 } catch {
-                    errorText = error.localizedDescription
+                    self.errorText = error.localizedDescription
                 }
             }
         }
+    }
+
+    private func flipCamera() {
+        position = (position == .front) ? .back : .front
+        camera?.stop()
+        camera = nil
+        startCamera()
+        haptic()
     }
 
     private func captureOrientation(for format: Format) -> CameraCapture.CaptureOrientation {
         format == .landscape ? .landscape : .portrait
     }
 
-    private func flipCamera() {
-        position = (position == .front) ? .back : .front
-        do { try camera?.start(position: position, preset: .hd1080,
-                               orientation: captureOrientation(for: model.format)); haptic() }
-        catch { errorText = error.localizedDescription }
-    }
 
     private var lookUsesMatte: Bool {
         look.stack.contains { $0.fx == "body_fx" } ||
@@ -449,7 +456,7 @@ struct RecordView: View {
     /// frame. A tap-picked key overrides the chroma entries' matte mode; an
     /// active Studio spec overrides the look's face entry wholesale.
     private func pushLive() {
-        guard engine.isReady else { return }   // no engine yet → no-op (simulator early launch)
+        guard engine.isReady else { return }
         var stack = FilterLooks.liveStack(for: look, intensity: intensity)
         if let k = keyOverride {
             stack = stack.map { e in
@@ -471,10 +478,15 @@ struct RecordView: View {
             }
         }
         engine.send("set_live_fx", ["fx": stack])
-        // Track up to 4 faces so group shots get the look on everyone; the
-        // worker costs one landmark run per face per frame, so this stays 1
-        // face ≈ 1 cost when only one person is in frame.
-        engine.send("face_track_enable", ["on": lookUsesFace, "max_faces": 4])
+        // Tier 1: TrueDepth front camera uses ARKit face tracking (no engine worker).
+        // Tier 2: rear camera uses CoreML EP synchronous tracking on the render thread.
+        // Tier 3: non-TrueDepth front camera uses the existing async ONNX worker.
+        if camera is ARKitCameraCapture {
+            engine.send("face_track_enable", ["on": false, "max_faces": 4])
+        } else {
+            engine.send("face_track_enable",
+                        ["on": lookUsesFace, "sync": position == .back, "max_faces": 4])
+        }
         camera?.matteEnabled = lookUsesMatte
     }
 

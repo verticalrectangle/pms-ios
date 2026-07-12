@@ -32,9 +32,10 @@ Xcode + CMake for most phases; Phase 8 partially runs on Linux.*
    verify `readlink /proc/<pid>/exe` (Linux) / `lsof` (macOS) before
    trusting results. This has burned us twice.
 6. **Cache versioning rule.** Any change to the face tracker's algorithm
-   requires bumping the face-cache version (writer in `face_track.cpp`,
-   reader gate in `face_cache.cpp`) — otherwise stale caches "verify" the
-   old code. Same principle applies to any new cache you introduce.
+   requires bumping the face-cache version (writer `uint32_t version = 9` in
+   `face_track.cpp`, reader gate `version != 9` in `face_cache.cpp`) —
+   otherwise stale caches "verify" the old code. Same principle applies to
+   any new cache you introduce.
 7. **Commits:** detailed messages explaining WHY, no `Co-Authored-By`
    lines. Push `pms-ios` to `origin/main`, engine to `origin/dev`.
 

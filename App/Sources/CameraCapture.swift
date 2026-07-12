@@ -1,14 +1,26 @@
+/// Common surface shared by the AVCapture (`CameraCapture`) and ARKit
+/// (`ARKitCameraCapture`) camera drivers so `RecordView` can switch between
+/// them without knowing the concrete type.
+protocol CameraCaptureProtocol: AnyObject {
+    var matteEnabled: Bool { get set }
+    var filteredRecorder: FilteredTakeRecorder? { get set }
+    func start(position: AVCaptureDevice.Position, preset: CameraCapture.CapturePreset, orientation: CameraCapture.CaptureOrientation) throws
+    func stop()
+    func sampleColor(atNormalized: CGPoint) -> (r: Double, g: Double, b: Double)?
+    func startTake(to url: URL) throws
+    func stopTake(completion: @escaping (URL?) -> Void)
+}
+
+import AVFoundation
+import UIKit
+import CoreMedia
+
 // CameraCapture.swift — AVFoundation capture feeding the engine intake.
 // Replaces the desktop V4L2/ffmpeg-child path. Frames go to the engine as
 // CVPixelBuffers (zero-copy into Metal via the engine's texture cache).
 // Frames are rotated to upright portrait AT THE CONNECTION (videoRotationAngle),
 // so the engine is told rotation 0 — no second rotation from device orientation.
-import AVFoundation
-import UIKit
-import CoreMedia
-
-final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
-                           AVCaptureAudioDataOutputSampleBufferDelegate {
+final class CameraCapture: NSObject, CameraCaptureProtocol, AVCaptureVideoDataOutputSampleBufferDelegate {
     enum CaptureError: LocalizedError {
         case cameraDenied
         case micDenied
@@ -61,10 +73,8 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var currentPosition: AVCaptureDevice.Position = .front
     private var currentOrientation: CaptureOrientation = .portrait
 
-    // Mic → engine capture-injection ring (AVAudioConverter per input format).
-    private var audioConverter: AVAudioConverter?
-    private var converterInputFormat: AVAudioFormat?
-
+    // Mic → engine capture-injection ring (shared with the ARKit path).
+    private let audioCapture = AudioCapture()
     // Latest camera frame, retained for tap-to-sample (chroma key picking).
     private let frameLock = NSLock()
     private var latestFrame: CVPixelBuffer?
@@ -112,7 +122,12 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var takeAudioIn: AVAssetWriterInput?
     private var takeSessionStarted = false
 
-    init(engine: EngineStore) { self.engine = engine }
+    init(engine: EngineStore) {
+        self.engine = engine
+        super.init()
+        audioCapture.engine = engine
+        audioCapture.onSampleBuffer = { [weak self] sb in self?.handleAudioOutput(sb) }
+    }
 
     /// Request camera + mic authorization. Completion on main.
     static func requestAuthorization(_ completion: @escaping (Result<Void, CaptureError>) -> Void) {
@@ -180,8 +195,7 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
         if audioOutput == nil {
             let audio = AVCaptureAudioDataOutput()
-            audio.setSampleBufferDelegate(self, queue: audioQueue)
-            guard session.canAddOutput(audio) else { throw CaptureError.configuration("audio output rejected") }
+            audio.setSampleBufferDelegate(audioCapture, queue: audioCapture.audioQueue)
             session.addOutput(audio)
             audioOutput = audio
         }
@@ -343,12 +357,6 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
-        if output is AVCaptureAudioDataOutput {
-            submitMic(sampleBuffer)
-            if let rec = filteredRecorder { rec.appendAudio(sampleBuffer) }
-            else { appendTake(sampleBuffer, isVideo: false) }
-            return
-        }
         // Video frames → the engine's Metal compositor (live canvas preview).
         guard output is AVCaptureVideoDataOutput,
               let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
@@ -366,43 +374,13 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         if matteEnabled { kickMatte(pb, hostTime: host) }
     }
 
-    // MARK: mic → engine (interleaved stereo Float32 via AVAudioConverter)
+    // MARK: audio passthrough to take writer / filtered recorder
 
-    private func submitMic(_ sb: CMSampleBuffer) {
-        guard let desc = CMSampleBufferGetFormatDescription(sb) else { return }
-        let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sb))
-        guard frames > 0 else { return }
-        let inFormat = AVAudioFormat(cmAudioFormatDescription: desc)
-
-        guard let inBuf = AVAudioPCMBuffer(pcmFormat: inFormat, frameCapacity: frames) else { return }
-        inBuf.frameLength = frames
-        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
-            sb, at: 0, frameCount: Int32(frames),
-            into: inBuf.mutableAudioBufferList) == noErr else { return }
-
-        guard let outFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                            sampleRate: inFormat.sampleRate,
-                                            channels: 2, interleaved: true) else { return }
-        if audioConverter == nil || converterInputFormat != inFormat {
-            audioConverter = AVAudioConverter(from: inFormat, to: outFormat)
-            converterInputFormat = inFormat
-        }
-        guard let converter = audioConverter,
-              let outBuf = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: frames) else { return }
-
-        var fed = false
-        let status = converter.convert(to: outBuf, error: nil) { _, outStatus in
-            if fed { outStatus.pointee = .noDataNow; return nil }
-            fed = true
-            outStatus.pointee = .haveData
-            return inBuf
-        }
-        guard status != .error, outBuf.frameLength > 0,
-              let data = outBuf.floatChannelData?[0] else { return }
-        // Engine resamples to its 44.1 kHz internally; pass the native rate.
-        engine?.submitMicBlock(data, frames: Int(outBuf.frameLength),
-                               sampleRate: outFormat.sampleRate)
+    private func handleAudioOutput(_ sampleBuffer: CMSampleBuffer) {
+        if let rec = filteredRecorder { rec.appendAudio(sampleBuffer) }
+        else { appendTake(sampleBuffer, isVideo: false) }
     }
+
 
     // MARK: person matte (Vision, bounded cadence, own queue)
 

@@ -72,3 +72,4 @@ targets:
       - sdk: AudioToolbox.framework
       - sdk: CoreAudio.framework
       - sdk: CoreML.framework
+      - sdk: ARKit.framework
