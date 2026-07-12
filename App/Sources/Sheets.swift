@@ -188,7 +188,7 @@ struct MediaSheet: View {
 struct LyricsSheet: View {
     @ObservedObject var model: EditorModel
     @State private var anim = "none"
-    private let anims = ["none", "fade", "glitch", "typewriter", "bounce", "scale", "slide", "wave", "jitter"]
+    private let anims = ["none", "fade", "glitch", "typewriter", "bounce", "scale", "slide", "wave", "jitter", "scratch"]
 
     /// Engine-generated (managed) lyric clips exist → typography presets apply.
     private var hasManagedLyrics: Bool {

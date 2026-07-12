@@ -95,23 +95,50 @@ struct LyricOverlay: View {
     let clips: [Clip]
     let box: CGSize
     var body: some View {
-        ZStack {
-            ForEach(clips) { c in
-                let lay = TextLayoutModel.layout(c.label.isEmpty ? " " : c.label,
-                                                 clip: c, in: box)
-                Text(c.label)
-                    .font(.system(size: lay.fontSize, weight: .black))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.55), radius: box.width * 0.02)
-                    .multilineTextAlignment(c.subAnchorH == 0 ? .leading :
-                                            c.subAnchorH == 2 ? .trailing : .center)
-                    .frame(width: lay.rect.width,
-                           alignment: c.subAnchorH == 0 ? .leading :
-                                      c.subAnchorH == 2 ? .trailing : .center)
-                    .position(x: lay.rect.midX, y: lay.rect.midY)
+        TimelineView(.animation) { timeline in
+            ZStack {
+                ForEach(clips) { c in
+                    let lay = TextLayoutModel.layout(c.label.isEmpty ? " " : c.label,
+                                                     clip: c, in: box)
+                    let baseText = Text(c.label)
+                        .font(.system(size: lay.fontSize, weight: .black))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.55), radius: box.width * 0.02)
+                        .multilineTextAlignment(c.subAnchorH == 0 ? .leading :
+                                                c.subAnchorH == 2 ? .trailing : .center)
+                        .frame(width: lay.rect.width,
+                               alignment: c.subAnchorH == 0 ? .leading :
+                                          c.subAnchorH == 2 ? .trailing : .center)
+                        .position(x: lay.rect.midX, y: lay.rect.midY)
+                    if c.clipStyle == "scratch" {
+                        baseText.overlay {
+                            Canvas { ctx, size in
+                                let frame = Int(timeline.date.timeIntervalSinceReferenceDate * 24)
+                                for i in 0..<14 {
+                                    let sx = CGFloat(Self.hash01(i, frame)) * size.width
+                                    let sy = CGFloat(Self.hash01(i + 7, frame)) * size.height
+                                    let ang = (CGFloat(Self.hash01(i + 13, frame)) - 0.5) * .pi * 0.3
+                                    let len = size.width * (0.2 + CGFloat(Self.hash01(i + 19, frame)) * 0.6)
+                                    var p = Path()
+                                    p.move(to: CGPoint(x: sx, y: sy))
+                                    p.addLine(to: CGPoint(x: sx + cos(ang) * len,
+                                                          y: sy + sin(ang) * len))
+                                    ctx.stroke(p, with: .color(.black.opacity(0.7)), lineWidth: 1.5)
+                                }
+                            }
+                        }
+                    } else {
+                        baseText
+                    }
+                }
             }
+            .frame(width: box.width, height: box.height)
+            .allowsHitTesting(false)
         }
-        .frame(width: box.width, height: box.height)
-        .allowsHitTesting(false)
+    }
+    private static func hash01(_ i: Int, _ salt: Int) -> Float {
+        var x = (UInt32(truncatingIfNeeded: i) &* 2654435761) ^ (UInt32(truncatingIfNeeded: salt) &* 40503)
+        x ^= x >> 13; x &*= 0x5bd1e995; x ^= x >> 15
+        return Float(x & 0xFFFFFF) / Float(0x1000000)
     }
 }

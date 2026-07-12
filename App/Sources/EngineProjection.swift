@@ -298,6 +298,7 @@ extension EngineProjectSnapshot {
                 clip.subPosX = c.subPosX; clip.subPosY = c.subPosY
                 clip.subAnchorH = c.subAnchorH
                 clip.subWrapW = c.subWrapW
+                clip.clipStyle = c.clipStyle
                 track.clips.append(clip)
             }
             for b in t.fxBricks {
