@@ -2,3 +2,6 @@
 .build/
 DerivedData/
 Engine/build/
+.DS_Store
+build/
+build_sim/
