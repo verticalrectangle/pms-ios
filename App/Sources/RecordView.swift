@@ -205,7 +205,7 @@ struct RecordView: View {
     private var intensityRow: some View {
         HStack(spacing: 10) {
             Image(systemName: "dial.low").font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
-            Slider(value: $intensity, in: 0.05...1.5).tint(Theme.accent)
+            Slider(value: $intensity, in: 0.05...2.0).tint(Theme.accent)
             Text("\(Int(intensity * 100))%").font(.num(11)).foregroundStyle(.white.opacity(0.8))
                 .frame(width: 40, alignment: .trailing)
             if lookUsesFace {
