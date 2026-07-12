@@ -126,8 +126,6 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
     /// ARKit supplies bi-planar Y'CbCr frames in landscape sensor orientation.
     /// The engine accepts one-plane BGRA textures only, so map and rotate here
     /// rather than interpreting Y as four BGRA pixels in the Metal compositor.
-    /// The front camera is mirrored horizontally (selfie view) to match the
-    /// non-ARKit CameraCapture path, which sets isVideoMirrored=true for .front.
     private func portraitBGRAFrame(from source: CVPixelBuffer) -> CVPixelBuffer? {
         let width = CVPixelBufferGetHeight(source)
         let height = CVPixelBufferGetWidth(source)
@@ -155,10 +153,9 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
               let output else { return nil }
 
         let portrait = CIImage(cvPixelBuffer: source).oriented(.right)
-        let mirrored = portrait.transformed(by: .init(scaleX: -1, y: 1))
         let bounds = CGRect(origin: .zero, size: size)
-        let normalized = mirrored.transformed(by: .init(translationX: -mirrored.extent.minX,
-                                                        y: -mirrored.extent.minY))
+        let normalized = portrait.transformed(by: .init(translationX: -portrait.extent.minX,
+                                                         y: -portrait.extent.minY))
         ciContext.render(normalized, to: output, bounds: bounds,
                          colorSpace: CGColorSpaceCreateDeviceRGB())
         return output
@@ -182,7 +179,7 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
                     orientation: .portrait,
                     viewportSize: viewport
                 )
-                vertices[i * 2] = Float(imgW) - Float(projected.x)  // mirror X for selfie view
+                vertices[i * 2] = Float(projected.x)
                 vertices[i * 2 + 1] = Float(projected.y)
             }
             // ARKit textureCoordinates are constant per topology (same every
