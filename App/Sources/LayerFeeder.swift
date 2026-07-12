@@ -151,13 +151,19 @@ final class LayerFeeder {
             for c in tr.clips {
                 guard let a = c.address, a != excludingText else { continue }
                 live.insert(a)
-                if c.clipStyle == "scratch" {
+                if c.clipStyle == "scratch" || c.clipStyle == "scratch-raw" {
                     liveScratch.insert(a)
                     scratchClips[a] = (clip: c, start: c.start, end: c.end)
                     // Submit an initial frame so the layer isn't blank before
                     // the first tick(); tick() keeps it fresh thereafter.
-                    if let pb = Self.rasterScratchText(c, canvas: canvas, frame: 0) {
-                        engine?.submitLayerFrame(track: a.track, clip: a.clip, pb, hostTime: -1)
+                    if c.clipStyle == "scratch-raw" {
+                        if let pb = Self.rasterScratchRawText(c, canvas: canvas, frame: 0) {
+                            engine?.submitLayerFrame(track: a.track, clip: a.clip, pb, hostTime: -1)
+                        }
+                    } else {
+                        if let pb = Self.rasterScratchText(c, canvas: canvas, frame: 0) {
+                            engine?.submitLayerFrame(track: a.track, clip: a.clip, pb, hostTime: -1)
+                        }
                     }
                     continue
                 }
@@ -228,14 +234,18 @@ final class LayerFeeder {
             engine.submitLayerFrame(track: o.address.track, clip: o.address.clip, pb,
                                     hostTime: playhead)
         }
-        // Scratch-on-film text: re-rasterize with per-frame scratches
+        // Scratch text: re-rasterize with per-frame scratches
         for (a, info) in scratchClips {
             guard playhead >= info.start, playhead < info.end else { continue }
             let localT = playhead - info.start
             let frame = Int(localT * 24)
-            if let pb = Self.rasterScratchText(info.clip, canvas: canvas, frame: frame) {
-                engine.submitLayerFrame(track: a.track, clip: a.clip, pb, hostTime: playhead)
+            let pb: CVPixelBuffer?
+            if info.clip.clipStyle == "scratch-raw" {
+                pb = Self.rasterScratchRawText(info.clip, canvas: canvas, frame: frame)
+            } else {
+                pb = Self.rasterScratchText(info.clip, canvas: canvas, frame: frame)
             }
+            if let pb { engine.submitLayerFrame(track: a.track, clip: a.clip, pb, hostTime: playhead) }
         }
     }
 
@@ -329,6 +339,62 @@ final class LayerFeeder {
         ctx.setStrokeColor(UIColor.white.cgColor)   // alpha=1 → full erasure
         ctx.setLineWidth(1.5)
         ctx.strokePath()
+        ctx.setBlendMode(.normal)
+
+        UIGraphicsPopContext()
+        return pb
+    }
+
+    /// Per-frame scratch-raw raster: draw white scratch lines, then mask to the
+    /// text shape with `.destinationIn` — only scratches inside the letterform
+    /// survive. The letter IS the scratches, not a solid fill with scratches on top.
+    static func rasterScratchRawText(_ c: Clip, canvas: CGSize = CGSize(width: 1080, height: 1920),
+                                     frame: Int) -> CVPixelBuffer? {
+        guard !c.label.isEmpty else { return nil }
+        let width = Int(canvas.width), height = Int(canvas.height)
+        var pbOut: CVPixelBuffer?
+        CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA,
+                            [kCVPixelBufferCGBitmapContextCompatibilityKey: true] as CFDictionary,
+                            &pbOut)
+        guard let pb = pbOut else { return nil }
+        CVPixelBufferLockBaseAddress(pb, [])
+        defer { CVPixelBufferUnlockBaseAddress(pb, []) }
+        guard let ctx = CGContext(data: CVPixelBufferGetBaseAddress(pb),
+                                  width: width, height: height,
+                                  bitsPerComponent: 8,
+                                  bytesPerRow: CVPixelBufferGetBytesPerRow(pb),
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue |
+                                              CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        ctx.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        UIGraphicsPushContext(ctx)
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: 1, y: -1)
+        let lay = TextLayoutModel.layout(c.label, clip: c, in: canvas)
+
+        // ── 1. Draw white scratch lines across the text area ─────────────
+        let nScratches = 20 + frame % 12
+        for i in 0..<nScratches {
+            let sx = CGFloat(hash01(i, frame)) * lay.rect.width
+            let sy = CGFloat(hash01(i + 7, frame)) * lay.rect.height
+            let ang = (CGFloat(hash01(i + 13, frame)) - 0.5) * .pi * 0.4
+            let len = lay.rect.width * (0.3 + CGFloat(hash01(i + 19, frame)) * 0.7)
+            ctx.move(to: CGPoint(x: lay.rect.minX + sx, y: lay.rect.minY + sy))
+            ctx.addLine(to: CGPoint(x: lay.rect.minX + sx + cos(ang) * len,
+                                    y: lay.rect.minY + sy + sin(ang) * len))
+        }
+        ctx.setStrokeColor(UIColor.white.cgColor)
+        ctx.setLineWidth(2.0)
+        ctx.strokePath()
+
+        // ── 2. Mask to text shape: keep only scratches inside the letters ─
+        ctx.setBlendMode(.destinationIn)
+        let para = NSMutableParagraphStyle(); para.alignment = lay.alignment
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: lay.fontSize, weight: .black),
+            .foregroundColor: UIColor.white, .paragraphStyle: para,
+        ]
+        (c.label as NSString).draw(in: lay.rect, withAttributes: attrs)
         ctx.setBlendMode(.normal)
 
         UIGraphicsPopContext()
