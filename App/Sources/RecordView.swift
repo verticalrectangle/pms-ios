@@ -271,7 +271,7 @@ struct RecordView: View {
     /// Preset looks for the category + the user's saved Studio looks (Makeup).
     private var railLooks: [Look] {
         var looks = FilterLooks.looks(in: category)
-        if category == .makeup || category == .forYou {
+        if category == .makeup || category == .makeupARKit || category == .forYou {
             looks += customLooks.map(\.asLook)
         }
         return looks

@@ -9,6 +9,7 @@ struct Look: Identifiable, Equatable {
     enum Category: String, CaseIterable, Identifiable {
         case forYou = "For You"
         case makeup = "Makeup"
+        case makeupARKit = "Makeup ARKit"
         case beauty = "Beauty"
         case color = "Color"
         case trippy = "Trippy"
@@ -418,6 +419,56 @@ enum FilterLooks {
              stack: [.init(fx: "face_fx",
                            params: ["smooth": 0.45, "brighten": 0.18, "warmth": 0.05, "eye_pop": 0.32, "eyes": 0.08, "cheek": 0, "vline": 0.04, "nose": 0.04, "lips_plump": 0.03, "chin_smooth": 0.18, "jaw_shade": 0, "blush": 0.22, "lip": 0.22, "lash": 0.75, "liner": 0.65, "lash_wing": 0.45, "nose_blush": 0, "freckles": 0, "lip_grad": 0.55, "blush_r": 0.784, "blush_g": 0.471, "blush_b": 0.51, "lip_r": 0.667, "lip_g": 0.314, "lip_b": 0.333, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0, "iris_tint": 0.55, "iris_r": 0.4, "iris_g": 0.45, "iris_b": 0.25],
                            makeupTex: "makeup_grunge_fairy.png")]),
+
+        // ── Makeup ARKit (curated: ARKit-native 3D mesh + arkit/ atlases) ─────
+        // Same face_fx path; on TrueDepth the engine loads arkit/<makeupTex>
+        // and paints on ARFaceGeometry. Morphs stay subtle (makeup-first).
+        Look(id: "arkit_douyin", name: "Douyin", icon: "sparkle",
+             categories: [.makeupARKit],
+             stack: [.init(fx: "face_fx",
+                           params: ["smooth": 0.42, "brighten": 0.18, "warmth": 0.08, "eye_pop": 0.28, "eyes": 0.04, "cheek": 0.01, "vline": 0.04, "nose": 0.04, "lips_plump": 0.02, "chin_smooth": 0.12, "jaw_shade": 0, "blush": 0.18, "lip": 0.2, "lash": 0.5, "liner": 0.45, "lash_wing": 0.22, "nose_blush": 0, "freckles": 0, "lip_grad": 0.6, "blush_r": 1, "blush_g": 0.55, "blush_b": 0.65, "lip_r": 0.95, "lip_g": 0.3, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
+                           makeupTex: "makeup_douyin.png")]),
+        Look(id: "arkit_egirl", name: "E-Girl", icon: "flame.fill",
+             categories: [.makeupARKit],
+             stack: [.init(fx: "face_fx",
+                           params: ["smooth": 0.4, "brighten": 0.16, "warmth": 0.08, "eye_pop": 0.26, "eyes": 0.04, "cheek": 0, "vline": 0.03, "nose": 0.03, "lips_plump": 0.02, "chin_smooth": 0.12, "jaw_shade": 0, "blush": 0.22, "lip": 0.2, "lash": 0.5, "liner": 0.55, "lash_wing": 0.38, "nose_blush": 0.25, "freckles": 0.32, "lip_grad": 0.55, "blush_r": 1, "blush_g": 0.45, "blush_b": 0.55, "lip_r": 0.95, "lip_g": 0.3, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
+                           makeupTex: "makeup_egirl.png")]),
+        Look(id: "arkit_glam", name: "Glam Contour", icon: "diamond.fill",
+             categories: [.makeupARKit],
+             stack: [.init(fx: "face_fx",
+                           params: ["smooth": 0.44, "brighten": 0.16, "warmth": 0.1, "eye_pop": 0.28, "eyes": 0.04, "cheek": 0.04, "vline": 0.05, "nose": 0.05, "lips_plump": 0.02, "chin_smooth": 0.15, "jaw_shade": 0.22, "blush": 0.16, "lip": 0.2, "lash": 0.55, "liner": 0.5, "lash_wing": 0.28, "nose_blush": 0, "freckles": 0, "lip_grad": 0.55, "blush_r": 0.95, "blush_g": 0.55, "blush_b": 0.45, "lip_r": 0.85, "lip_g": 0.55, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
+                           makeupTex: "makeup_glam_contour.png")]),
+        Look(id: "arkit_clean", name: "Clean Girl", icon: "leaf.circle.fill",
+             categories: [.makeupARKit],
+             stack: [.init(fx: "face_fx",
+                           params: ["smooth": 0.36, "brighten": 0.14, "warmth": 0.04, "eye_pop": 0.18, "eyes": 0.01, "cheek": 0, "vline": 0, "nose": 0.01, "lips_plump": 0, "chin_smooth": 0.08, "jaw_shade": 0, "blush": 0.12, "lip": 0.18, "lash": 0.4, "liner": 0.45, "lash_wing": 0.12, "nose_blush": 0, "freckles": 0, "lip_grad": 0.75, "blush_r": 1, "blush_g": 0.65, "blush_b": 0.6, "lip_r": 0.95, "lip_g": 0.55, "lip_b": 0.55, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
+                           makeupTex: "makeup_clean_girl.png")]),
+        Look(id: "arkit_soft_glam", name: "Soft Glam", icon: "moon.stars.fill",
+             categories: [.makeupARKit],
+             stack: [.init(fx: "face_fx",
+                           params: ["smooth": 0.42, "brighten": 0.16, "warmth": 0.08, "eye_pop": 0.24, "eyes": 0.03, "cheek": 0.02, "vline": 0.03, "nose": 0.03, "lips_plump": 0.02, "chin_smooth": 0.12, "jaw_shade": 0.12, "blush": 0.15, "lip": 0.2, "lash": 0.48, "liner": 0.4, "lash_wing": 0.22, "nose_blush": 0, "freckles": 0, "lip_grad": 0.55, "blush_r": 0.95, "blush_g": 0.72, "blush_b": 0.65, "lip_r": 0.9, "lip_g": 0.58, "lip_b": 0.5, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
+                           makeupTex: "makeup_soft_glam_nude.png")]),
+        Look(id: "arkit_smoke", name: "Smokey", icon: "smoke.fill",
+             categories: [.makeupARKit],
+             stack: [.init(fx: "face_fx",
+                           params: ["smooth": 0.38, "brighten": 0.14, "warmth": 0.16, "eye_pop": 0.28, "eyes": 0.03, "cheek": 0.02, "vline": 0.03, "nose": 0.03, "lips_plump": 0.02, "chin_smooth": 0.1, "jaw_shade": 0, "blush": 0.12, "lip": 0.24, "lash": 0.45, "liner": 0.28, "lash_wing": 0.14, "nose_blush": 0, "freckles": 0, "lip_grad": 0.6, "blush_r": 0.95, "blush_g": 0.5, "blush_b": 0.35, "lip_r": 0.9, "lip_g": 0.45, "lip_b": 0.3, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
+                           makeupTex: "makeup_terracotta_smoke.png")]),
+        Look(id: "arkit_cherry", name: "Cherry Gloss", icon: "drop.fill",
+             categories: [.makeupARKit],
+             stack: [.init(fx: "face_fx",
+                           params: ["smooth": 0.42, "brighten": 0.18, "warmth": 0.08, "eye_pop": 0.26, "eyes": 0.03, "cheek": 0.01, "vline": 0.03, "nose": 0.03, "lips_plump": 0.03, "chin_smooth": 0.12, "jaw_shade": 0, "blush": 0.12, "lip": 0.36, "lash": 0.5, "liner": 0.55, "lash_wing": 0.32, "nose_blush": 0, "freckles": 0, "lip_grad": 0.45, "blush_r": 1, "blush_g": 0.4, "blush_b": 0.45, "lip_r": 0.95, "lip_g": 0.15, "lip_b": 0.25, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
+                           makeupTex: "makeup_cherry_gloss.png")]),
+        Look(id: "arkit_goth", name: "Midnight Goth", icon: "moon.fill",
+             categories: [.makeupARKit],
+             stack: [.init(fx: "face_fx",
+                           params: ["smooth": 0.46, "brighten": 0.12, "warmth": 0, "eye_pop": 0.3, "eyes": 0.03, "cheek": 0, "vline": 0.03, "nose": 0.03, "lips_plump": 0.02, "chin_smooth": 0.12, "jaw_shade": 0, "blush": 0.08, "lip": 0.32, "lash": 0.65, "liner": 0.55, "lash_wing": 0.3, "nose_blush": 0, "freckles": 0, "lip_grad": 0.45, "blush_r": 0.7, "blush_g": 0.35, "blush_b": 0.45, "lip_r": 0.55, "lip_g": 0.1, "lip_b": 0.25, "eye_glow": 0, "skin_tint": 0, "desat": 0.15, "chrome": 0, "scanlines": 0],
+                           makeupTex: "makeup_midnight_goth.png")]),
+        Look(id: "arkit_doll", name: "Doll Pink", icon: "heart.circle.fill",
+             categories: [.makeupARKit],
+             stack: [.init(fx: "face_fx",
+                           params: ["smooth": 0.52, "brighten": 0.22, "warmth": 0.04, "eye_pop": 0.3, "eyes": 0.05, "cheek": 0, "vline": 0.04, "nose": 0.03, "lips_plump": 0.03, "chin_smooth": 0.15, "jaw_shade": 0, "blush": 0.22, "lip": 0.24, "lash": 0.7, "liner": 0.5, "lash_wing": 0.22, "nose_blush": 0, "freckles": 0, "lip_grad": 0.55, "blush_r": 1, "blush_g": 0.5, "blush_b": 0.62, "lip_r": 0.95, "lip_g": 0.25, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
+                           makeupTex: "makeup_doll_pink.png")]),
+
         // ── Beauty (full-frame skin shaders — no tracking) ───────────────────────────────────────────────────────────
         Look(id: "porcelain", name: "Porcelain", icon: "sparkles",
              categories: [.forYou, .beauty],
