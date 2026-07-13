@@ -298,6 +298,40 @@ final class EngineStore: ObservableObject {
         guard let e = engine else { return }
         #if !ENGINE_MOCK
         pms_submit_arkit_face(e, nil, nil, nil, 0, 0, 0)
+        pms_submit_arkit_face_3d(e, nil, nil, nil, nil, nil, nil, nil, 0, 0, 0)
+        #endif
+    }
+
+    /// Native tier-1 submission (docs/ARKIT_NATIVE_PLAN.md): full 3D ARKit
+    /// face state; the engine renders the mesh itself with these matrices.
+    func submitARKitFace3D(vertices packed: [Float],
+                           model: simd_float4x4, view: simd_float4x4,
+                           proj: simd_float4x4,
+                           eyeL: simd_float4x4, eyeR: simd_float4x4,
+                           blendshapes: [Float],
+                           width: Int, height: Int) {
+        guard let e = engine else { return }
+        #if !ENGINE_MOCK
+        var m = model, v = view, p = proj, el = eyeL, er = eyeR
+        packed.withUnsafeBufferPointer { vp in
+            blendshapes.withUnsafeBufferPointer { bp in
+                withUnsafeBytes(of: &m) { mb in
+                withUnsafeBytes(of: &v) { vb in
+                withUnsafeBytes(of: &p) { pb in
+                withUnsafeBytes(of: &el) { elb in
+                withUnsafeBytes(of: &er) { erb in
+                    pms_submit_arkit_face_3d(
+                        e, vp.baseAddress,
+                        mb.baseAddress?.assumingMemoryBound(to: Float.self),
+                        vb.baseAddress?.assumingMemoryBound(to: Float.self),
+                        pb.baseAddress?.assumingMemoryBound(to: Float.self),
+                        elb.baseAddress?.assumingMemoryBound(to: Float.self),
+                        erb.baseAddress?.assumingMemoryBound(to: Float.self),
+                        bp.baseAddress,
+                        1, Int32(width), Int32(height))
+                }}}}}
+            }
+        }
         #endif
     }
 

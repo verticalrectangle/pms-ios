@@ -74,7 +74,12 @@ struct RecordView: View {
                         // coordinates) — alignment QA for the ARKit bridge.
                         debugOverlay.toggle()
                         engine.send("face_overlay", ["on": debugOverlay])
-                        keyHint = debugOverlay ? "Landmark overlay ON" : "Landmark overlay off"
+                        if debugOverlay {
+                            // also record a ~6s geometry fixture for the Mac
+                            // replay harness (ARKIT_NATIVE_PLAN Phase 0)
+                            (camera as? ARKitCameraCapture)?.startFixtureCapture()
+                        }
+                        keyHint = debugOverlay ? "Landmark overlay ON (capturing fixture)" : "Landmark overlay off"
                     }
                     .onTapGesture(count: 2) {
                         guard lookHasChroma else { return }

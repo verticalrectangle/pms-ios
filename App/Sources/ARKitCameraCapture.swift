@@ -122,48 +122,91 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
     }
 
     private func submitFaces(frame: ARFrame, imgW: Int, imgH: Int) {
-        let viewport = CGSize(width: imgW, height: imgH)
         // isTracked == false means ARKit lost the face (fast motion, out of
         // frame): clear the slot so the engine falls back / hides makeup
-        // instead of painting with frozen landmarks.
+        // instead of painting with frozen geometry.
         let anchors = frame.anchors.compactMap { $0 as? ARFaceAnchor }
                                    .filter { $0.isTracked }
         guard let anchor = anchors.first else {
             engine?.clearARKitFaces()
             return
         }
+        // Native tier-1 path (docs/ARKIT_NATIVE_PLAN.md): ship the full 3D
+        // state — vertices in anchor space plus the transform chain and eye
+        // poses — and let the engine render ARKit's mesh with ARKit's own
+        // camera. No 2D projection here, no landmark bridge in the render.
         let camera = frame.camera
-        let vertices = UnsafeMutablePointer<Float>.allocate(capacity: 1220 * 2)
-        for (i, vertex) in anchor.geometry.vertices.enumerated() {
-            let world = anchor.transform * SIMD4<Float>(vertex, 1)
-            let projected = camera.projectPoint(
-                SIMD3<Float>(world.x, world.y, world.z),
-                orientation: .portrait,
-                viewportSize: viewport
-            )
-            vertices[i * 2] = Float(projected.x)
-            vertices[i * 2 + 1] = Float(projected.y)
-        }
-        // ARKit textureCoordinates are constant per topology (same every
-        // frame). Pass them so the engine's makeup mesh pass can map UV
-        // makeup textures onto the tracked face.
-        let texCoords = anchor.geometry.textureCoordinates
-        let uvs = UnsafeMutablePointer<Float>.allocate(capacity: 1220 * 2)
-        for (i, tc) in texCoords.enumerated() {
-            uvs[i * 2] = tc.x
-            uvs[i * 2 + 1] = tc.y
+        let viewport = CGSize(width: imgW, height: imgH)
+        let view = camera.viewMatrix(for: .portrait)
+        let proj = camera.projectionMatrix(for: .portrait,
+                                           viewportSize: viewport,
+                                           zNear: 0.01, zFar: 10.0)
+        let verts = anchor.geometry.vertices
+        var packed = [Float](repeating: 0, count: verts.count * 3)
+        for (i, v) in verts.enumerated() {
+            packed[i * 3 + 0] = v.x
+            packed[i * 3 + 1] = v.y
+            packed[i * 3 + 2] = v.z
         }
         let blend = arkitBlendShapeArray(from: anchor.blendShapes)
-        blend.withUnsafeBufferPointer { blendPtr in
-            engine?.submitARKitFace(vertices: vertices,
-                                    uvs: uvs,
-                                    blendshapes: blendPtr.baseAddress!,
-                                    count: 1,
-                                    width: imgW,
-                                    height: imgH)
+        engine?.submitARKitFace3D(vertices: packed,
+                                  model: anchor.transform,
+                                  view: view, proj: proj,
+                                  eyeL: anchor.leftEyeTransform,
+                                  eyeR: anchor.rightEyeTransform,
+                                  blendshapes: blend,
+                                  width: imgW, height: imgH)
+        recordFixtureFrame(frame: frame, anchor: anchor, packed: packed,
+                           view: view, proj: proj, blend: blend,
+                           imgW: imgW, imgH: imgH)
+    }
+
+    // MARK: fixture capture (ARKIT_NATIVE_PLAN Phase 0)
+    // Dumps per-frame geometry to Documents/arkit_capture_<ts>.jsonl so the
+    // Mac replay harness can regression-test against real faces in motion.
+    private var captureRemaining = 0
+    private var captureHandle: FileHandle?
+
+    func startFixtureCapture(frames: Int = 180) {
+        let dir = FileManager.default.urls(for: .documentDirectory,
+                                           in: .userDomainMask)[0]
+        let ts = Int(Date().timeIntervalSince1970)
+        let url = dir.appendingPathComponent("arkit_capture_\(ts).jsonl")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        captureHandle = try? FileHandle(forWritingTo: url)
+        captureRemaining = captureHandle != nil ? frames : 0
+    }
+
+    private func recordFixtureFrame(frame: ARFrame, anchor: ARFaceAnchor,
+                                    packed: [Float], view: simd_float4x4,
+                                    proj: simd_float4x4, blend: [Float],
+                                    imgW: Int, imgH: Int) {
+        guard captureRemaining > 0, let handle = captureHandle else { return }
+        captureRemaining -= 1
+        func flat(_ m: simd_float4x4) -> [Float] {
+            var out = [Float]()
+            for c in 0..<4 { let col = m[c]
+                out.append(contentsOf: [col.x, col.y, col.z, col.w]) }
+            return out
         }
-        vertices.deallocate()
-        uvs.deallocate()
+        let rec: [String: Any] = [
+            "t": frame.timestamp, "w": imgW, "h": imgH,
+            "verts": packed.map { Double($0) },
+            "model": flat(anchor.transform).map { Double($0) },
+            "view": flat(view).map { Double($0) },
+            "proj": flat(proj).map { Double($0) },
+            "eye_l": flat(anchor.leftEyeTransform).map { Double($0) },
+            "eye_r": flat(anchor.rightEyeTransform).map { Double($0) },
+            "blend": blend.map { Double($0) },
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: rec),
+           let line = String(data: data, encoding: .utf8) {
+            handle.write(Data((line + "\n").utf8))
+        }
+        if captureRemaining == 0 {
+            try? captureHandle?.close()
+            captureHandle = nil
+        }
     }
 
     /// ARKit supplies bi-planar Y'CbCr frames in landscape sensor orientation.
