@@ -7,6 +7,7 @@
 // submitCameraFrame from its worker queue ONLY while ticks + preview are paused
 // (exclusive engine access), matching the desktop contract.
 import Foundation
+import simd
 import Metal
 import Combine
 import QuartzCore   // CADisplayLink
