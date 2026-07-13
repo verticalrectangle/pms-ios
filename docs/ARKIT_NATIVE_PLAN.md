@@ -63,19 +63,19 @@ skin.
 
 ## Phases
 
-- [ ] **Phase 0 — Real-face fixtures.** Debug recorder in the app dumps
+- [x] **Phase 0 — Real-face fixtures.** Debug recorder in the app dumps
   per-frame geometry (+ every-Nth JPEG) to Documents (file sharing on);
   synthetic fixture generator (canonical mesh + scripted blink/gaze/pose)
   keeps CI honest until real captures land. Replay drives all later gates.
-- [ ] **Phase 1 — Native mesh renderer.** `pms_submit_arkit_face_3d` ABI;
+- [x] **Phase 1 — Native mesh renderer.** `pms_submit_arkit_face_3d` ABI;
   engine draws the mesh with a UV-checker over the frame. Accept: checker
   glued to the face at every pose in replay + on device.
-- [ ] **Phase 2 — ARKit-UV atlases.** Warp-map baker + plate conversion +
+- [x] **Phase 2 — ARKit-UV atlases.** Warp-map baker + plate conversion +
   builtin-look layers; `BeautyLook.arkit_tex` wiring; intensity scales atlas
   opacity.
-- [ ] **Phase 3 — Eye layer.** Stencil-clipped iris discs from eye
+- [x] **Phase 3 — Eye layer.** Stencil-clipped iris discs from eye
   transforms; iris tint/anime params move here.
-- [ ] **Phase 4 — Retire the 2D bridge on this tier.** Beauty params from
+- [x] **Phase 4 — Retire the 2D bridge on this tier.** Beauty params from
   projected ARKit key verts; Swift stops calling the 2D submit; bridge stays
   for tiers 2/3 only.
 - [ ] **Phase 5 — post-QA polish (needs on-device judgment of v1).** 3D lash
