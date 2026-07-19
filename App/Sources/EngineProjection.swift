@@ -54,6 +54,13 @@ struct EngineClipSnapshot: Identifiable {
     var subPosY: Double             // custom Y fraction from top (sub_pos == 3)
     var subAnchorH: Int             // 0 left, 1 centre, 2 right
     var subWrapW: Double            // column width as fraction of canvas width
+    // Shape clips (ClipType::Shape)
+    var shapePath: ShapePathProj? = nil
+    var shapeStyle: ShapeStyleProj? = nil
+    var shapeKeys: [ShapeKeyframe] = []
+    var shapeStrokeLength: Double = 1
+    var shapeStrokeWidthMul: Double = 1
+    var shapeScalarKeys: [String: [ScalarKeyframe]] = [:]  // prop → full keys
     // FX bricks (type == effect / multi_fx / audio_multi_fx / body_fx)
     struct ChainEntry {
         var fxType: String
@@ -168,6 +175,61 @@ struct EngineProjectSnapshot {
                                               bodyFXType: e["body_fx_type"] as? String)
             }
         }
+        // Shape fields (only present for ClipType::Shape).
+        var shapePath: ShapePathProj?
+        var shapeStyle: ShapeStyleProj?
+        var shapeKeys: [ShapeKeyframe] = []
+        var shapeStrokeLength = 1.0, shapeStrokeWidthMul = 1.0
+        var shapeScalarKeys: [String: [ScalarKeyframe]] = [:]
+        if let pj = cj["shape_path"] as? [String: Any] {
+            let pts = (pj["points"] as? [[String: Any]] ?? []).map { p in
+                ShapePoint(x: num(p["x"]) ?? 0.5, y: num(p["y"]) ?? 0.5,
+                           width: num(p["w"]) ?? 0.008)
+            }
+            shapePath = ShapePathProj(points: pts, closed: pj["closed"] as? Bool ?? false)
+        }
+        if let sj = cj["shape_style"] as? [String: Any] {
+            shapeStyle = ShapeStyleProj(
+                fillCol: dbl4(sj["fill_col"], [1,1,1,1]),
+                fillOn: sj["fill_on"] as? Bool ?? true,
+                strokeCol: dbl4(sj["stroke_col"], [1,1,1,1]),
+                strokeOn: sj["stroke_on"] as? Bool ?? false,
+                strokeWidth: num(sj["stroke_width"]) ?? 0.008,
+                gradMode: (sj["grad_mode"] as? Int) ?? Int(num(sj["grad_mode"]) ?? 0),
+                gradCol2: dbl4(sj["grad_col2"], [1,0.3,0.6,1]),
+                gradAngle: num(sj["grad_angle"]) ?? 0,
+                glowCol: dbl4(sj["glow_col"], [1,1,1,1]),
+                glowOn: sj["glow_on"] as? Bool ?? false,
+                glowRadius: num(sj["glow_radius"]) ?? 0.02,
+                glowIntensity: num(sj["glow_intensity"]) ?? 1)
+        }
+        if let ks = cj["shape_path_keys"] as? [[String: Any]] {
+            for k in ks {
+                let pts = (k["points"] as? [[String: Any]] ?? []).map { p in
+                    ShapePoint(x: num(p["x"]) ?? 0.5, y: num(p["y"]) ?? 0.5,
+                               width: num(p["w"]) ?? 0.008)
+                }
+                shapeKeys.append(ShapeKeyframe(time: num(k["t"]) ?? 0,
+                                               path: ShapePathProj(points: pts,
+                                                                   closed: k["closed"] as? Bool ?? false),
+                                               interp: k["interp"] as? String ?? "ease_both"))
+            }
+        }
+        shapeStrokeLength = num(cj["shape_stroke_length"]) ?? 1
+        shapeStrokeWidthMul = num(cj["shape_stroke_width_mul"]) ?? 1
+        // Generic keyframe tracks (ktracks) — pull full keys for the two
+        // shape props the inspector exposes (read-modify-write needs values).
+        if let kfs = cj["keyframes"] as? [String: Any] {
+            for prop in ["shape_stroke_length", "shape_stroke_width_mul"] {
+                if let arr = kfs[prop] as? [[String: Any]] {
+                    shapeScalarKeys[prop] = arr.compactMap { k in
+                        guard let t = num(k["t"]) else { return nil }
+                        return ScalarKeyframe(time: t, value: num(k["v"]) ?? 1,
+                                              interp: k["interp"] as? String ?? "ease_both")
+                    }
+                }
+            }
+        }
         return EngineClipSnapshot(
             address: address,
             type: cj["type"] as? String ?? "unknown",
@@ -202,6 +264,9 @@ struct EngineProjectSnapshot {
             subPosY: num(cj["sub_pos_y"]) ?? 0.85,
             subAnchorH: (cj["sub_anchor_h"] as? Int) ?? Int(num(cj["sub_anchor_h"]) ?? 1),
             subWrapW: num(cj["sub_wrap_w"]) ?? 0.85,
+            shapePath: shapePath, shapeStyle: shapeStyle, shapeKeys: shapeKeys,
+            shapeStrokeLength: shapeStrokeLength, shapeStrokeWidthMul: shapeStrokeWidthMul,
+            shapeScalarKeys: shapeScalarKeys,
             fxType: cj["fx_type"] as? String,
             fxParams: bodyAwareParams(cj),
             fxChain: chain,
@@ -218,6 +283,11 @@ struct EngineProjectSnapshot {
             for (i, v) in arr.enumerated() { if let d = num(v) { out["body_fx_param_\(i)"] = d } }
         }
         return out
+    }
+
+    private static func dbl4(_ v: Any?, _ fallback: [Double]) -> [Double] {
+        guard let a = v as? [Any], a.count == 4 else { return fallback }
+        return a.map { num($0) ?? 0 }
     }
 
     private static func num(_ v: Any?) -> Double? {
@@ -245,10 +315,12 @@ extension EngineProjectSnapshot {
         if content.contains(where: { $0.type == "video" || $0.type == "video_record" }) { return .video }
         if content.contains(where: { $0.type == "audio" || $0.type == "record" }) { return .audio }
         if content.contains(where: { $0.type == "text" || $0.type == "lyrics" || $0.type == "subtitle" }) { return .lyric }
+        if content.contains(where: { $0.type == "shape" }) { return .shape }
         // Empty track: fall back to name conventions used at creation time.
         if t.name.hasPrefix("V") { return .video }
         if t.name.hasPrefix("A") { return .audio }
         if t.name.hasPrefix("T") { return .lyric }
+        if t.name.hasPrefix("S") { return .shape }
         return .video
     }
 
@@ -301,6 +373,17 @@ extension EngineProjectSnapshot {
                 clip.subAnchorH = c.subAnchorH
                 clip.clipStyle = c.clipStyle
                 clip.subFont = c.subFont
+                // Shape projection.
+                clip.shapeKind = (c.type == "shape")
+                clip.shapePath = c.shapePath
+                clip.shapeStyle = c.shapeStyle
+                clip.shapeKeys = c.shapeKeys
+                clip.shapeStrokeLength = c.shapeStrokeLength
+                clip.shapeStrokeWidthMul = c.shapeStrokeWidthMul
+                clip.shapeScalarKeys = c.shapeScalarKeys
+                if clip.shapeKind {
+                    clip.label = clip.shapePreset.isEmpty ? "Shape" : clip.shapePreset
+                }
                 track.clips.append(clip)
             }
             for b in t.fxBricks {

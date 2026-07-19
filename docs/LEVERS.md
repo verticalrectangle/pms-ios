@@ -9,7 +9,7 @@ These are the commands. If a screen needs a lever that isn't
 here, that's an engine change (add handler, regen), never a
 bypass into engine internals.
 
-## Commands (83)
+## Commands (88)
 
 - **`add_audio_multifx_brick`** — Add an Audio Multi-FX brick: an ordered chain of LIVE audio effects that auto-couples (1.5s weld timer skipped â couples immediately) to the best-overlapping 
 - **`add_body_fx_brick`** — Add a Body FX solid brick to a track. The brick applies a body/silhouette-based visual effect (e.g. neon outline, depth blur, glitch, retro TV) to the composite
@@ -19,6 +19,7 @@ bypass into engine internals.
 - **`add_clip_sequence`** — Add multiple clips to a single track in one round-trip. Equivalent to calling add_clip N times but dramatically faster for beat-sync edits or any bulk layout. R
 - **`add_effect_brick`** — Add a standalone FX brick to a track. Affects everything below on the timeline (or only the sibling video clip if on the same track â glass mode).
 - **`add_multifx_brick`** — Add an ordered chain of FX sub-effects as one brick. This is THE way to layer effects over the same time range: FX bricks cannot overlap each other on a track (
+- **`add_shape`** — Add a shape clip (ClipType::Shape) to a track. Shapes are content layers that composite like text/background, NOT FX bricks. The shape is placed at canvas cente
 - **`add_to_bin`** — Add a media file to the project Bin. The Bin is the project-scoped media library shown in the right-side panel â files here are 'available to use' but are not
 - **`add_track`** — Add a track at position (0=top/foreground, higher=background). Returns track index.
 - **`analyze_audio`** — Run beat/RMS analysis on an audio file. Blocks until complete â returns {status: 'done', bpm, duration, beats, rms} when finished. No polling needed.
@@ -53,6 +54,7 @@ bypass into engine internals.
 - **`get_pipeline_status`** — Returns the current ML pipeline status: stage (idle/extract/transcribe/align/done/error), progress (0â1), message, and error string. trigger_pipeline returns 
 - **`get_project`** — Returns project state. Slim by default: {duration, fps, bpm, audio_path, project_path, transcript_ready, playhead, tracks: [{index, name, muted, locked, clip_co
 - **`get_search_status`** — Poll a running transcript search started by find_and_add_clip. Returns: running (bool), progress (0â1), message, found (bool), start (seconds), end (seconds),
+- **`get_shape_path`** — Return the effective path of a shape clip at time t (default: current playhead). When path-morph keyframes exist, returns the interpolated path at t; otherwise 
 - **`get_stills`** — Generate and return thumbnail images for a list of media files so you can visually identify their content before deciding which to add to the timeline.
 - **`get_transcript`** — Return the word-level transcript produced by the transcription pipeline. Returns {status: 'idle'|'ready'|'error', words?: [{word, start, end}], path?}. Word tim
 - **`get_video_description`** — Poll scene analysis started by describe_video (blocks internally until done â call ONCE, not in a loop). Single run â {status, frames:[{timestamp, descripti
@@ -82,6 +84,9 @@ bypass into engine internals.
 - **`set_clip_props`** — Set properties on multiple clips in one call. ops: [{track, clip, prop, value}]. Setting speed retimes like the UI (clip width rescales; see set_clip_prop) â 
 - **`set_format`** — Set the project canvas format / aspect ratio. Three presets:
 - **`set_loop_region`** — Arm the transport loop and optionally set the loop brace region. Playback then cycles seamlessly over [start, end] (or the whole timeline if start/end are omitt
+- **`set_shape_keyframes`** — Replace the path-morph keyframe track on a shape clip. Each key is a full path snapshot at time t (seconds relative to clip start). The engine resamples adjacen
+- **`set_shape_path`** — Replace the base path of a shape clip with a custom path (freehand or edited). Points are in local [0,1]Â² space (the path's bbox maps to the unit square, then 
+- **`set_shape_style`** — Set visual style on a shape clip. All fields optional â only provided fields update. Colors are [r,g,b,a] 0..1. grad_mode: 0=none 1=linear 2=radial 3=hue-cycl
 - **`set_text_style`** — Set visual text styling on a clip. All fields are optional â only provided fields are updated. Color arrays are [r, g, b, a] with values 0â1.
 - **`set_transcript`** — Install a custom word-level transcript for the project's current audio. Writes the canonical cache JSON next to the audio file and reloads the in-memory word ca
 - **`set_typography_preset`** — ASSIGN a typography preset to the project's managed lyric bricks. The per-word/phrase lyric bricks come from trigger_pipeline (they live on a managed 'Lyrics' t

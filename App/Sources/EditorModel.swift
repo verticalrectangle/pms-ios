@@ -348,12 +348,13 @@ final class EditorModel: ObservableObject {
         switch kind {
         case .fxRail: return 0
         case .lyric:  return (idx(.fxRail).map { $0 + 1 }) ?? 0
+        case .shape:  return (idx(.lyric).map { $0 + 1 }) ?? ((idx(.fxRail).map { $0 + 1 }) ?? 0)
         case .video:  return idx(.audio) ?? tracks.count
         case .audio:  return tracks.count
         }
     }
     private func defaultName(for kind: TrackKind) -> String {
-        switch kind { case .fxRail: "GFX"; case .video: "V1"; case .lyric: "T1"; case .audio: "A1" }
+        switch kind { case .fxRail: "GFX"; case .video: "V1"; case .lyric: "T1"; case .shape: "S1"; case .audio: "A1" }
     }
 
     /// Engine track index for a lane kind, creating the track if needed.
@@ -756,6 +757,166 @@ final class EditorModel: ObservableObject {
                    rebuildPlayer: false)
     }
 
+    // MARK: - Shape clips
+
+    var selectedShapeClip: Clip? {
+        tracks.first { $0.kind == .shape }?.clips.first { $0.id == selectedID }
+    }
+
+    /// Add a preset shape clip at the playhead (creates the shape track if
+    /// needed) + select it. Returns the new clip id so the caller can open the
+    /// path editor if desired.
+    @discardableResult
+    func addShapeClip(preset: String, params: [Double] = []) -> String? {
+        guard let ti = ensureTrack(.shape) else { return nil }
+        let start = playhead
+        let r = mutate("add_shape", ["track": ti, "start": start,
+                                     "end": start + 3, "preset": preset,
+                                     "params": params] as [String: Any],
+                       rebuildPlayer: false)
+        if let ci = r?["clip"] as? Int {
+            let id = EngineClipAddress(track: ti, clip: ci).idString
+            selectedID = id
+            // Tag the projection's preset label locally (engine doesn't persist
+            // it) so the timeline shows "star" not "Shape".
+            if let pair = locate(id),
+               case .clip = pair.kind {
+                tracks[pair.track].clips[pair.index].shapePreset = preset
+                tracks[pair.track].clips[pair.index].label = preset.capitalized
+            }
+            return id
+        }
+        return nil
+    }
+
+    /// Replace a shape clip's base path with a freehand/custom path.
+    func setShapePath(_ id: String, points: [[String: Any]], closed: Bool) {
+        guard let a = address(id) else { return }
+        _ = mutate("set_shape_path", ["track": a.track, "clip": a.clip,
+                                      "points": points, "closed": closed] as [String: Any],
+                   rebuildPlayer: false)
+        if let pair = locate(id), case .clip = pair.kind {
+            tracks[pair.track].clips[pair.index].shapePreset = "Freehand"
+            tracks[pair.track].clips[pair.index].label = "Freehand"
+        }
+    }
+
+    /// One style field at a time → set_shape_style. `value` is Any (bool/double/[double]).
+    func setShapeStyle(_ id: String, key: String, value: Any) {
+        guard let a = address(id) else { return }
+        _ = mutate("set_shape_style", ["track": a.track, "clip": a.clip, key: value] as [String: Any],
+                   rebuildPlayer: false)
+    }
+
+    /// Replace morph keyframes (empty keys clears).
+    func setShapeKeyframes(_ id: String, keys: [[String: Any]]) {
+        guard let a = address(id) else { return }
+        _ = mutate("set_shape_keyframes", ["track": a.track, "clip": a.clip,
+                                           "keys": keys] as [String: Any],
+                   rebuildPlayer: false)
+    }
+
+    /// Add a morph key capturing the current base path at the playhead.
+    func addShapeMorphKey(_ id: String) {
+        guard let a = address(id), let snap = lastSnapshot[a],
+              let path = snap.shapePath else { return }
+        let t = max(0, playhead - snap.start)
+        var keys: [[String: Any]] = (snap.shapeKeys.map { k in
+            ["t": k.time, "points": k.path.points.map { ["x": $0.x, "y": $0.y, "w": $0.width] },
+             "closed": k.path.closed, "interp": k.interp] as [String: Any]
+        })
+        keys.removeAll { abs((($0["t"] as? Double) ?? -1) - t) < 1e-3 }
+        keys.append(["t": t,
+                     "points": path.points.map { ["x": $0.x, "y": $0.y, "w": $0.width] },
+                     "closed": path.closed, "interp": "ease_both"] as [String: Any])
+        setShapeKeyframes(id, keys: keys)
+    }
+
+    /// Remove a morph key by index.
+    func removeShapeMorphKey(_ id: String, index: Int) {
+        guard let a = address(id), let snap = lastSnapshot[a] else { return }
+        guard snap.shapeKeys.indices.contains(index) else { return }
+        let keys: [[String: Any]] = snap.shapeKeys.enumerated().compactMap { i, k in
+            i == index ? nil
+            : ["t": k.time, "points": k.path.points.map { ["x": $0.x, "y": $0.y, "w": $0.width] },
+               "closed": k.path.closed, "interp": k.interp] as [String: Any]
+        }
+        setShapeKeyframes(id, keys: keys)
+    }
+    /// Add a scalar keyframe (shape_stroke_length / shape_stroke_width_mul) at
+    /// the playhead. Read-modify-write via the projection's full key list so
+    /// existing keys are preserved (the engine replaces the whole track).
+    func addShapeScalarKey(_ id: String, prop: String, value: Double) {
+        guard let a = address(id), let snap = lastSnapshot[a] else { return }
+        let t = max(0, playhead - snap.start)
+        var keys = snap.shapeScalarKeys[prop] ?? []
+        keys.removeAll { abs($0.time - t) < 1e-3 }
+        keys.append(ScalarKeyframe(time: t, value: value, interp: "ease_both"))
+        keys.sort { $0.time < $1.time }
+        let payload: [[String: Any]] = keys.map { ["t": $0.time, "v": $0.value, "interp": $0.interp] }
+        _ = mutate("set_clip_keyframes", ["track": a.track, "clip": a.clip,
+                                          "prop": prop, "keys": payload] as [String: Any],
+                   rebuildPlayer: false)
+    }
+
+    /// Set a scalar shape prop's value via its keyframe track (the engine
+    /// exposes shape_stroke_length / shape_stroke_width_mul only through
+    /// set_clip_keyframes — there's no set_clip_prop for them). With no
+    /// existing keys, a single key at t=0 acts as the constant base value;
+    /// with keys, the one nearest the playhead is updated.
+    func setShapeScalar(_ id: String, prop: String, value: Double) {
+        guard let a = address(id), let snap = lastSnapshot[a] else { return }
+        let tLocal = max(0, playhead - snap.start)
+        var keys = snap.shapeScalarKeys[prop] ?? []
+        if keys.isEmpty {
+            keys = [ScalarKeyframe(time: 0, value: value, interp: "ease_both")]
+        } else if let ni = keys.enumerated().min(by: { abs($0.element.time - tLocal) < abs($1.element.time - tLocal) })?.offset,
+                  abs(keys[ni].time - tLocal) < 1e-3 {
+            keys[ni].value = value
+        } else {
+            keys.append(ScalarKeyframe(time: tLocal, value: value, interp: "ease_both"))
+            keys.sort { $0.time < $1.time }
+        }
+        let payload: [[String: Any]] = keys.map { ["t": $0.time, "v": $0.value, "interp": $0.interp] }
+        _ = mutate("set_clip_keyframes", ["track": a.track, "clip": a.clip,
+                                          "prop": prop, "keys": payload] as [String: Any],
+                   rebuildPlayer: false)
+    }
+
+    /// Remove a scalar keyframe by index.
+    func removeShapeScalarKey(_ id: String, prop: String, index: Int) {
+        guard let a = address(id), let snap = lastSnapshot[a] else { return }
+        var keys = snap.shapeScalarKeys[prop] ?? []
+        guard keys.indices.contains(index) else { return }
+        keys.remove(at: index)
+        let payload: [[String: Any]] = keys.map { ["t": $0.time, "v": $0.value, "interp": $0.interp] }
+        _ = mutate("set_clip_keyframes", ["track": a.track, "clip": a.clip,
+                                          "prop": prop, "keys": payload] as [String: Any],
+                   rebuildPlayer: false)
+    }
+
+    /// Clear all keyframes for a scalar shape prop.
+    func clearShapeScalarKeys(_ id: String, prop: String) {
+        guard let a = address(id) else { return }
+        _ = mutate("set_clip_keyframes", ["track": a.track, "clip": a.clip,
+                                          "prop": prop, "keys": []] as [String: Any],
+                   rebuildPlayer: false)
+    }
+
+    /// Fetch the engine's evaluated path at the playhead (for the path editor).
+    func engineShapePath(_ id: String) -> ShapePathProj? {
+        guard let a = address(id) else { return nil }
+        guard let r = try? engine.resultObject("get_shape_path",
+                                                ["track": a.track, "clip": a.clip,
+                                                 "t": playhead] as [String: Any]) else { return nil }
+        if (r["error"] as? String) != nil { return nil }
+        let pts = (r["points"] as? [[String: Any]] ?? []).map { p in
+            ShapePoint(x: (p["x"] as? Double) ?? 0.5, y: (p["y"] as? Double) ?? 0.5,
+                       width: (p["w"] as? Double) ?? 0.008)
+        }
+        return ShapePathProj(points: pts, closed: (r["closed"] as? Bool) ?? false)
+    }
+
     /// Place a project-bin item on the timeline at the playhead (video/audio by
     /// extension), creating the destination track if needed.
     func placeBinItem(_ path: String) {
@@ -877,13 +1038,16 @@ final class EditorModel: ObservableObject {
     }
 
     // MARK: - Selection routing
-
-    enum SelectionBar { case none; case clip(Clip); case lyric(Clip); case brick(Brick) }
+    enum SelectionBar { case none; case clip(Clip); case lyric(Clip); case shape(Clip); case brick(Brick) }
     var selectedBar: SelectionBar {
         guard let r = selectedRef else { return .none }
         switch r.kind {
         case .clip:  let c = tracks[r.track].clips[r.index]
-                     return tracks[r.track].kind == .lyric ? .lyric(c) : .clip(c)
+                     switch tracks[r.track].kind {
+                     case .lyric: return .lyric(c)
+                     case .shape: return .shape(c)
+                     default:     return .clip(c)
+                     }
         case .brick: return .brick(tracks[r.track].bricks[r.index])
         }
     }
@@ -912,7 +1076,7 @@ final class EditorModel: ObservableObject {
 
     private func engineType(of c: Clip, on kind: TrackKind) -> String {
         guard let a = c.address, let snap = lastSnapshot[a] else {
-            switch kind { case .video: return "video"; case .audio: return "audio"; default: return "text" }
+            switch kind { case .video: return "video"; case .audio: return "audio"; case .shape: return "shape"; default: return "text" }
         }
         return snap.type
     }
@@ -1294,7 +1458,7 @@ extension Brick {
 }
 
 enum EditorSheet: Identifiable {
-    case media, fx, lyrics, agent, export
+    case media, fx, lyrics, shape, agent, export
     var id: Int { hashValue }
 }
 

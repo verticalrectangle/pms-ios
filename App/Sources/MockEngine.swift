@@ -39,8 +39,27 @@ final class MockEngine {
         var fxParams: [String: Double] = [:]
         var fxChain: [MChainEntry] = []       // multi_fx / audio_multi_fx
         var bodyFXType = ""
+        // Shape clips (ClipType::Shape)
+        var shapePreset = ""              // UI label only
+        var shapePath: MockShapePath = MockShapePath()
+        var shapeStyle: MockShapeStyle = MockShapeStyle()
+        var shapeKeys: [MockShapeKey] = []
+        var shapeStrokeLength = 1.0
+        var shapeStrokeWidthMul = 1.0
+        var keyTimes: [String: [Double]] = [:]   // prop → key times (mock ktracks)
         var isFX: Bool { type == "effect" || type == "multi_fx" || type == "audio_multi_fx" || type == "body_fx" }
     }
+    struct MockShapePath: Codable { var points: [MockShapePoint] = []; var closed = false }
+    struct MockShapePoint: Codable { var x: Double; var y: Double; var w: Double }
+    struct MockShapeStyle: Codable {
+        var fillCol: [Double] = [1,1,1,1]; var fillOn = true
+        var strokeCol: [Double] = [1,1,1,1]; var strokeOn = false
+        var strokeWidth = 0.008; var gradMode = 0
+        var gradCol2: [Double] = [1,0.3,0.6,1]; var gradAngle = 0.0
+        var glowCol: [Double] = [1,1,1,1]; var glowOn = false
+        var glowRadius = 0.02; var glowIntensity = 1.0
+    }
+    struct MockShapeKey: Codable { var t: Double; var path: MockShapePath; var interp = "ease_both" }
     struct MChainEntry: Codable { var fxType: String; var fxParams: [String: Double] = [:] }
     struct MTrack: Codable {
         var name = "Track"
@@ -130,6 +149,88 @@ final class MockEngine {
             state.tracks[ti].clips.append(c)
             return ok(["clip": state.tracks[ti].clips.count - 1])
 
+        case "add_shape":
+            guard let ti = trackIndex(params) else { return err("track index out of range") }
+            let preset = params["preset"] as? String ?? "circle"
+            guard Self.bakePreset(preset) != nil else { return err("unknown preset '\(preset)'") }
+            push()
+            var c = MClip()
+            c.type = "shape"
+            c.start = dbl(params["start"]) ?? 0
+            c.end = dbl(params["end"]) ?? c.start + 3
+            c.shapePreset = preset
+            c.shapePath = Self.bakePreset(preset)!
+            // Outline presets read better stroke-on (mirrors the engine).
+            if preset == "lightning" || preset == "arrow" || preset == "burst" {
+                c.shapeStyle.fillOn = false; c.shapeStyle.strokeOn = true
+            }
+            state.tracks[ti].clips.append(c)
+            return ok(["clip": state.tracks[ti].clips.count - 1, "preset": preset])
+
+        case "set_shape_path":
+            guard let (ti, ci) = clipAddress(params) else { return err("bad clip address") }
+            guard state.tracks[ti].clips[ci].type == "shape" else { return err("clip is not a shape") }
+            guard let pts = params["points"] as? [[String: Any]] else { return err("points array required") }
+            push()
+            var path = MockShapePath()
+            path.closed = params["closed"] as? Bool ?? false
+            path.points = pts.map { MockShapePoint(x: dbl($0["x"]) ?? 0.5, y: dbl($0["y"]) ?? 0.5,
+                                                   w: dbl($0["w"]) ?? 0.008) }
+            state.tracks[ti].clips[ci].shapePath = path
+            state.tracks[ti].clips[ci].shapePreset = "Freehand"
+            return ok([:])
+
+        case "set_shape_style":
+            guard let (ti, ci) = clipAddress(params) else { return err("bad clip address") }
+            guard state.tracks[ti].clips[ci].type == "shape" else { return err("clip is not a shape") }
+            push()
+            var s = state.tracks[ti].clips[ci].shapeStyle
+            if let v = params["fill_on"] as? Bool { s.fillOn = v }
+            if let v = params["stroke_on"] as? Bool { s.strokeOn = v }
+            if let v = dbl(params["stroke_width"]) { s.strokeWidth = v }
+            if let v = params["grad_mode"] as? Int { s.gradMode = v }
+            if let v = dbl(params["grad_angle"]) { s.gradAngle = v }
+            if let v = params["glow_on"] as? Bool { s.glowOn = v }
+            if let v = dbl(params["glow_radius"]) { s.glowRadius = v }
+            if let v = dbl(params["glow_intensity"]) { s.glowIntensity = v }
+            if let a = params["fill_col"] as? [Any] { s.fillCol = a.map { dbl($0) ?? 0 } }
+            if let a = params["stroke_col"] as? [Any] { s.strokeCol = a.map { dbl($0) ?? 0 } }
+            if let a = params["grad_col2"] as? [Any] { s.gradCol2 = a.map { dbl($0) ?? 0 } }
+            if let a = params["glow_col"] as? [Any] { s.glowCol = a.map { dbl($0) ?? 0 } }
+            state.tracks[ti].clips[ci].shapeStyle = s
+            return ok([:])
+
+        case "set_shape_keyframes":
+            guard let (ti, ci) = clipAddress(params) else { return err("bad clip address") }
+            guard state.tracks[ti].clips[ci].type == "shape" else { return err("clip is not a shape") }
+            push()
+            var keys: [MockShapeKey] = []
+            for k in params["keys"] as? [[String: Any]] ?? [] {
+                let pts = (k["points"] as? [[String: Any]] ?? []).map { MockShapePoint(x: dbl($0["x"]) ?? 0.5, y: dbl($0["y"]) ?? 0.5, w: dbl($0["w"]) ?? 0.008) }
+                keys.append(MockShapeKey(t: dbl(k["t"]) ?? 0,
+                                         path: MockShapePath(points: pts, closed: k["closed"] as? Bool ?? false),
+                                         interp: k["interp"] as? String ?? "ease_both"))
+            }
+            keys.sort { $0.t < $1.t }
+            state.tracks[ti].clips[ci].shapeKeys = keys
+            return ok(["key_count": keys.count])
+
+        case "get_shape_path":
+            guard let (ti, ci) = clipAddress(params) else { return err("bad clip address") }
+            guard state.tracks[ti].clips[ci].type == "shape" else { return err("clip is not a shape") }
+            let c = state.tracks[ti].clips[ci]
+            // No real interpolation in the mock — return the base path, or the
+            // nearest key if morph keys exist.
+            var path = c.shapePath
+            if let t = dbl(params["t"]), !c.shapeKeys.isEmpty {
+                path = c.shapeKeys.min(by: { abs($0.t - t) < abs($1.t - t) })?.path ?? path
+            }
+            return ok([
+                "closed": path.closed,
+                "points": path.points.map { ["x": $0.x, "y": $0.y, "w": $0.w] as [String: Any] },
+                "key_count": c.shapeKeys.count
+            ] as [String: Any])
+
         case "move_clip":
             guard let (ti, ci) = clipAddress(params) else { return err("bad clip address") }
             push()
@@ -181,6 +282,23 @@ final class MockEngine {
                 return err("unknown prop: \(params["prop"] as? String ?? "")")
             }
             return ok([:])
+
+        case "set_clip_keyframes":
+            guard let (ti, ci) = clipAddress(params) else { return err("bad clip address") }
+            let prop = params["prop"] as? String ?? ""
+            // Mock models the keyframable shape props + opacity; other props
+            // are accepted but only their key times are tracked.
+            let allowed = ["opacity", "shape_stroke_length", "shape_stroke_width_mul",
+                           "pos_x", "pos_y", "scale_x", "scale_y", "rotation"]
+            guard allowed.contains(prop) else { return err("prop '\(prop)' is not keyframable") }
+            guard let keys = params["keys"] as? [[String: Any]] else { return err("keys array required") }
+            push()
+            var times: [Double] = []
+            for k in keys { if let t = dbl(k["t"]) { times.append(t) } }
+            times.sort()
+            if times.isEmpty { state.tracks[ti].clips[ci].keyTimes.removeValue(forKey: prop) }
+            else { state.tracks[ti].clips[ci].keyTimes[prop] = times }
+            return ok(["prop": prop, "key_count": times.count])
 
         case "set_clip_props":
             guard let ops = params["ops"] as? [[String: Any]] else { return err("ops array required") }
@@ -475,7 +593,110 @@ final class MockEngine {
             j["fx_chain"] = c.fxChain.map { ["fx_type": $0.fxType, "fx_params": $0.fxParams] as [String: Any] }
         }
         if c.type == "body_fx" { j["body_fx_type"] = c.bodyFXType.isEmpty ? "Neon Outline" : c.bodyFXType }
+        if c.type == "shape" {
+            j["shape_path"] = [
+                "closed": c.shapePath.closed,
+                "points": c.shapePath.points.map { ["x": $0.x, "y": $0.y, "w": $0.w] as [String: Any] }
+            ] as [String: Any]
+            j["shape_style"] = [
+                "fill_col": c.shapeStyle.fillCol, "fill_on": c.shapeStyle.fillOn,
+                "stroke_col": c.shapeStyle.strokeCol, "stroke_on": c.shapeStyle.strokeOn,
+                "stroke_width": c.shapeStyle.strokeWidth, "grad_mode": c.shapeStyle.gradMode,
+                "grad_col2": c.shapeStyle.gradCol2, "grad_angle": c.shapeStyle.gradAngle,
+                "glow_col": c.shapeStyle.glowCol, "glow_on": c.shapeStyle.glowOn,
+                "glow_radius": c.shapeStyle.glowRadius, "glow_intensity": c.shapeStyle.glowIntensity
+            ] as [String: Any]
+            j["shape_stroke_length"] = c.shapeStrokeLength
+            j["shape_stroke_width_mul"] = c.shapeStrokeWidthMul
+            if !c.shapeKeys.isEmpty {
+                j["shape_path_keys"] = c.shapeKeys.map { k in
+                    ["t": k.t, "closed": k.path.closed,
+                     "points": k.path.points.map { ["x": $0.x, "y": $0.y, "w": $0.w] as [String: Any] },
+                     "interp": k.interp] as [String: Any]
+                }
+            }
+        }
+        if !c.keyTimes.isEmpty {
+            var kfs: [String: Any] = [:]
+            for (prop, times) in c.keyTimes {
+                kfs[prop] = times.map { ["t": $0, "v": 1.0, "interp": "ease_both"] as [String: Any] }
+            }
+            j["keyframes"] = kfs
+        }
         return j
+    }
+
+    /// Bake a preset path in local [0,1]² space (mock approximation — the real
+    /// tessellation lives in the engine). Enough points to look right in the
+    /// timeline preview and round-trip through set_shape_path.
+    private static func bakePreset(_ name: String) -> MockShapePath? {
+        let cx = 0.5, cy = 0.5, r = 0.4
+        let P = Double.pi
+        func pt(_ a: Double, rr: Double = r) -> MockShapePoint {
+            MockShapePoint(x: cx + rr * cos(a), y: cy + rr * sin(a), w: 0.008)
+        }
+        switch name {
+        case "circle":
+            var p = MockShapePath(closed: true)
+            for i in 0..<48 { p.points.append(pt(Double(i) / 48 * P * 2)) }
+            return p
+        case "square":
+            return MockShapePath(points: [MockShapePoint(x: 0.1, y: 0.1, w: 0.008), MockShapePoint(x: 0.9, y: 0.1, w: 0.008),
+                                          MockShapePoint(x: 0.9, y: 0.9, w: 0.008), MockShapePoint(x: 0.1, y: 0.9, w: 0.008)], closed: true)
+        case "triangle":
+            return MockShapePath(points: [pt(-P / 2), pt(P / 6), pt(5 * P / 6)], closed: true)
+        case "diamond":
+            return MockShapePath(points: [pt(-P / 2), pt(0), pt(P / 2), pt(P)], closed: true)
+        case "hexagon":
+            var p = MockShapePath(closed: true)
+            for i in 0..<6 { p.points.append(pt(Double(i) / 6 * P * 2)) }
+            return p
+        case "polygon":
+            var p = MockShapePath(closed: true)
+            for i in 0..<5 { p.points.append(pt(Double(i) / 5 * P * 2 - P / 2)) }
+            return p
+        case "star":
+            var p = MockShapePath(closed: true)
+            for i in 0..<10 {
+                let a = Double(i) / 10 * P * 2 - P / 2
+                p.points.append(pt(a, rr: i % 2 == 0 ? r : r * 0.4))
+            }
+            return p
+        case "burst":
+            var p = MockShapePath(closed: true)
+            for i in 0..<24 {
+                let a = Double(i) / 24 * P * 2
+                p.points.append(pt(a, rr: i % 2 == 0 ? r : r * 0.6))
+            }
+            return p
+        case "heart":
+            var p = MockShapePath(closed: true)
+            for i in 0..<48 {
+                let t = Double(i) / 48 * P * 2
+                let x = 16 * pow(sin(t), 3)
+                let y = 13 * cos(t) - 5 * cos(2 * t) - 2 * cos(3 * t) - cos(4 * t)
+                p.points.append(MockShapePoint(x: cx + x / 40, y: cy - y / 40, w: 0.008))
+            }
+            return p
+        case "arrow":
+            return MockShapePath(points: [MockShapePoint(x: 0.1, y: 0.45, w: 0.008), MockShapePoint(x: 0.7, y: 0.45, w: 0.008),
+                                          MockShapePoint(x: 0.7, y: 0.3, w: 0.008), MockShapePoint(x: 0.9, y: 0.5, w: 0.008),
+                                          MockShapePoint(x: 0.7, y: 0.7, w: 0.008), MockShapePoint(x: 0.7, y: 0.55, w: 0.008),
+                                          MockShapePoint(x: 0.1, y: 0.55, w: 0.008)], closed: true)
+        case "lightning":
+            return MockShapePath(points: [MockShapePoint(x: 0.55, y: 0.1, w: 0.008), MockShapePoint(x: 0.35, y: 0.5, w: 0.008),
+                                          MockShapePoint(x: 0.5, y: 0.5, w: 0.008), MockShapePoint(x: 0.4, y: 0.9, w: 0.008),
+                                          MockShapePoint(x: 0.65, y: 0.45, w: 0.008), MockShapePoint(x: 0.5, y: 0.45, w: 0.008),
+                                          MockShapePoint(x: 0.6, y: 0.1, w: 0.008)], closed: true)
+        case "cross":
+            return MockShapePath(points: [MockShapePoint(x: 0.4, y: 0.1, w: 0.008), MockShapePoint(x: 0.6, y: 0.1, w: 0.008),
+                                          MockShapePoint(x: 0.6, y: 0.4, w: 0.008), MockShapePoint(x: 0.9, y: 0.4, w: 0.008),
+                                          MockShapePoint(x: 0.9, y: 0.6, w: 0.008), MockShapePoint(x: 0.6, y: 0.6, w: 0.008),
+                                          MockShapePoint(x: 0.6, y: 0.9, w: 0.008), MockShapePoint(x: 0.4, y: 0.9, w: 0.008),
+                                          MockShapePoint(x: 0.4, y: 0.6, w: 0.008), MockShapePoint(x: 0.1, y: 0.6, w: 0.008),
+                                          MockShapePoint(x: 0.1, y: 0.4, w: 0.008), MockShapePoint(x: 0.4, y: 0.4, w: 0.008)], closed: true)
+        default: return nil
+        }
     }
 
     private func projectJSON() -> [String: Any] {

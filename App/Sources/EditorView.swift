@@ -65,6 +65,7 @@ struct EditorView: View {
         (.media,  "square.stack",       "Media"),
         (.fx,     "sparkles",           "FX"),
         (.lyrics, "textformat",         "Text"),
+        (.shape,  "diamond",            "Shape"),
         (.agent,  "brain.head.profile", "Agent"),
     ]
 
@@ -118,6 +119,13 @@ struct EditorView: View {
                     VStack {
                         Spacer()
                         InspectorView(model: model, brickID: brick.id).padding(.horizontal, 12)
+                    }
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                case .shape(let clip):
+                    VStack {
+                        Spacer()
+                        ShapeInspectorView(model: model, clip: clip).padding(.horizontal, 12)
                     }
                     .padding(.bottom, 8)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -232,15 +240,12 @@ struct EditorView: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $showRecord) {
-            RecordView(engine: engine, model: model, isPresented: $showRecord)
-        }
-        .onChange(of: showRecord) { _, presented in if !presented { recordCoverActive = false } }
         .sheet(item: $model.activeSheet) { sheet in
             switch sheet {
             case .media:  MediaSheet(model: model)
             case .fx:     FXSheet(model: model)
             case .lyrics: LyricsSheet(model: model)
+            case .shape:  ShapeEditorSheet(model: model, clipID: nil)
             case .agent:  AgentSheet(model: model)
             case .export: ExportSheet(model: model)
             }
@@ -328,7 +333,7 @@ struct EditorView: View {
     /// Fit the timeline to its tracks (ruler + lanes + spacing + vpad), so lower
     /// tracks (text/audio) aren't clipped. Clamped so it never crushes the canvas.
     private var timelineHeight: CGFloat {
-        func laneH(_ k: TrackKind) -> CGFloat { switch k { case .fxRail: 30; case .video: 52; case .lyric: 40; case .audio: 34 } }
+        func laneH(_ k: TrackKind) -> CGFloat { switch k { case .fxRail: 30; case .video: 52; case .lyric: 40; case .shape: 40; case .audio: 34 } }
         let content = 34 + model.tracks.reduce(0) { $0 + laneH($1.kind) + 3 } + 12
         return min(max(content, 132), 252)
     }

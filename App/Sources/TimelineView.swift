@@ -9,7 +9,7 @@ private let PPS: CGFloat = 46          // pixels per second
 
 /// Lane height per kind — shared by the lanes and the reorder rail.
 func laneHeight(_ k: TrackKind) -> CGFloat {
-    switch k { case .fxRail: 30; case .video: 52; case .lyric: 40; case .audio: 34 }
+    switch k { case .fxRail: 30; case .video: 52; case .lyric: 40; case .shape: 40; case .audio: 34 }
 }
 
 private extension View {
@@ -171,7 +171,7 @@ private struct TrackLane: View {
     @State private var drag: ClipDrag?
 
     private var laneHeight: CGFloat {
-        switch track.kind { case .fxRail: 30; case .video: 52; case .lyric: 40; case .audio: 34 }
+        switch track.kind { case .fxRail: 30; case .video: 52; case .lyric: 40; case .shape: 40; case .audio: 34 }
     }
     private var movingID: String? { drag?.zone == .move ? drag?.id : nil }
 
@@ -308,7 +308,7 @@ private struct TrackLane: View {
             }
             ForEach(track.clips) { clip in
                 let moving = drag?.id == clip.id && drag?.zone == .move
-                let editable = track.kind == .video || track.kind == .lyric   // draggable/trimmable
+                let editable = track.kind == .video || track.kind == .lyric || track.kind == .shape   // draggable/trimmable
                 ContentClipView(clip: clip, kind: track.kind, selected: model.selectedID == clip.id, height: laneHeight)
                     .frame(width: CGFloat(clip.duration) * PPS)
                     .overlay {
@@ -351,13 +351,28 @@ private struct ContentClipView: View {
     let clip: Clip; let kind: TrackKind; let selected: Bool; let height: CGFloat
 
     private var accent: Color {
-        switch kind { case .lyric: Theme.accentA(0.85); case .audio: Theme.line; default: Color.white.opacity(0.5) }
+        switch kind { case .lyric: Theme.accentA(0.85); case .shape: Theme.bodyViolet; case .audio: Theme.line; default: Color.white.opacity(0.5) }
+    }
+
+    /// SF Symbol for a shape preset (timeline glyph).
+    private var shapeSymbol: String {
+        switch clip.shapePreset.lowercased() {
+        case "circle": "circle.fill"; case "square": "square.fill"; case "triangle": "triangle.fill"
+        case "star": "star.fill"; case "heart": "heart.fill"; case "polygon": "pentagon.fill"
+        case "hexagon": "hexagon.fill"; case "burst": "asterisk.circle.fill"; case "arrow": "arrow.up.right"
+        case "lightning": "bolt.fill"; case "cross": "plus"; case "diamond": "diamond.fill"
+        default: "scribble"   // freehand / unknown
+        }
     }
 
     var body: some View {
         ZStack(alignment: kind == .video ? .bottomLeading : .leading) {
             RoundedRectangle(cornerRadius: 7).fill(.ultraThinMaterial)
-            if kind == .video {
+            if kind == .shape {
+                // Distinct purple/magenta gradient so shape clips read at a glance.
+                LinearGradient(colors: [Theme.bodyViolet.opacity(0.34), Theme.bodyViolet.opacity(0.12)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            } else if kind == .video {
                 if clip.thumbs.isEmpty {
                     // Filmstrip still generating — quiet placeholder, no network.
                     LinearGradient(colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)],
@@ -385,10 +400,20 @@ private struct ContentClipView: View {
             }
             if kind == .audio { Waveform().stroke(Color.white.opacity(0.55), lineWidth: 1).padding(.vertical, 6) }
             Rectangle().fill(accent).frame(width: 3).frame(maxHeight: .infinity, alignment: .leading)
-            Text(clip.label).font(.label(9)).tracking(0.5)
-                .foregroundStyle(kind == .video ? .white : Theme.txtBody)
-                .shadow(color: kind == .video ? .black : .clear, radius: 2)
-                .lineLimit(1).padding(.horizontal, 7).padding(.vertical, 4)
+            HStack(spacing: 5) {
+                if kind == .shape {
+                    Image(systemName: shapeSymbol).font(.system(size: 10)).foregroundStyle(.white)
+                }
+                Text(clip.label).font(.label(9)).tracking(0.5)
+                    .foregroundStyle(kind == .video ? .white : Theme.txtBody)
+                    .shadow(color: kind == .video ? .black : .clear, radius: 2)
+                    .lineLimit(1)
+                if kind == .shape {
+                    Text(String(format: "%.1fs", clip.duration))
+                        .font(.num(8.5)).foregroundStyle(Theme.txtMuted)
+                }
+            }
+            .padding(.horizontal, 7).padding(.vertical, 4)
         }
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selected ? Theme.accentA(0.7) : .clear, lineWidth: 1.5))

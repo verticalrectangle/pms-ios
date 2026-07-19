@@ -52,7 +52,7 @@ enum Format: String, CaseIterable, Hashable {
 
 // MARK: - Timeline (projection of engine tracks/clips)
 
-enum TrackKind: String { case fxRail, video, lyric, audio }
+enum TrackKind: String { case fxRail, video, lyric, audio, shape }
 
 struct Track: Identifiable {
     let id: String
@@ -111,7 +111,58 @@ struct Clip: Identifiable, TimelineItem {
     var subWrapW: Double = 0.85
     var clipStyle: String = ""       // engine anim style: "fade"/"glitch"/"scratch"/…
     var subFont: String = ""         // engine font id: "scratchl"/"archivoblack"/…
+    // Shape clips (ClipType::Shape). Path/style/morph keys mirror the engine
+    // shape_* fields; preset name is UI-only (the engine doesn't persist it —
+    // set at creation, blank on load → "Shape" fallback).
+    var shapeKind = false
+    var shapePreset = ""             // "circle"/"star"/… or "Freehand"
+    var shapePath: ShapePathProj? = nil
+    var shapeStyle: ShapeStyleProj? = nil
+    var shapeKeys: [ShapeKeyframe] = []
+    var shapeStrokeLength = 1.0      // 0..1 draw-on reveal
+    var shapeStrokeWidthMul = 1.0    // global stroke width multiplier
+    var shapeKeyTimes: [String: [Double]] = [:]  // prop → key times (stroke_length/width_mul)
+    var shapeScalarKeys: [String: [ScalarKeyframe]] = [:]  // prop → full keys (read-modify-write)
 }
+
+// MARK: - Shape clips (projection of engine ShapePath/ShapeStyle/morph keys)
+
+struct ShapePoint: Hashable {
+    var x: Double
+    var y: Double
+    var width: Double
+}
+struct ShapePathProj: Hashable {
+    var points: [ShapePoint]
+    var closed: Bool
+}
+struct ShapeStyleProj: Hashable {
+    var fillCol: [Double] = [1, 1, 1, 1]
+    var fillOn: Bool = true
+    var strokeCol: [Double] = [1, 1, 1, 1]
+    var strokeOn: Bool = false
+    var strokeWidth: Double = 0.008
+    var gradMode: Int = 0          // 0 none / 1 linear / 2 radial / 3 hue-cycle
+    var gradCol2: [Double] = [1, 0.3, 0.6, 1]
+    var gradAngle: Double = 0
+    var glowCol: [Double] = [1, 1, 1, 1]
+    var glowOn: Bool = false
+    var glowRadius: Double = 0.02
+    var glowIntensity: Double = 1
+}
+struct ShapeKeyframe: Identifiable, Hashable {
+    var id = UUID()
+    var time: Double
+    var path: ShapePathProj
+    var interp: String
+}
+
+struct ScalarKeyframe: Hashable {
+    var time: Double
+    var value: Double
+    var interp: String
+}
+
 
 /// UI flavour of an FX brick — derived from the engine clip type + host lane.
 enum BrickKind: String {
