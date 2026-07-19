@@ -155,9 +155,13 @@ struct GlassPressStyle: ButtonStyle {
 // MARK: - Atmosphere (dark goth-aero backdrop + drifting bokeh)
 
 struct AtmosphereView: View {
+    // `recede` = the editor's camera-pull: on appear, 6 of 7 orbs drift past the
+    // camera (fade to 0 + scale 1.15) leaving one hero as a ~15% ghost, so the
+    // canvas + glass chrome become the figure. Home/sheets pass nothing → full.
+    var recede: Bool = false
     @State private var drift = false    // y clock
     @State private var driftX = false   // x clock (different period → elliptical float)
-
+    @State private var receded = false  // animates false → true on appear when recede
     // A bokeh orb: normalized position, size, blur (far = big+soft, near = small+
     // tight-cored), a luminous core + halo, and a slow drift. Varied blur is what
     // the eye reads as depth.
@@ -237,12 +241,15 @@ struct AtmosphereView: View {
                 }
                 ForEach(Array((lightMode ? lightOrbs : orbs).enumerated()), id: \.offset) { i, o in
                     ball(o)
+                        .scaleEffect(receded ? 1.15 : 1.0)
+                        .opacity(receded ? (i == 0 ? 0.15 : 0) : 1.0)
                         .position(x: o.nx * w + (driftX ? o.dx : -o.dx),
                                   y: o.ny * h + (drift  ? o.dy : -o.dy))
                         .animation(.easeInOut(duration: 15 + Double(i) * 3.3)
                             .repeatForever(autoreverses: true), value: drift)
                         .animation(.easeInOut(duration: 21 + Double(i) * 2.6)
                             .repeatForever(autoreverses: true), value: driftX)
+                        .animation(.easeOut(duration: 0.6), value: receded)
                 }
                 // No .id here: keeping each orb's identity across the mode flip lets
                 // its drift continue and its hue change IN PLACE (geometry is identical
@@ -250,6 +257,6 @@ struct AtmosphereView: View {
             }
         }
         .ignoresSafeArea()
-        .onAppear { drift = true; driftX = true }
+        .onAppear { drift = true; driftX = true; if recede { receded = true } }
     }
 }

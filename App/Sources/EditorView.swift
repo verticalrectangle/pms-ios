@@ -157,7 +157,7 @@ struct EditorView: View {
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.selectedLyricClip?.id)
-        .background(AtmosphereView().ignoresSafeArea())
+        .background(AtmosphereView(recede: true).ignoresSafeArea())
         // autoRecord: an opaque veil covers the editor's Atmosphere + Liquid Glass
         // until the fullScreenCover finishes presenting — without it they flash
         // through during the cover's slide-up. Cleared in onChange(showRecord).
