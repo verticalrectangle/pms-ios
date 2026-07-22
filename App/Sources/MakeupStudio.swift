@@ -200,6 +200,27 @@ struct MakeupStudioSheet: View {
         ("makeup_dramatic_nude_glam.png", "Nude Glam"),
         ("makeup_warm_bronze_teal.png", "Bronze Teal"),
         ("makeup_grunge_fairy.png", "Grunge Fairy"),
+        // Realistic reference-driven collection
+        ("makeup_korean_dewy.png", "Korean Dewy"),
+        ("makeup_chinese_classic.png", "C-Beauty"),
+        ("makeup_indian_bridal.png", "Indian Bridal"),
+        ("makeup_bollywood.png", "Bollywood"),
+        ("makeup_latina_glam.png", "Latina Glam"),
+        ("makeup_chola.png", "Chola"),
+        ("makeup_pinup.png", "Pin-Up"),
+        ("makeup_arab_kohl.png", "Arab Kohl"),
+        ("makeup_siren_night.png", "Siren Night"),
+        ("makeup_fox_eye.png", "Fox Eye"),
+        ("makeup_doe_eye.png", "Doe Eye"),
+        ("makeup_y2k_glow.png", "Y2K Glow"),
+        ("makeup_nineties_brown.png", "90s Brown"),
+        ("makeup_eighties_pop.png", "80s Pop"),
+        ("makeup_seventies_sun.png", "70s Sun"),
+        ("makeup_cut_crease.png", "Cut Crease"),
+        ("makeup_halo_eye.png", "Halo Eye"),
+        ("makeup_editorial_violet.png", "Editorial Violet"),
+        ("makeup_soft_bridal.png", "Soft Bridal"),
+        ("makeup_tribal_earth.png", "Tribal Earth"),
     ]
 
     var body: some View {

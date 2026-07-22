@@ -39,6 +39,18 @@ struct Look: Identifiable, Equatable {
 }
 
 enum FilterLooks {
+    /// Compact constructor for plate-driven makeup looks: shared realism-safe
+    /// param bundle (modest smooth, near-zero morphs) + the baked atlas.
+    private static func plate(_ id: String, _ name: String, _ icon: String, _ tex: String,
+                              warmth: Double = 0.1, smooth: Double = 0.45,
+                              lip: (Double, Double, Double) = (0.9, 0.45, 0.5),
+                              blush: (Double, Double, Double) = (1.0, 0.55, 0.55)) -> Look {
+        Look(id: id, name: name, icon: icon, categories: [.makeup],
+             stack: [.init(fx: "face_fx",
+                           params: ["smooth": smooth, "brighten": 0.2, "warmth": warmth, "eye_pop": 0.28, "eyes": 0.05, "cheek": 0.02, "vline": 0.04, "nose": 0.04, "lips_plump": 0.02, "chin_smooth": 0.15, "jaw_shade": 0.1, "blush": 0.22, "lip": 0.24, "lash": 0.56, "liner": 0.5, "lash_wing": 0.26, "nose_blush": 0, "freckles": 0, "lip_grad": 0.6, "blush_r": blush.0, "blush_g": blush.1, "blush_b": blush.2, "lip_r": lip.0, "lip_g": lip.1, "lip_b": lip.2, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
+                           makeupTex: tex)])
+    }
+
     /// The full deck, in rail order. Looks whose effects are missing from the
     /// running catalog (older engine) are filtered out at access time.
     static let all: [Look] = [
@@ -114,6 +126,28 @@ enum FilterLooks {
              stack: [.init(fx: "face_fx",
                            params: ["smooth": 0.45, "brighten": 0.22, "warmth": 0.1, "eye_pop": 0.28, "eyes": 0.07, "cheek": 0, "vline": 0.04, "nose": 0.05, "lips_plump": 0.03, "chin_smooth": 0.15, "jaw_shade": 0, "blush": 0.32, "lip": 0.27, "lash": 0.56, "liner": 0.5, "lash_wing": 0.26, "nose_blush": 0, "freckles": 0, "lip_grad": 0.65, "blush_r": 1, "blush_g": 0.45, "blush_b": 0.55, "lip_r": 0.95, "lip_g": 0.3, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
                            makeupTex: "makeup_hearts_freckles.png")]),
+        // ── Realistic reference-driven collection (tools/gen_makeup_elements.py) ──
+        // Translucent mid-luma plates; the engine's luma blend matches them to skin.
+        plate("korean_dewy", "Korean Dewy", "drop.fill", "makeup_korean_dewy.png", warmth: 0.12, lip: (0.92, 0.48, 0.45), blush: (1, 0.62, 0.56)),
+        plate("chinese_classic", "C-Beauty Classic", "paintbrush.pointed.fill", "makeup_chinese_classic.png", lip: (0.75, 0.15, 0.2), blush: (0.9, 0.52, 0.48)),
+        plate("indian_bridal", "Indian Bridal", "crown.fill", "makeup_indian_bridal.png", warmth: 0.25, lip: (0.7, 0.12, 0.18), blush: (0.9, 0.5, 0.42)),
+        plate("bollywood", "Bollywood", "theatermasks.fill", "makeup_bollywood.png", lip: (0.85, 0.35, 0.5), blush: (0.85, 0.5, 0.55)),
+        plate("latina_glam", "Latina Glam", "sun.max.fill", "makeup_latina_glam.png", warmth: 0.25, lip: (0.72, 0.5, 0.42), blush: (0.9, 0.55, 0.45)),
+        plate("chola", "Chola", "moon.zzz.fill", "makeup_chola.png", warmth: 0.15, lip: (0.62, 0.38, 0.32), blush: (0.8, 0.52, 0.45)),
+        plate("pinup", "Pin-Up", "seal.fill", "makeup_pinup.png", lip: (0.75, 0.12, 0.18), blush: (0.92, 0.52, 0.48)),
+        plate("arab_kohl", "Arab Kohl", "eye.fill", "makeup_arab_kohl.png", warmth: 0.2, lip: (0.65, 0.38, 0.36), blush: (0.85, 0.52, 0.46)),
+        plate("siren_night", "Siren Night", "moon.stars.fill", "makeup_siren_night.png", lip: (0.55, 0.18, 0.3), blush: (0.8, 0.5, 0.55)),
+        plate("fox_eye", "Fox Eye", "cat.fill", "makeup_fox_eye.png", warmth: 0.18, lip: (0.78, 0.56, 0.5), blush: (0.9, 0.6, 0.52)),
+        plate("doe_eye", "Doe Eye", "hare.fill", "makeup_doe_eye.png", warmth: 0.12, smooth: 0.5, lip: (0.94, 0.55, 0.55), blush: (1, 0.62, 0.62)),
+        plate("y2k_glow", "Y2K Glow", "star.bubble.fill", "makeup_y2k_glow.png", warmth: 0.35, lip: (0.95, 0.65, 0.55), blush: (1, 0.58, 0.42)),
+        plate("nineties_brown", "90s Brown", "aqi.medium", "makeup_nineties_brown.png", warmth: 0.15, lip: (0.52, 0.34, 0.28), blush: (0.8, 0.52, 0.44)),
+        plate("eighties_pop", "80s Pop", "bolt.heart.fill", "makeup_eighties_pop.png", lip: (0.85, 0.25, 0.5), blush: (0.95, 0.48, 0.6)),
+        plate("seventies_sun", "70s Sun", "sun.haze.fill", "makeup_seventies_sun.png", warmth: 0.4, lip: (0.94, 0.6, 0.48), blush: (0.95, 0.6, 0.38)),
+        plate("cut_crease", "Cut Crease", "scribble.variable", "makeup_cut_crease.png", warmth: 0.12, lip: (0.72, 0.52, 0.47), blush: (0.9, 0.58, 0.5)),
+        plate("halo_eye", "Halo Eye", "circle.dotted", "makeup_halo_eye.png", warmth: 0.3, lip: (0.72, 0.5, 0.48), blush: (0.95, 0.58, 0.48)),
+        plate("editorial_violet", "Editorial Violet", "rectangle.on.rectangle.angled", "makeup_editorial_violet.png", lip: (0.5, 0.28, 0.36), blush: (0.8, 0.52, 0.62)),
+        plate("soft_bridal", "Soft Bridal", "gift.fill", "makeup_soft_bridal.png", warmth: 0.15, lip: (0.8, 0.25, 0.32), blush: (0.95, 0.58, 0.6)),
+        plate("tribal_earth", "Tribal Earth", "mountain.2.fill", "makeup_tribal_earth.png", warmth: 0.3, lip: (0.55, 0.36, 0.3), blush: (0.8, 0.5, 0.38)),
         // ── Beauty (full-frame skin shaders — no tracking) ───────────────────────────────────────────────────────────
         Look(id: "porcelain", name: "Porcelain", icon: "sparkles",
              categories: [.forYou, .beauty],
