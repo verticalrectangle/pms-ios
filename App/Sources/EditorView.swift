@@ -240,6 +240,10 @@ struct EditorView: View {
                 }
             }
         }
+        .fullScreenCover(isPresented: $showRecord) {
+            RecordView(engine: engine, model: model, isPresented: $showRecord)
+        }
+        .onChange(of: showRecord) { _, presented in if !presented { recordCoverActive = false } }
         .sheet(item: $model.activeSheet) { sheet in
             switch sheet {
             case .media:  MediaSheet(model: model)

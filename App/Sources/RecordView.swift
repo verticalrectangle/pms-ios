@@ -57,6 +57,10 @@ struct RecordView: View {
     @State private var flashEnabled = false
     @State private var flashOpacity = 0.0
     @State private var debugOverlay = false
+    // Dev: force the ONNX face pipeline (AVFoundation + engine worker) instead
+    // of the ARKit TrueDepth pipeline on supported front cameras, to A/B the
+    // two trackers live. Persisted so the choice survives relaunches.
+    @State private var forceONNX = UserDefaults.standard.bool(forKey: "dev.forceONNXFacePipeline")
 
     private let ticker = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
@@ -210,6 +214,24 @@ struct RecordView: View {
                     .background(Circle().fill(.black.opacity(0.35)))
             }
             .disabled(recording || finalizing)   // flip disabled mid-take
+            // Dev: A/B the face pipelines on TrueDepth front cameras.
+            if position == .front && ARKitCameraCapture.isSupported {
+                Button {
+                    forceONNX.toggle()
+                    UserDefaults.standard.set(forceONNX, forKey: "dev.forceONNXFacePipeline")
+                    camera?.stop(); camera = nil
+                    startCamera()
+                    keyHint = forceONNX ? "Face pipeline: ONNX (engine worker)" : "Face pipeline: ARKit (TrueDepth)"
+                    haptic()
+                } label: {
+                    Text(forceONNX ? "ONNX" : "ARKit")
+                        .font(.label(10)).tracking(0.5)
+                        .foregroundStyle(forceONNX ? Theme.accent : .white)
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .background(Capsule().fill(.black.opacity(0.35)))
+                }
+                .disabled(recording || finalizing)   // no pipeline swap mid-take
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 6)
@@ -410,7 +432,8 @@ struct RecordView: View {
                 errorText = e.errorDescription
             case .success:
                 let c: CameraCaptureProtocol
-                if self.position == .front && ARKitCameraCapture.isSupported {
+                let useARKit = self.position == .front && ARKitCameraCapture.isSupported && !self.forceONNX
+                if useARKit {
                     c = ARKitCameraCapture(engine: engine)
                 } else {
                     c = CameraCapture(engine: engine)
