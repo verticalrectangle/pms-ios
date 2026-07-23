@@ -57,6 +57,14 @@ enum FilterLooks {
         // ── Makeup (face-tracked: MediaPipe mesh + warp + UV makeup) ────────
         // Each = a BeautyLook param bundle for the engine's face_fx passes.
         // Textures come from tools/gen_makeup_elements.py (bundled).
+        // ARKit-native atlas test look (the ONE to nail before templatizing):
+        // makeup_soft_glam.png is painted in ARKit UV by tools/gen_arkit_makeup.py.
+        // On the TrueDepth front camera the engine samples arkit/makeup_soft_glam.png;
+        // on rear/MediaPipe it falls back to models/face/makeup_soft_glam.png (absent
+        // → beauty-only there until more looks are added).
+        plate("soft_glam", "Soft Glam", "moon.stars.fill", "makeup_soft_glam.png",
+              warmth: 0.12, smooth: 0.45,
+              lip: (0.68, 0.40, 0.36), blush: (0.87, 0.51, 0.47)),
         Look(id: "natural", name: "Natural", icon: "face.smiling",
              categories: [.forYou, .makeup],
              stack: [.init(fx: "face_fx",
