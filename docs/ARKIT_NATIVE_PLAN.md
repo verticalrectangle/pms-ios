@@ -25,7 +25,7 @@ record screen says so); there is no MediaPipe makeup tier on iOS any more.
    | prep | half, mesh, 2 targets | linear camera color × skin mask × facing, premultiplied; lip core → 1×1 mip = mean lip color |
    | blur | half, 2× separable | mask-normalized bilateral → local skin color; 1×1 mip = face-mean skin |
    | lipev | half, mesh | lip evidence: redness of a ~6 px averaged color over the local skin |
-   | lashline | compute, 32 threads | the real upper lash line: per eye 16 rim columns + one DP (below) |
+   | lidcrop | 256², fullscreen | roll-normalized face crop for MediaPipe's landmark model (worker thread, below) |
    | face | full, mesh, depth | skin finish, pigment layers, lips, 3D liner, gloss/highlighter |
    | lashes | full, depth-tested | strand ribbons, premultiplied over |
 
@@ -62,16 +62,26 @@ front), scaled by the local skin irradiance.
   the lips' texture. The mouth hole has no mesh, so teeth and tongue are
   never painted.
 - **Lash line**: ARKit's upper rim is the lash line only with the eyes wide
-  open; with the lids lowered (gaze down at the phone, the normal selfie
-  pose) it rides up to ~2.5 mm onto the lid, and liner + lashes floated
-  above the real lashes. A compute pass probes 16 rim columns per eye in the
-  camera image along the lid's downward direction (−1.5 … +3 mm), scores the
-  brightness drop (lid skin above, lashes below) and runs one DP per eye for
-  the smoothest strong-edge path, with a mild pull toward the rim. Only
-  downward corrections apply (the failure mode is the rim riding up; weak
-  evidence never lifts makeup onto the lid), faded out as ARKit reports the
-  eye closing (closed lids put the strongest edge on the crease), ~2-frame
-  temporal smoothing. It moves the liner stroke and the upper lash roots.
+  open. With the lids lowered (gaze down at the phone, the normal selfie
+  pose) the real lid is flatter than ARKit's almond: the rim rides ~2 mm onto
+  the lid over the iris and sits inside the eye toward the outer corner, so
+  liner and lashes floated on the lid. Image edge rules cannot fix it — with
+  the eyes open the natural lashes stand above the margin, lowered they hang
+  over the eye, so "where the lid skin ends" is the margin in one pose and
+  the lash tips in the other. The trained eyelid contour of MediaPipe's
+  landmark model (`models/face/face_landmarks_v2.onnx`, already bundled for
+  the script API) decides: up to 30 times a second a 256² roll-normalized
+  face crop, placed from ARKit's projected mesh (no detector), goes to a
+  worker thread; the model's upper-lid contour is intersected with 16 rays
+  per eye cast from that frame's rim, the offsets get a quadratic fit along
+  the rim (the real lid differs from ARKit's smoothly; kinks fit badly) and a
+  trust from the fit residual and how squarely the eye faces the camera
+  (turned eyes are foreshortened). Later frames apply them relative to their
+  own rim (head motion stays ARKit's) with adaptive smoothing (the net
+  jitters ±0.5 mm), faded out as ARKit reports a blink. They move the liner
+  stroke and the upper lash roots. The replay runs the worker synchronously
+  (`PMS_ARKIT_SYNC`) so PNGs are deterministic; the first frame of a capture
+  has no result yet.
 - **Liner**: no texture. One centerline per eye: the upper lash line from the
   inner corner to just short of the outer corner, lifted half a stroke onto
   the lid (the ink's lower edge sits on the lash line), continued by a
@@ -81,8 +91,8 @@ front), scaled by the local skin irradiance.
   the wing); widths in millimetres, antialiased by the fragment's footprint.
 - **Lashes**: 6-segment strands generated per frame from the rim polylines
   and their surface frame (normal, along-lid direction): lift, curl toward
-  the lid, outer flare, wispy clumps; the vertex shader moves upper strands
-  rigidly onto the found lash line. Drawn ≥1 px wide with coverage = true
+  the lid, outer flare, wispy clumps; upper roots sit on the eyelid-corrected
+  lash line. Drawn ≥1 px wide with coverage = true
   width, so sub-pixel strands darken by exactly their area. Falsies read as
   a dense fringe heaviest at the root: long, strongly curled strands project
   up the lid as hooks in a selfie view.
