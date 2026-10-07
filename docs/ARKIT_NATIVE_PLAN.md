@@ -25,6 +25,7 @@ record screen says so); there is no MediaPipe makeup tier on iOS any more.
    | prep | half, mesh, 2 targets | linear camera color × skin mask × facing, premultiplied; lip core → 1×1 mip = mean lip color |
    | blur | half, 2× separable | mask-normalized bilateral → local skin color; 1×1 mip = face-mean skin |
    | lipev | half, mesh | lip evidence: redness of a ~6 px averaged color over the local skin |
+   | lashline | compute, 32 threads | the real upper lash line: per eye 16 rim columns + one DP (below) |
    | face | full, mesh, depth | skin finish, pigment layers, lips, 3D liner, gloss/highlighter |
    | lashes | full, depth-tested | strand ribbons, premultiplied over |
 
@@ -60,7 +61,18 @@ front), scaled by the local skin irradiance.
   skin gets flat product color). Gloss rides the same coverage, broken up by
   the lips' texture. The mouth hole has no mesh, so teeth and tongue are
   never painted.
-- **Liner**: no texture. One centerline per eye: the live upper rim from the
+- **Lash line**: ARKit's upper rim is the lash line only with the eyes wide
+  open; with the lids lowered (gaze down at the phone, the normal selfie
+  pose) it rides up to ~2.5 mm onto the lid, and liner + lashes floated
+  above the real lashes. A compute pass probes 16 rim columns per eye in the
+  camera image along the lid's downward direction (−1.5 … +3 mm), scores the
+  brightness drop (lid skin above, lashes below) and runs one DP per eye for
+  the smoothest strong-edge path, with a mild pull toward the rim. Only
+  downward corrections apply (the failure mode is the rim riding up; weak
+  evidence never lifts makeup onto the lid), faded out as ARKit reports the
+  eye closing (closed lids put the strongest edge on the crease), ~2-frame
+  temporal smoothing. It moves the liner stroke and the upper lash roots.
+- **Liner**: no texture. One centerline per eye: the upper lash line from the
   inner corner to just short of the outer corner, lifted half a stroke onto
   the lid (the ink's lower edge sits on the lash line), continued by a
   quadratic wing that leaves in the lash line's direction — one stroke, so
@@ -69,8 +81,11 @@ front), scaled by the local skin irradiance.
   the wing); widths in millimetres, antialiased by the fragment's footprint.
 - **Lashes**: 6-segment strands generated per frame from the rim polylines
   and their surface frame (normal, along-lid direction): lift, curl toward
-  the lid, outer flare, wispy clumps; drawn ≥1 px wide with coverage = true
-  width, so sub-pixel strands darken by exactly their area.
+  the lid, outer flare, wispy clumps; the vertex shader moves upper strands
+  rigidly onto the found lash line. Drawn ≥1 px wide with coverage = true
+  width, so sub-pixel strands darken by exactly their area. Falsies read as
+  a dense fringe heaviest at the root: long, strongly curled strands project
+  up the lid as hooks in a selfie view.
 - **Brows** stay the wearer's own: a region painted on the canonical head
   never matches real brows (it read as drawn-on blocks on a real face).
 

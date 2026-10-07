@@ -15,11 +15,11 @@
   "lashes": {
     "color": "#0d090a",
     "amount": 0.9,
-    "upper": {"count": 120, "clumps": 24, "len_inner_mm": 4.5, "len_outer_mm": 10.0,
-              "root_mm": 0.16, "lift_deg": 14, "curl_deg": 58, "flare": 0.55,
-              "wisp": 0.35, "clump": 0.45, "offset_mm": 0.0, "t0": 0.0, "t1": 0.97},
-    "lower": {"count": 18, "clumps": 6, "len_inner_mm": 1.5, "len_outer_mm": 3.2,
-              "root_mm": 0.10, "lift_deg": 35, "curl_deg": 8, "flare": 0.25,
+    "upper": {"count": 150, "clumps": 30, "len_inner_mm": 3.5, "len_outer_mm": 8.0,
+              "root_mm": 0.2, "lift_deg": 5, "curl_deg": 45, "flare": 0.45,
+              "wisp": 0.3, "clump": 0.35, "offset_mm": 0.0, "t0": 0.0, "t1": 0.97},
+    "lower": {"count": 16, "clumps": 6, "len_inner_mm": 1.3, "len_outer_mm": 2.8,
+              "root_mm": 0.09, "lift_deg": 35, "curl_deg": 8, "flare": 0.25,
               "wisp": 0.4, "clump": 0.7, "offset_mm": 0.0, "t0": 0.04, "t1": 0.7}
   }
 }
