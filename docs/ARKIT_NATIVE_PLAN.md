@@ -61,27 +61,33 @@ front), scaled by the local skin irradiance.
   skin gets flat product color). Gloss rides the same coverage, broken up by
   the lips' texture. The mouth hole has no mesh, so teeth and tongue are
   never painted.
-- **Lash line**: ARKit's upper rim is the lash line only with the eyes wide
-  open. With the lids lowered (gaze down at the phone, the normal selfie
-  pose) the real lid is flatter than ARKit's almond: the rim rides ~2 mm onto
-  the lid over the iris and sits inside the eye toward the outer corner, so
-  liner and lashes floated on the lid. Image edge rules cannot fix it — with
-  the eyes open the natural lashes stand above the margin, lowered they hang
-  over the eye, so "where the lid skin ends" is the margin in one pose and
-  the lash tips in the other. The trained eyelid contour of MediaPipe's
+- **Lash lines**: ARKit's eye rims are the lash lines only with the eyes
+  wide open. With the lids lowered (gaze down at the phone, the normal
+  selfie pose) the real upper lid is flatter than ARKit's almond — the rim
+  rides ~2 mm onto the lid over the iris and sits inside the eye toward the
+  outer corner — the lower rim sits inside the eye opening, and ARKit's
+  blink value stays low through all of it. Image edge rules cannot fix it:
+  with the eyes open the natural lashes stand above the margin, lowered they
+  hang over the eye, so "where the lid skin ends" is the margin in one pose
+  and the lash tips in the other. The trained lid contours of MediaPipe's
   landmark model (`models/face/face_landmarks_v2.onnx`, already bundled for
-  the script API) decides: up to 30 times a second a 256² roll-normalized
+  the script API) decide: up to 30 times a second a 256² roll-normalized
   face crop, placed from ARKit's projected mesh (no detector), goes to a
-  worker thread; the model's upper-lid contour is intersected with 16 rays
-  per eye cast from that frame's rim, the offsets get a quadratic fit along
-  the rim (the real lid differs from ARKit's smoothly; kinks fit badly) and a
-  trust from the fit residual and how squarely the eye faces the camera
-  (turned eyes are foreshortened). Later frames apply them relative to their
-  own rim (head motion stays ARKit's) with adaptive smoothing (the net
-  jitters ±0.5 mm), faded out as ARKit reports a blink. They move the liner
-  stroke and the upper lash roots. The replay runs the worker synchronously
-  (`PMS_ARKIT_SYNC`) so PNGs are deterministic; the first frame of a capture
-  has no result yet.
+  worker thread; each lid contour is intersected with 16 rays cast from that
+  frame's ARKit rim, the offsets get a quadratic fit along the rim (the real
+  lid differs from ARKit's smoothly; kinks fit badly) and a trust from the
+  fit residual and how squarely the eye faces the camera (turned eyes are
+  foreshortened). Later frames apply them relative to their own rims (head
+  motion stays ARKit's) with adaptive smoothing (the net jitters ±0.5 mm). No
+  blink fade: half-lowered lids are exactly where the correction matters.
+  The upper offsets move the liner and upper lash roots, the lower ones the
+  lower roots. The replay runs the worker synchronously (`PMS_ARKIT_SYNC`)
+  so PNGs are deterministic; the first frame of a capture has no result yet.
+- **Lid frame**: "along the lid, away from the opening" is oriented by the
+  opposite rim at the same rim parameter (plus a fixed bias where the rims
+  meet at the corners). Orienting by the eye center flipped it along the rim
+  of a nearly closed eye — the center sits on the rims — and the eyelid
+  offsets then threw liner and lash roots millimetres the wrong way.
 - **Liner**: no texture. One centerline per eye: the upper lash line from the
   inner corner to just short of the outer corner, lifted half a stroke onto
   the lid (the ink's lower edge sits on the lash line), continued by a
@@ -90,12 +96,13 @@ front), scaled by the local skin irradiance.
   variable-width stroke (3D on the lid, the outer corner's tangent plane for
   the wing); widths in millimetres, antialiased by the fragment's footprint.
 - **Lashes**: 6-segment strands generated per frame from the rim polylines
-  and their surface frame (normal, along-lid direction): lift, curl toward
-  the lid, outer flare, wispy clumps; upper roots sit on the eyelid-corrected
-  lash line. Drawn ≥1 px wide with coverage = true
-  width, so sub-pixel strands darken by exactly their area. Falsies read as
-  a dense fringe heaviest at the root: long, strongly curled strands project
-  up the lid as hooks in a selfie view.
+  and their lid frame: lift, curl toward the lid, outer flare, wispy clumps;
+  roots sit on the eyelid-corrected lash lines. Lower lashes thin out as the
+  real opening (ARKit's, closed by both lid corrections) drops below ~5 mm:
+  on a closed eye they hide under the upper fringe, drawn they smudge. Drawn
+  ≥1 px wide with coverage = true width, so sub-pixel strands darken by
+  exactly their area. Falsies read as a dense fringe heaviest at the root:
+  long, strongly curled strands project up the lid as hooks in a selfie view.
 - **Brows** stay the wearer's own: a region painted on the canonical head
   never matches real brows (it read as drawn-on blocks on a real face).
 
