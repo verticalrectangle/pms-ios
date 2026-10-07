@@ -42,7 +42,18 @@ struct HomeView: View {
     private static let relative = RelativeDateTimeFormatter()
 
     /// Real saved projects, summarized by the engine's read-only query.
+    /// The editor's back-out save runs synchronously, but its poster sidecar
+    /// lands on a detached Task — re-scan after a beat so a just-saved project
+    /// (and its poster) is on disk before we read. Cheap (one extra list() on
+    /// appear) and idempotent.
     private func reloadMetas() {
+        reloadMetasNow()
+        // Second pass catches the poster/summary sidecars the editor's
+        // onDisappear save was still flushing when we first scanned.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { reloadMetasNow() }
+    }
+
+    private func reloadMetasNow() {
         engine.start()   // idempotent — onAppear ordering vs the app root isn't guaranteed
         loading = true
         // Engine summaries run on main (pms_command contract); yield one frame
