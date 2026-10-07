@@ -29,23 +29,28 @@ struct RootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var openProject: Project?
     @State private var openIntoRecord = false   // Home's camera button → editor with RecordView up
+    @State private var rescanToken = 0   // bumped on every editor pop → Home re-scans recents
 
     var body: some View {
         // Native navigation: Home is the root, the editor is a pushed detail —
         // so it gets the system nav bar (back + share) and bottom bar for free,
         // with proper Liquid Glass + safe-area handling on iOS 26.
+        // NOTE: NavigationStack keeps the root alive across push/pop, so
+        // HomeView.onAppear does NOT re-fire on back-navigation. The onChange
+        // below is the rescan trigger (nil = popped back to Home).
         NavigationStack {
-            HomeView { p in
+            HomeView(onOpen: { p in
                 openIntoRecord = false
                 openProject = p
-            } onRecord: { p in
+            }, onRecord: { p in
                 openIntoRecord = true
                 openProject = p
-            }
+            }, rescanToken: rescanToken)
             .navigationDestination(item: $openProject) { project in
                 EditorView(project: project, engine: engine, autoRecord: openIntoRecord)
             }
         }
+        .onChange(of: openProject) { _, p in if p == nil { rescanToken += 1 } }
         .tint(Theme.accent)
         .preferredColorScheme(Palette.shared.scheme)   // nil in system mode → iOS drives
         .onAppear { Palette.shared.systemDark = colorScheme == .dark }

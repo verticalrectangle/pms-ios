@@ -42,14 +42,13 @@ struct HomeView: View {
     private static let relative = RelativeDateTimeFormatter()
 
     /// Real saved projects, summarized by the engine's read-only query.
-    /// The editor's back-out save runs synchronously, but its poster sidecar
-    /// lands on a detached Task — re-scan after a beat so a just-saved project
-    /// (and its poster) is on disk before we read. Cheap (one extra list() on
-    /// appear) and idempotent.
+    /// Re-scans when the editor closes: NavigationStack keeps the root view
+    /// alive, so onAppear does NOT re-fire on back-navigation. The app root
+    /// bumps rescanToken on pop (see RootView). Second pass 0.5s later
+    /// catches the poster sidecar the editor's save was still flushing.
+    var rescanToken: Int = 0
     private func reloadMetas() {
         reloadMetasNow()
-        // Second pass catches the poster/summary sidecars the editor's
-        // onDisappear save was still flushing when we first scanned.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { reloadMetasNow() }
     }
 
@@ -139,7 +138,8 @@ struct HomeView: View {
         .scrollIndicators(.hidden)
         .background(AtmosphereView().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)   // Home has its own big title
-        .onAppear { reloadMetas() }   // refresh the saved-project list
+        .onAppear { reloadMetas() }   // first appearance
+        .onChange(of: rescanToken) { _, _ in reloadMetas() }   // every editor pop
         .alert("Rename Project", isPresented: Binding(get: { renameID != nil }, set: { if !$0 { renameID = nil } })) {
             TextField("Name", text: $renameText)
             Button("Cancel", role: .cancel) { renameID = nil }
