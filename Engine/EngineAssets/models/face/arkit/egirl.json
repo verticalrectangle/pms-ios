@@ -1,0 +1,26 @@
+{
+  "name": "E-Girl",
+  "masks": ["egirl_a.png", "egirl_b.png"],
+  "reference_skin": "#deb7ae",
+  "skin": {"smooth": 0.55, "smooth_mm": 2.2, "even": 0.25, "lift": 0.04},
+  "blush": {"color": "#e28f92", "amount": 1.0},
+  "shadow": {"color": "#b68779", "amount": 0.8},
+  "freckles": {"color": "#b07560", "amount": 0.85},
+  "brows": {"color": "#6b4a40", "amount": 0.75, "fill": 0.12},
+  "inner_light": 0.18,
+  "lips": {"color": "#cd6c78", "cover": 0.85, "overline_mm": 0.5, "edge_mm": 0.3,
+           "gloss": 1.0, "roughness": 0.3},
+  "highlight": {"amount": 0.9, "roughness": 0.38, "sheen": 0.18},
+  "liner": {"color": "#120a0c", "amount": 1.0, "inner_mm": 0.25, "outer_mm": 1.1,
+            "wing_mm": 5.5, "wing_lift_deg": 18, "offset_mm": 0.0},
+  "lashes": {
+    "color": "#0d090a",
+    "amount": 0.9,
+    "upper": {"count": 85, "clumps": 17, "len_inner_mm": 5.0, "len_outer_mm": 10.5,
+              "root_mm": 0.10, "lift_deg": 12, "curl_deg": 55, "flare": 0.55,
+              "wisp": 0.35, "clump": 0.5, "offset_mm": 0.0, "t0": 0.0, "t1": 0.97},
+    "lower": {"count": 22, "clumps": 5, "len_inner_mm": 1.8, "len_outer_mm": 3.8,
+              "root_mm": 0.09, "lift_deg": 35, "curl_deg": 8, "flare": 0.25,
+              "wisp": 0.4, "clump": 0.7, "offset_mm": 0.0, "t0": 0.04, "t1": 0.62}
+  }
+}

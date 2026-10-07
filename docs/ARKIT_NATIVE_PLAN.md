@@ -1,100 +1,113 @@
-# ARKit-Native Makeup Rendering — Plan & Status
+# ARKit makeup — architecture
 
-2026-07-12. Supersedes the 2D landmark-bridge architecture on the ARKit tier
-(tier 1, TrueDepth front camera). Tiers 2/3 (CoreML sync rear / MediaPipe
-async) keep the existing MP screen-space path unchanged.
+Rebuilt 2026-10-07. Makeup renders only on the TrueDepth front camera, on
+ARKit's own face mesh, drawn with ARKit's own camera from the same ARFrame as
+the pixels. The rear camera and non-TrueDepth devices show no makeup (the
+record screen says so); there is no MediaPipe makeup tier on iOS any more.
 
-## Why
+## Data flow
 
-Eight consecutive on-device failures came from one architectural decision:
-projecting ARKit's 1220 3D vertices to 2D in Swift, evaluating 478 MediaPipe
-landmarks through a static canonical-head correspondence table, and rendering
-makeup in screen space. Every fix hand-reimplemented information ARKit
-already provides:
+1. **Capture** — `App/Sources/ARKitCameraCapture.swift`, per ARFrame:
+   the portrait BGRA frame (`pms_submit_camera_frame`), then the face
+   (`pms_submit_arkit_face_3d`): anchor-space vertices (meters), anchor /
+   view / portrait projection matrices, blendshapes (MediaPipe order), and the
+   frame's `ARDirectionalLightEstimate` (primary light direction + intensity,
+   spherical harmonics, ambient intensity/temperature). One tracked face.
+   Untracked → the slot clears; a face older than 0.15 s of camera time is
+   never drawn (`src/arkit_face.cpp`).
+2. **Look selection** — `FilterLooks.swift`: a makeup look is one `face_fx`
+   stack entry `{face_look: "<id>", params: {face_amount}}`; the record
+   intensity slider is `face_amount` (1 = as designed, up to 2).
+3. **Render** — engine `src/arkit_makeup.mm`, called by the FX runner:
 
-| Round | Failure | Root cause | Native answer |
-|---|---|---|---|
-| 1–5 | makeup misplacement, under-eye band on cheek | canonical correspondence ≠ live face | no correspondence exists |
-| 5, 8 | blink under-tracking (77%), lash line floating above lashes | static barycentric blends can't express "on the lid edge" | lash line = mesh hole rim, pigment rides skin |
-| 6 | lashes descend chop-by-chop | mixed vertex attachments, different blink gains | texture on the surface moves with the surface |
-| this | lashes wobble one by one | raw per-vertex tracking noise passed through | pigment is sub-pixel-stable on the surface |
-| 7 | makeup floats off face during motion | landmarks projected with a cached camera from a different frame; isTracked ignored | verts + matrices + pixels ship in one ARFrame |
-| 8 | iris painted on lids, ignored gaze; blink fade dead | mesh is eyeball-blind; blendshape array misindexed | leftEye/rightEyeTransform are the actual eyeball poses |
+   | Pass | Resolution | What |
+   |---|---|---|
+   | prep | half, mesh | linear camera color × skin mask × facing, premultiplied |
+   | blur | half, 2× separable | mask-normalized bilateral → local skin color; 1×1 mip = face-mean skin |
+   | face | full, mesh, depth | skin finish, pigment layers, lips, 3D liner, gloss/highlighter |
+   | lashes | full, depth-tested | strand ribbons, premultiplied over |
 
-The lesson is structural: **render ARKit's own mesh, in 3D, with ARKit's own
-camera, textured in ARKit's own UV space.** Alignment becomes true by
-construction; expressions and blinks carry the makeup because they carry the
-skin.
+4. **Recording** — `FilteredTakeRecorder` re-renders every frame through the
+   engine, so the look is baked into the take's pixels; takes never carry a
+   `face_fx` brick (no double application on the timeline).
 
-## Architecture
+## Pigment model
 
-- Swift ships, per ARFrame: 1220 model-space 3D vertices, anchor transform,
-  camera view matrix, portrait projection matrix, left/right eye transforms,
-  blendshapes, isTracked. Same callback as the video frame — desync is
-  impossible.
-- Engine (`metal_render.mm` face_fx block) branches: 3D slot fresh → native
-  path; else tier 2/3 as today.
-- Native path passes:
-  1. **Makeup mesh**: ARKit topology (`k_arkit_tris`) + real ARKit UVs
-     (generated `k_arkit_uv`), MVP = proj·view·model, back-face culled,
-     sampling the look's ARKit-UV atlas with the same luminance adaptation
-     as the MP mesh pass. Writes stencil.
-  2. **Eye layer**: iris discs placed from the eye transforms (pupil =
-     eyeball center + gaze·r), stencil-tested so they render only through
-     the mesh's eye holes — gaze-true, lid-clipped, vanish on blink
-     geometrically.
-  3. **Beauty pass** (existing fullscreen skin shader): keeps smoothing /
-     tone / warp; its landmark uniforms come from a ~20-entry hand-verified
-     ARKit vertex index list projected CPU-side. Procedural eye/lip/blush
-     elements are OFF on this tier — the atlas carries them.
-  4. **Debug overlay** (`face_overlay` IPC): checker texture + projected key
-     verts instead of the 478-dot cloud.
-- Makeup content: per-look **ARKit-UV atlases** baked offline by
-  `tools/gen_arkit_makeup.py`:
-  - plate PNGs (MakeupStudio, MP-UV space) resampled through a precomputed
-    MP-UV→ARKit-UV warp map (canonical correspondence used offline, where
-    its error is tolerable diffuse-pigment placement, not per-frame motion);
-  - builtin looks (Goth, Barbie, CatEye, …) painted programmatically in
-    ARKit UV from ring topology: lip bounded by the real lip rings (mouth
-    interior is a hole — teeth unpaintable), shadow band from the eye-hole
-    rim (the rim IS the lash line), liner/lash fringe along the rim, blush /
-    freckles / contour zones.
-- Staleness (>0.15 s) and isTracked clearing carry over to the 3D slot.
+Every color in a look is authored as *how it reads on the look's reference
+skin* (sampled from the reference photo). A layer is the per-channel
+transmittance `T = lin(color) / lin(reference_skin)` applied Beer–Lambert
+style in linear light: `c *= T^(coverage · amount)`. The camera's own
+lighting, pores and shading survive because pigment only filters the light
+that is already there, and every skin tone keeps its own depth. Lip cream
+and liner ink use the same ratio over the local skin color (opaque); gloss
+and highlighter add light — GGX specular from ARKit's primary light on the
+mesh normals, scaled by the local skin irradiance.
 
-## Phases
+- **Skin**: smoothing radius is in millimetres on the face (`smooth_mm`),
+  converted to pixels from the projection each frame; the skin mask excludes
+  eyes, brows, lips and fades at the mesh boundary.
+- **Liner**: no texture. Per fragment, the true 3D distance to the live
+  upper-rim polyline (12 vertices, outer → inner) plus a tapered wing stroke
+  projected onto the outer corner's tangent plane; widths in millimetres,
+  antialiased by the fragment's footprint.
+- **Lashes**: 6-segment strands generated per frame from the rim polylines
+  and their surface frame (normal, along-lid direction): lift, curl toward
+  the lid, outer flare, wispy clumps; drawn ≥1 px wide with coverage = true
+  width, so sub-pixel strands darken by exactly their area.
+- **Brows**: hair-aware — darkens pixels clearly darker than the surrounding
+  skin inside a generous brow region (painted brow shapes never match real
+  brows), plus a faint fill.
 
-- [x] **Phase 0 — Real-face fixtures.** Debug recorder in the app dumps
-  per-frame geometry (+ every-Nth JPEG) to Documents (file sharing on);
-  synthetic fixture generator (canonical mesh + scripted blink/gaze/pose)
-  keeps CI honest until real captures land. Replay drives all later gates.
-- [x] **Phase 1 — Native mesh renderer.** `pms_submit_arkit_face_3d` ABI;
-  engine draws the mesh with a UV-checker over the frame. Accept: checker
-  glued to the face at every pose in replay + on device.
-- [x] **Phase 2 — ARKit-UV atlases.** Warp-map baker + plate conversion +
-  builtin-look layers; `BeautyLook.arkit_tex` wiring; intensity scales atlas
-  opacity.
-- [x] **Phase 3 — Eye layer.** Stencil-clipped iris discs from eye
-  transforms; iris tint/anime params move here.
-- [x] **Phase 4 — Retire the 2D bridge on this tier.** Beauty params from
-  projected ARKit key verts; Swift stops calling the 2D submit; bridge stays
-  for tiers 2/3 only.
-- [ ] **Phase 5 — post-QA polish (needs on-device judgment of v1).** 3D lash
-  cards standing off the lid; glasses occlusion via the existing person
-  matte; per-look art passes.
+## A look is data
 
-## Gates
+`Engine/EngineAssets/models/face/arkit/<id>.json` + two mask atlases.
 
-- `arkit-native-replay` (Mac): renders fixture frames through the real
-  engine; asserts makeup stays inside the projected face, shadow rows track
-  the lid on blink frames, iris follows scripted gaze; writes PNGs for
-  eyes-on review.
-- Existing gates stay green untouched: `engine-smoke`, `arkit-map-smoke`
-  (tier-2/3 bridge), `metal-render-test` (MP path), iOS device build.
+| Key | Fields |
+|---|---|
+| `masks` | `[<id>_a.png, <id>_b.png]` |
+| `reference_skin` | `#rrggbb` the colors were matched on |
+| `skin` | `smooth`, `smooth_mm`, `even`, `lift` |
+| `blush`, `shadow`, `freckles` | `color`, `amount` |
+| `brows` | `color`, `amount`, `fill` |
+| `inner_light` | amount |
+| `lips` | `color`, `cover`, `overline_mm`, `edge_mm`, `gloss`, `roughness` |
+| `highlight` | `amount`, `roughness`, `sheen` |
+| `liner` | `color`, `amount`, `inner_mm`, `outer_mm`, `wing_mm`, `wing_lift_deg`, `offset_mm` |
+| `lashes` | `color`, `amount`, `upper` / `lower`: `count`, `clumps`, `len_inner_mm`, `len_outer_mm`, `root_mm`, `lift_deg`, `curl_deg`, `flare`, `wisp`, `clump`, `offset_mm`, `t0`, `t1`, `blink_close` |
 
-## Risks
+Masks (ARKit UV; texel row = v · size):
 
-- ARKit UV layout quality at the eye rim — checked visually in Phase 1.
-- Metal NDC/orientation conventions for the portrait projection — settled
-  once with the checker + synthetic fixture.
-- Atlas art quality needs iteration with real eyes; the pipeline makes that
-  a texture edit, not an engine change.
+| Atlas | Size | r | g | b | a |
+|---|---|---|---|---|---|
+| `_a` | 1024² | skin (smoothing) | blush | eyeshadow | brow region |
+| `_b` | 2048² | lip SDF `0.5 + d/16` (mm, − inside) | freckles | gloss / highlighter | inner-corner light |
+
+Masks are geometry only, baked by engine `tools/gen_arkit_makeup.py` on the
+canonical ARKit head in millimetres and padded past their UV islands for
+mipmapping. Topology facts it relies on: the eye-hole rims are the lash
+lines (upper rims 1101→1090 and 1069→1080); the 36-vertex loops around the
+mouth hole are the lip anatomy — loop 3 traces the vermilion border and its
+upper half carries the cupid's bow. Colors and amounts retune live in the
+JSON without rebaking.
+
+## QA
+
+Engine repo `docs/ARKIT_REPLAY_QA.md`: triple-tap in the record screen
+records 10 s of real frames + geometry + light; `arkit-native-replay` renders
+any look onto those exact frames on the Mac. `scripts/build_mac.sh --run`
+runs the synthetic gate (placement, blink, yaw, overlay, missing-look status).
+The `face_overlay` command draws the mesh as a UV checker with the live lash
+line for on-device alignment checks.
+
+## History
+
+- 2026-07-12: a 2D bridge (ARKit mesh → screen → 478 MediaPipe landmarks)
+  failed eight rounds of on-device QA; replaced by rendering ARKit's own mesh
+  in 3D.
+- 2026-07 → 09: per-look RGBA decal atlases on that mesh. By October 34 of
+  35 makeup looks had no atlas left (front camera showed skin smoothing
+  only), lashes were env-gated off, the 3D liner quads were degenerate
+  (both axes along the rim), blending ran in gamma space, and a
+  color-deviation "occlusion" gate faded lipstick off real lips. Every look,
+  plate, the Makeup Studio, the MediaPipe makeup tier and the 2D bridge were
+  deleted on 2026-10-07 in favor of the system above.

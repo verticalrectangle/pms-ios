@@ -424,11 +424,12 @@ still green (no regression on Linux), boundary check green, docs updated
 commits pushed. If a phase uncovers work belonging to another lane, write it
 into that phase's section here rather than doing it inline.
 
-## ARKit makeup QA (tier 1 native path)
+## ARKit makeup QA
 
-Makeup/alignment work on the ARKit tier is tested with real-face fixture
-replay, NOT on-device trial and error: the app records geometry via
-triple-tap, `arkit-native-replay` (engine repo) re-renders it with any
-look on the Mac, and gates assert blink/gaze/placement. Full workflow,
-commands, and the visual checklist: engine repo
-`docs/ARKIT_REPLAY_QA.md`. Architecture: `docs/ARKIT_NATIVE_PLAN.md`.
+Makeup work is judged on real-face fixture replay, NOT on-device trial and
+error: triple-tap in the record screen records 10 s of real frames +
+geometry + light, and `arkit-native-replay` (engine repo) renders any look
+onto those exact frames on the Mac; its synthetic mode is a gate in
+`scripts/build_mac.sh --run`. Full workflow, commands, and the visual
+checklist: engine repo `docs/ARKIT_REPLAY_QA.md`. Architecture and the look
+data format: `docs/ARKIT_NATIVE_PLAN.md`.

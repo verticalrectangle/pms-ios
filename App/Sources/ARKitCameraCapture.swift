@@ -3,7 +3,9 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import CoreImage
+import ImageIO
 import UIKit
+import UniformTypeIdentifiers
 
 /// ARSession-based capture for the TrueDepth front camera. Replaces the
 /// AVCapture path for the front camera on supported devices. Feeds frames to
@@ -64,7 +66,12 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
             throw CaptureError.notSupported
         }
         let configuration = ARFaceTrackingConfiguration()
-        configuration.maximumNumberOfTrackedFaces = 4
+        // One face: ARKit then tracks the most prominent face, and the engine
+        // renders exactly one makeup mesh.
+        configuration.maximumNumberOfTrackedFaces = 1
+        // Per-frame ARDirectionalLightEstimate (primary light + SH) — recorded
+        // in fixtures; drives gloss/highlight response to the real light.
+        configuration.isLightEstimationEnabled = true
         configuration.worldAlignment = .camera
         // ARSession.run must be called on the main thread.
         session.run(configuration)
@@ -112,7 +119,7 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
         // tracking, anchor updates stopped but the stale landmarks kept
         // painting makeup onto fresh video — makeup floated off the face
         // until tracking recovered.)
-        submitFaces(frame: frame, imgW: imgW, imgH: imgH)
+        submitFaces(frame: frame, pixels: pb, imgW: imgW, imgH: imgH)
 
         let pts = CMTime(seconds: frame.timestamp, preferredTimescale: 600)
         if let rec = filteredRecorder {
@@ -121,10 +128,10 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
         if matteEnabled { kickMatte(pb, hostTime: frame.timestamp) }
     }
 
-    private func submitFaces(frame: ARFrame, imgW: Int, imgH: Int) {
+    private func submitFaces(frame: ARFrame, pixels: CVPixelBuffer, imgW: Int, imgH: Int) {
         // isTracked == false means ARKit lost the face (fast motion, out of
-        // frame): clear the slot so the engine falls back / hides makeup
-        // instead of painting with frozen geometry.
+        // frame): clear the slot so the engine hides makeup instead of
+        // painting with frozen geometry.
         let anchors = frame.anchors.compactMap { $0 as? ARFaceAnchor }
                                    .filter { $0.isTracked }
         guard let anchor = anchors.first else {
@@ -152,60 +159,55 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
         engine?.submitARKitFace3D(vertices: packed,
                                   model: anchor.transform,
                                   view: view, proj: proj,
-                                  eyeL: anchor.leftEyeTransform,
-                                  eyeR: anchor.rightEyeTransform,
                                   blendshapes: blend,
+                                  light: Self.engineLight(frame.lightEstimate),
                                   width: imgW, height: imgH)
-        recordFixtureFrame(frame: frame, anchor: anchor, packed: packed,
-                           view: view, proj: proj, blend: blend,
-                           imgW: imgW, imgH: imgH)
+        if let fixture, fixture.record(frame: frame, anchor: anchor, pixels: pixels,
+                                       packed: packed, view: view, proj: proj,
+                                       blend: blend) {
+            self.fixture = nil
+        }
     }
 
-    // MARK: fixture capture (ARKIT_NATIVE_PLAN Phase 0)
-    // Dumps per-frame geometry to Documents/arkit_capture_<ts>.jsonl so the
-    // Mac replay harness can regression-test against real faces in motion.
-    private var captureRemaining = 0
-    private var captureHandle: FileHandle?
-
-    func startFixtureCapture(frames: Int = 180) {
-        let dir = FileManager.default.urls(for: .documentDirectory,
-                                           in: .userDomainMask)[0]
-        let ts = Int(Date().timeIntervalSince1970)
-        let url = dir.appendingPathComponent("arkit_capture_\(ts).jsonl")
-        FileManager.default.createFile(atPath: url.path, contents: nil)
-        captureHandle = try? FileHandle(forWritingTo: url)
-        captureRemaining = captureHandle != nil ? frames : 0
+    /// ARFrame.lightEstimate → the engine's light record. Face tracking
+    /// delivers an ARDirectionalLightEstimate (primary light + SH), which
+    /// drives gloss and highlighter; otherwise only the ambient terms.
+    private static func engineLight(_ estimate: ARLightEstimate?) -> pms_arkit_light {
+        var l = pms_arkit_light()
+        l.ambient_intensity = Float(estimate?.ambientIntensity ?? 1000)
+        l.ambient_kelvin = Float(estimate?.ambientColorTemperature ?? 6500)
+        guard let d = estimate as? ARDirectionalLightEstimate else { return l }
+        let dir = d.primaryLightDirection
+        l.primary_dir = (dir.x, dir.y, dir.z)
+        l.primary_intensity = Float(d.primaryLightIntensity)
+        withUnsafeMutableBytes(of: &l.sh) { dst in
+            d.sphericalHarmonicsCoefficients.withUnsafeBytes { src in
+                dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: src.prefix(dst.count)))
+            }
+        }
+        l.directional = 1
+        return l
     }
 
-    private func recordFixtureFrame(frame: ARFrame, anchor: ARFaceAnchor,
-                                    packed: [Float], view: simd_float4x4,
-                                    proj: simd_float4x4, blend: [Float],
-                                    imgW: Int, imgH: Int) {
-        guard captureRemaining > 0, let handle = captureHandle else { return }
-        captureRemaining -= 1
-        func flat(_ m: simd_float4x4) -> [Float] {
-            var out = [Float]()
-            for c in 0..<4 { let col = m[c]
-                out.append(contentsOf: [col.x, col.y, col.z, col.w]) }
-            return out
-        }
-        let rec: [String: Any] = [
-            "t": frame.timestamp, "w": imgW, "h": imgH,
-            "verts": packed.map { Double($0) },
-            "model": flat(anchor.transform).map { Double($0) },
-            "view": flat(view).map { Double($0) },
-            "proj": flat(proj).map { Double($0) },
-            "eye_l": flat(anchor.leftEyeTransform).map { Double($0) },
-            "eye_r": flat(anchor.rightEyeTransform).map { Double($0) },
-            "blend": blend.map { Double($0) },
-        ]
-        if let data = try? JSONSerialization.data(withJSONObject: rec),
-           let line = String(data: data, encoding: .utf8) {
-            handle.write(Data((line + "\n").utf8))
-        }
-        if captureRemaining == 0 {
-            try? captureHandle?.close()
-            captureHandle = nil
+    // MARK: fixture capture
+    // Triple-tap in RecordView records a real-face fixture for the engine's Mac
+    // replay harness (tools/arkit_native_replay.mm): Documents/arkit_capture_<ts>/
+    // holds frames.jsonl — one line per recorded ARFrame: geometry, transform
+    // chain, eye poses, blendshapes, light estimate, exposure — and fNNNN.jpg,
+    // the exact portrait BGRA frame the engine received for that ARFrame. Replay
+    // composites makeup onto these real frames with their own geometry.
+    private var fixture: FixtureCapture?   // session queue only
+
+    /// Record `frames` fixture frames from every `stride`-th tracked ARFrame
+    /// (ARKit delivers 60 fps; stride 2 = 30 fps). Ignored while a capture is
+    /// running. `onFinish` runs on the main queue once every JPEG is on disk.
+    func startFixtureCapture(frames: Int = 300, stride: Int = 2,
+                             onFinish: @escaping (URL, Int) -> Void) {
+        sessionQueue.async { [weak self] in
+            guard let self, self.fixture == nil else { return }
+            self.fixture = FixtureCapture(frames: frames, stride: stride) { dir, written in
+                DispatchQueue.main.async { onFinish(dir, written) }
+            }
         }
     }
 
@@ -214,11 +216,10 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
     /// rather than interpreting Y as four BGRA pixels in the Metal compositor.
     ///
     /// Coordinate contract: portrait is UNMIRRORED. Person's left lands on
-    /// the RIGHT of the buffer (larger X). The engine's ARKit→MediaPipe
-    /// correspondence (generated arkit_mp_map.h) is index-based and
-    /// anatomical, so makeup stays correct under any convention — but the
-    /// frame and the projected mesh below MUST use the same one. If you ever
-    /// mirror this buffer (selfie preview), mirror projectPoint results too.
+    /// the RIGHT of the buffer (larger X). The engine renders the face mesh
+    /// with this frame's own `.portrait` view/projection matrices, so the
+    /// buffer and the matrices MUST share one convention: if you ever mirror
+    /// this buffer (selfie preview), mirror the projection too.
     private func portraitBGRAFrame(from source: CVPixelBuffer) -> CVPixelBuffer? {
         let width = CVPixelBufferGetHeight(source)
         let height = CVPixelBufferGetWidth(source)
@@ -286,5 +287,131 @@ final class ARKitCameraCapture: NSObject, CameraCaptureProtocol, ARSessionDelega
             self.engine?.submitPersonMatte(matte, hostTime: hostTime)
             self.sessionQueue.async { self.matteInFlight = false }
         }
+    }
+}
+
+private final class FixtureCapture {
+    private let dir: URL
+    private let handle: FileHandle
+    private let encodeQueue = DispatchQueue(label: "pms.arkit.fixture", qos: .utility)
+    private let lock = NSLock()
+    private var pendingEncodes = 0          // guarded by lock
+    private var remaining: Int
+    private let stride: Int
+    private var seen = 0
+    private var written = 0
+    private let onFinish: (URL, Int) -> Void
+    /// Each pending encode holds a ~6 MB frame copy; past this many the frame's
+    /// geometry is still recorded but its image is skipped ("img" absent).
+    private static let maxPendingEncodes = 8
+
+    init?(frames: Int, stride: Int, onFinish: @escaping (URL, Int) -> Void) {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        dir = docs.appendingPathComponent("arkit_capture_\(Int(Date().timeIntervalSince1970))",
+                                          isDirectory: true)
+        let jsonl = dir.appendingPathComponent("frames.jsonl")
+        guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil,
+              FileManager.default.createFile(atPath: jsonl.path, contents: nil),
+              let h = try? FileHandle(forWritingTo: jsonl) else { return nil }
+        handle = h
+        remaining = max(1, frames)
+        self.stride = max(1, stride)
+        self.onFinish = onFinish
+    }
+
+    /// Records one ARFrame (subject to the stride). Returns true once the
+    /// capture has written its last frame; the caller then drops it.
+    func record(frame: ARFrame, anchor: ARFaceAnchor, pixels: CVPixelBuffer,
+                packed: [Float], view: simd_float4x4, proj: simd_float4x4,
+                blend: [Float]) -> Bool {
+        defer { seen += 1 }
+        guard seen % stride == 0 else { return false }
+        func flat(_ m: simd_float4x4) -> [Double] {
+            (0..<4).flatMap { c in [m[c].x, m[c].y, m[c].z, m[c].w].map(Double.init) }
+        }
+        var rec: [String: Any] = [
+            "t": frame.timestamp,
+            "w": CVPixelBufferGetWidth(pixels), "h": CVPixelBufferGetHeight(pixels),
+            "verts": packed.map(Double.init),
+            "model": flat(anchor.transform),
+            "view": flat(view),
+            "proj": flat(proj),
+            "eye_l": flat(anchor.leftEyeTransform),
+            "eye_r": flat(anchor.rightEyeTransform),
+            "blend": blend.map(Double.init),
+            "exposure": ["duration": frame.camera.exposureDuration,
+                         "offset": Double(frame.camera.exposureOffset)],
+        ]
+        if let le = frame.lightEstimate as? ARDirectionalLightEstimate {
+            let d = le.primaryLightDirection
+            let sh = le.sphericalHarmonicsCoefficients.withUnsafeBytes {
+                $0.bindMemory(to: Float.self).map(Double.init)
+            }
+            rec["light"] = ["dir": [Double(d.x), Double(d.y), Double(d.z)],
+                            "intensity": Double(le.primaryLightIntensity),
+                            "ambient": Double(le.ambientIntensity),
+                            "kelvin": Double(le.ambientColorTemperature),
+                            "sh": sh]
+        } else if let le = frame.lightEstimate {
+            rec["light"] = ["ambient": Double(le.ambientIntensity),
+                            "kelvin": Double(le.ambientColorTemperature)]
+        }
+        if let name = enqueueJPEG(pixels, name: String(format: "f%04d.jpg", written)) {
+            rec["img"] = name
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: rec) {
+            handle.write(data)
+            handle.write(Data("\n".utf8))
+        }
+        written += 1
+        remaining -= 1
+        guard remaining == 0 else { return false }
+        try? handle.close()
+        let dir = dir, n = written, done = onFinish
+        encodeQueue.async { done(dir, n) }   // serial: runs after the last encode
+        return true
+    }
+
+    private func enqueueJPEG(_ pb: CVPixelBuffer, name: String) -> String? {
+        lock.lock()
+        let busy = pendingEncodes >= Self.maxPendingEncodes
+        if !busy { pendingEncodes += 1 }
+        lock.unlock()
+        guard !busy else { return nil }
+        // Copy now: the BGRA buffer comes from a pool the next ARFrame reuses.
+        CVPixelBufferLockBaseAddress(pb, .readOnly)
+        let w = CVPixelBufferGetWidth(pb), h = CVPixelBufferGetHeight(pb)
+        let bpr = CVPixelBufferGetBytesPerRow(pb)
+        let bytes = CVPixelBufferGetBaseAddress(pb).map { Data(bytes: $0, count: bpr * h) }
+        CVPixelBufferUnlockBaseAddress(pb, .readOnly)
+        guard let bytes else {
+            lock.lock(); pendingEncodes -= 1; lock.unlock()
+            return nil
+        }
+        let url = dir.appendingPathComponent(name)
+        encodeQueue.async { [self] in
+            Self.writeJPEG(bytes, width: w, height: h, bytesPerRow: bpr, to: url)
+            lock.lock(); pendingEncodes -= 1; lock.unlock()
+        }
+        return name
+    }
+
+    /// BGRA (little-endian, alpha ignored) → sRGB-tagged JPEG. The engine
+    /// treats these bytes as sRGB-encoded, so the replay sees the same values.
+    private static func writeJPEG(_ bytes: Data, width: Int, height: Int,
+                                  bytesPerRow: Int, to url: URL) {
+        guard let provider = CGDataProvider(data: bytes as CFData),
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let image = CGImage(width: width, height: height, bitsPerComponent: 8,
+                                  bitsPerPixel: 32, bytesPerRow: bytesPerRow, space: space,
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue
+                                                           | CGBitmapInfo.byteOrder32Little.rawValue),
+                                  provider: provider, decode: nil, shouldInterpolate: false,
+                                  intent: .defaultIntent),
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString,
+                                                         1, nil) else { return }
+        CGImageDestinationAddImage(dest, image,
+                                   [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary)
+        CGImageDestinationFinalize(dest)
     }
 }

@@ -18,12 +18,13 @@ struct Look: Identifiable, Equatable {
     }
 
     /// One FX-stack entry: a manifest effect id + param overrides (unset params
-    /// ride the catalog defaults, filled in at push time). `makeupTex` names a
-    /// UV-space makeup PNG (models/face/) for face_fx entries.
+    /// ride the catalog defaults, filled in at push time). `faceLook` names an
+    /// ARKit makeup look for face_fx entries (engine asset
+    /// models/face/arkit/<faceLook>.json).
     struct Entry: Equatable {
         let fx: String
         var params: [String: Double] = [:]
-        var makeupTex: String? = nil
+        var faceLook: String? = nil
     }
 
     let id: String
@@ -39,123 +40,16 @@ struct Look: Identifiable, Equatable {
 }
 
 enum FilterLooks {
-    /// Compact constructor for plate-driven makeup looks: shared realism-safe
-    /// param bundle (modest smooth, near-zero morphs) + the baked atlas.
-    private static func plate(_ id: String, _ name: String, _ icon: String, _ tex: String,
-                              warmth: Double = 0.1, smooth: Double = 0.45,
-                              lip: (Double, Double, Double) = (0.9, 0.45, 0.5),
-                              blush: (Double, Double, Double) = (1.0, 0.55, 0.55)) -> Look {
-        Look(id: id, name: name, icon: icon, categories: [.makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": smooth, "brighten": 0.2, "warmth": warmth, "eye_pop": 0.28, "eyes": 0.05, "cheek": 0.02, "vline": 0.04, "nose": 0.04, "lips_plump": 0.02, "chin_smooth": 0.15, "jaw_shade": 0.1, "blush": 0.22, "lip": 0.24, "lash": 0.56, "liner": 0.5, "lash_wing": 0.26, "nose_blush": 0, "freckles": 0, "lip_grad": 0.6, "blush_r": blush.0, "blush_g": blush.1, "blush_b": blush.2, "lip_r": lip.0, "lip_g": lip.1, "lip_b": lip.2, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: tex)])
-    }
-
     /// The full deck, in rail order. Looks whose effects are missing from the
     /// running catalog (older engine) are filtered out at access time.
     static let all: [Look] = [
-        // ── Makeup (face-tracked: MediaPipe mesh + warp + UV makeup) ────────
-        // Each = a BeautyLook param bundle for the engine's face_fx passes.
-        // Textures come from tools/gen_makeup_elements.py (bundled).
-        // ARKit-native atlas test look (the ONE to nail before templatizing):
-        // makeup_soft_glam.png is painted in ARKit UV by tools/gen_arkit_makeup.py.
-        // On the TrueDepth front camera the engine samples arkit/makeup_soft_glam.png;
-        // on rear/MediaPipe it falls back to models/face/makeup_soft_glam.png (absent
-        // → beauty-only there until more looks are added).
-        plate("soft_glam", "Soft Glam", "moon.stars.fill", "makeup_soft_glam.png",
-              warmth: 0.12, smooth: 0.45,
-              lip: (0.68, 0.40, 0.36), blush: (0.87, 0.51, 0.47)),
-        Look(id: "natural", name: "Natural", icon: "face.smiling",
+        // ── Makeup (ARKit TrueDepth face mesh — front camera) ────────────────
+        // A makeup look is engine data: models/face/arkit/<faceLook>.json plus
+        // the masks it names (engine tools/gen_arkit_makeup.py).
+        Look(id: "egirl", name: "E-Girl", icon: "heart.circle.fill",
              categories: [.forYou, .makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.4, "brighten": 0.15, "warmth": 0.1, "eye_pop": 0.22, "eyes": 0.03, "cheek": 0, "vline": 0.02, "nose": 0.03, "lips_plump": 0, "chin_smooth": 0.1, "jaw_shade": 0, "blush": 0.14, "lip": 0.14, "lash": 0.32, "liner": 0.25, "lash_wing": 0, "nose_blush": 0, "freckles": 0, "lip_grad": 0.8, "blush_r": 1, "blush_g": 0.58, "blush_b": 0.52, "lip_r": 0.95, "lip_g": 0.45, "lip_b": 0.4, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0])]),
-        Look(id: "douyin", name: "Douyin Glam", icon: "sparkle",
-             categories: [.forYou, .makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.48, "brighten": 0.22, "warmth": 0.1, "eye_pop": 0.3, "eyes": 0.06, "cheek": 0.02, "vline": 0.06, "nose": 0.06, "lips_plump": 0.03, "chin_smooth": 0.15, "jaw_shade": 0, "blush": 0.21, "lip": 0.22, "lash": 0.56, "liner": 0.5, "lash_wing": 0.26, "nose_blush": 0, "freckles": 0, "lip_grad": 0.6, "blush_r": 1, "blush_g": 0.55, "blush_b": 0.65, "lip_r": 0.95, "lip_g": 0.3, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_douyin.png")]),
-        Look(id: "doll_pink", name: "Doll Pink", icon: "heart.circle.fill",
-             categories: [.forYou, .makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.62, "brighten": 0.28, "warmth": 0.05, "eye_pop": 0.35, "eyes": 0.08, "cheek": 0, "vline": 0.06, "nose": 0.05, "lips_plump": 0.05, "chin_smooth": 0.2, "jaw_shade": 0, "blush": 0.26, "lip": 0.27, "lash": 0.8, "liner": 0.6, "lash_wing": 0.26, "nose_blush": 0, "freckles": 0, "lip_grad": 0.55, "blush_r": 1, "blush_g": 0.5, "blush_b": 0.62, "lip_r": 0.95, "lip_g": 0.25, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_doll_pink.png")]),
-        Look(id: "egirl_face", name: "E-Girl", icon: "flame.circle.fill",
-             categories: [.forYou, .makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.45, "brighten": 0.2, "warmth": 0.1, "eye_pop": 0.28, "eyes": 0.06, "cheek": 0, "vline": 0.04, "nose": 0.05, "lips_plump": 0.02, "chin_smooth": 0.15, "jaw_shade": 0, "blush": 0.26, "lip": 0.22, "lash": 0.56, "liner": 0.6, "lash_wing": 0.42, "nose_blush": 0.28, "freckles": 0.35, "lip_grad": 0.55, "blush_r": 1, "blush_g": 0.45, "blush_b": 0.55, "lip_r": 0.95, "lip_g": 0.3, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_egirl.png")]),
-        Look(id: "glam_contour", name: "Glam Contour", icon: "diamond.fill",
-             categories: [.forYou, .makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.5, "brighten": 0.2, "warmth": 0.1, "eye_pop": 0.32, "eyes": 0.06, "cheek": 0.06, "vline": 0.08, "nose": 0.08, "lips_plump": 0.03, "chin_smooth": 0.2, "jaw_shade": 0.3, "blush": 0.18, "lip": 0.22, "lash": 0.64, "liner": 0.6, "lash_wing": 0.34, "nose_blush": 0, "freckles": 0, "lip_grad": 0.55, "blush_r": 0.95, "blush_g": 0.55, "blush_b": 0.45, "lip_r": 0.85, "lip_g": 0.55, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_glam_contour.png")]),
-        Look(id: "coquette", name: "Coquette", icon: "gift.fill",
-             categories: [.makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.46, "brighten": 0.22, "warmth": 0.12, "eye_pop": 0.28, "eyes": 0.06, "cheek": 0.02, "vline": 0.03, "nose": 0.04, "lips_plump": 0.02, "chin_smooth": 0.15, "jaw_shade": 0, "blush": 0.26, "lip": 0.27, "lash": 0.48, "liner": 0.38, "lash_wing": 0.17, "nose_blush": 0, "freckles": 0, "lip_grad": 0.7, "blush_r": 1, "blush_g": 0.6, "blush_b": 0.65, "lip_r": 0.95, "lip_g": 0.35, "lip_b": 0.5, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_coquette.png")]),
-        Look(id: "goth_face", name: "Goth", icon: "moon.fill",
-             categories: [.makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.5, "brighten": 0.12, "warmth": 0, "eye_pop": 0.35, "eyes": 0.05, "cheek": 0, "vline": 0.04, "nose": 0.05, "lips_plump": 0.02, "chin_smooth": 0.15, "jaw_shade": 0, "blush": 0.09, "lip": 0.32, "lash": 0.64, "liner": 0.6, "lash_wing": 0.42, "nose_blush": 0, "freckles": 0, "lip_grad": 0.35, "blush_r": 0.7, "blush_g": 0.45, "blush_b": 0.55, "lip_r": 0.5, "lip_g": 0.15, "lip_b": 0.3, "eye_glow": 0, "skin_tint": 0, "desat": 0.25, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_goth.png")]),
-        Look(id: "peach_face", name: "Peach", icon: "sun.min.fill",
-             categories: [.makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.46, "brighten": 0.25, "warmth": 0.3, "eye_pop": 0.25, "eyes": 0.05, "cheek": 0.02, "vline": 0.03, "nose": 0.04, "lips_plump": 0.03, "chin_smooth": 0.15, "jaw_shade": 0, "blush": 0.32, "lip": 0.32, "lash": 0.48, "liner": 0.38, "lash_wing": 0.17, "nose_blush": 0, "freckles": 0, "lip_grad": 0.65, "blush_r": 1, "blush_g": 0.55, "blush_b": 0.4, "lip_r": 0.95, "lip_g": 0.4, "lip_b": 0.3, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_peach.png")]),
-        Look(id: "cold_beauty", name: "Cold Beauty", icon: "snowflake",
-             categories: [.makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.48, "brighten": 0.18, "warmth": 0, "eye_pop": 0.28, "eyes": 0.05, "cheek": 0.03, "vline": 0.06, "nose": 0.06, "lips_plump": 0.02, "chin_smooth": 0.2, "jaw_shade": 0.15, "blush": 0.14, "lip": 0.22, "lash": 0.48, "liner": 0.38, "lash_wing": 0.17, "nose_blush": 0, "freckles": 0, "lip_grad": 0.55, "blush_r": 0.95, "blush_g": 0.7, "blush_b": 0.75, "lip_r": 0.8, "lip_g": 0.35, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_cold_beauty.png")]),
-        Look(id: "sunset_face", name: "Sunset", icon: "sunset.fill",
-             categories: [.makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.45, "brighten": 0.2, "warmth": 0.45, "eye_pop": 0.28, "eyes": 0.05, "cheek": 0.03, "vline": 0.04, "nose": 0.05, "lips_plump": 0.02, "chin_smooth": 0.15, "jaw_shade": 0, "blush": 0.26, "lip": 0.32, "lash": 0.56, "liner": 0.5, "lash_wing": 0.34, "nose_blush": 0, "freckles": 0, "lip_grad": 0.65, "blush_r": 1, "blush_g": 0.5, "blush_b": 0.3, "lip_r": 0.95, "lip_g": 0.35, "lip_b": 0.25, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_sunset.png")]),
-        Look(id: "angel_face", name: "Angel", icon: "sparkles.rectangle.stack.fill",
-             categories: [.makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.55, "brighten": 0.26, "warmth": 0.05, "eye_pop": 0.32, "eyes": 0.06, "cheek": 0, "vline": 0.03, "nose": 0.04, "lips_plump": 0.03, "chin_smooth": 0.2, "jaw_shade": 0, "blush": 0.21, "lip": 0.22, "lash": 0.56, "liner": 0.38, "lash_wing": 0.17, "nose_blush": 0, "freckles": 0, "lip_grad": 0.65, "blush_r": 1, "blush_g": 0.75, "blush_b": 0.78, "lip_r": 0.95, "lip_g": 0.55, "lip_b": 0.6, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_angel.png")]),
-        Look(id: "baddie_face", name: "Baddie", icon: "crown.fill",
-             categories: [.makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.5, "brighten": 0.18, "warmth": 0.25, "eye_pop": 0.28, "eyes": 0.06, "cheek": 0.06, "vline": 0.08, "nose": 0.08, "lips_plump": 0.04, "chin_smooth": 0.2, "jaw_shade": 0.27, "blush": 0.18, "lip": 0.22, "lash": 0.64, "liner": 0.6, "lash_wing": 0.42, "nose_blush": 0, "freckles": 0, "lip_grad": 0.55, "blush_r": 0.95, "blush_g": 0.55, "blush_b": 0.42, "lip_r": 0.85, "lip_g": 0.5, "lip_b": 0.4, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_baddie.png")]),
-        Look(id: "cyber_chrome_face", name: "Cyber Chrome", icon: "bolt.shield.fill",
-             categories: [.makeup, .cyberpunk],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.55, "brighten": 0.12, "warmth": 0, "eye_pop": 0.3, "eyes": 0.05, "cheek": 0, "vline": 0.03, "nose": 0.05, "lips_plump": 0.02, "chin_smooth": 0.15, "jaw_shade": 0, "blush": 0, "lip": 0.18, "lash": 0.32, "liner": 0.55, "lash_wing": 0.26, "nose_blush": 0, "freckles": 0, "lip_grad": 0.45, "blush_r": 0.55, "blush_g": 0.75, "blush_b": 0.85, "lip_r": 0.45, "lip_g": 0.5, "lip_b": 0.6, "eye_glow": 0.45, "skin_tint": 0.12, "desat": 0.3, "chrome": 0.25, "scanlines": 0],
-                           makeupTex: "makeup_cyber_chrome.png")]),
-        Look(id: "hearts", name: "Freckle Doll", icon: "heart.text.square.fill",
-             categories: [.makeup],
-             stack: [.init(fx: "face_fx",
-                           params: ["smooth": 0.45, "brighten": 0.22, "warmth": 0.1, "eye_pop": 0.28, "eyes": 0.07, "cheek": 0, "vline": 0.04, "nose": 0.05, "lips_plump": 0.03, "chin_smooth": 0.15, "jaw_shade": 0, "blush": 0.32, "lip": 0.27, "lash": 0.56, "liner": 0.5, "lash_wing": 0.26, "nose_blush": 0, "freckles": 0, "lip_grad": 0.65, "blush_r": 1, "blush_g": 0.45, "blush_b": 0.55, "lip_r": 0.95, "lip_g": 0.3, "lip_b": 0.45, "eye_glow": 0, "skin_tint": 0, "desat": 0, "chrome": 0, "scanlines": 0],
-                           makeupTex: "makeup_hearts_freckles.png")]),
-        // ── Realistic reference-driven collection (tools/gen_makeup_elements.py) ──
-        // Translucent mid-luma plates; the engine's luma blend matches them to skin.
-        plate("korean_dewy", "Korean Dewy", "drop.fill", "makeup_korean_dewy.png", warmth: 0.12, lip: (0.92, 0.48, 0.45), blush: (1, 0.62, 0.56)),
-        plate("chinese_classic", "C-Beauty Classic", "paintbrush.pointed.fill", "makeup_chinese_classic.png", lip: (0.75, 0.15, 0.2), blush: (0.9, 0.52, 0.48)),
-        plate("indian_bridal", "Indian Bridal", "crown.fill", "makeup_indian_bridal.png", warmth: 0.25, lip: (0.7, 0.12, 0.18), blush: (0.9, 0.5, 0.42)),
-        plate("bollywood", "Bollywood", "theatermasks.fill", "makeup_bollywood.png", lip: (0.85, 0.35, 0.5), blush: (0.85, 0.5, 0.55)),
-        plate("latina_glam", "Latina Glam", "sun.max.fill", "makeup_latina_glam.png", warmth: 0.25, lip: (0.72, 0.5, 0.42), blush: (0.9, 0.55, 0.45)),
-        plate("chola", "Chola", "moon.zzz.fill", "makeup_chola.png", warmth: 0.15, lip: (0.62, 0.38, 0.32), blush: (0.8, 0.52, 0.45)),
-        plate("pinup", "Pin-Up", "seal.fill", "makeup_pinup.png", lip: (0.75, 0.12, 0.18), blush: (0.92, 0.52, 0.48)),
-        plate("arab_kohl", "Arab Kohl", "eye.fill", "makeup_arab_kohl.png", warmth: 0.2, lip: (0.65, 0.38, 0.36), blush: (0.85, 0.52, 0.46)),
-        plate("siren_night", "Siren Night", "moon.stars.fill", "makeup_siren_night.png", lip: (0.55, 0.18, 0.3), blush: (0.8, 0.5, 0.55)),
-        plate("fox_eye", "Fox Eye", "cat.fill", "makeup_fox_eye.png", warmth: 0.18, lip: (0.78, 0.56, 0.5), blush: (0.9, 0.6, 0.52)),
-        plate("doe_eye", "Doe Eye", "hare.fill", "makeup_doe_eye.png", warmth: 0.12, smooth: 0.5, lip: (0.94, 0.55, 0.55), blush: (1, 0.62, 0.62)),
-        plate("y2k_glow", "Y2K Glow", "star.bubble.fill", "makeup_y2k_glow.png", warmth: 0.35, lip: (0.95, 0.65, 0.55), blush: (1, 0.58, 0.42)),
-        plate("nineties_brown", "90s Brown", "aqi.medium", "makeup_nineties_brown.png", warmth: 0.15, lip: (0.52, 0.34, 0.28), blush: (0.8, 0.52, 0.44)),
-        plate("eighties_pop", "80s Pop", "bolt.heart.fill", "makeup_eighties_pop.png", lip: (0.85, 0.25, 0.5), blush: (0.95, 0.48, 0.6)),
-        plate("seventies_sun", "70s Sun", "sun.haze.fill", "makeup_seventies_sun.png", warmth: 0.4, lip: (0.94, 0.6, 0.48), blush: (0.95, 0.6, 0.38)),
-        plate("cut_crease", "Cut Crease", "scribble.variable", "makeup_cut_crease.png", warmth: 0.12, lip: (0.72, 0.52, 0.47), blush: (0.9, 0.58, 0.5)),
-        plate("halo_eye", "Halo Eye", "circle.dotted", "makeup_halo_eye.png", warmth: 0.3, lip: (0.72, 0.5, 0.48), blush: (0.95, 0.58, 0.48)),
-        plate("editorial_violet", "Editorial Violet", "rectangle.on.rectangle.angled", "makeup_editorial_violet.png", lip: (0.5, 0.28, 0.36), blush: (0.8, 0.52, 0.62)),
-        plate("soft_bridal", "Soft Bridal", "gift.fill", "makeup_soft_bridal.png", warmth: 0.15, lip: (0.8, 0.25, 0.32), blush: (0.95, 0.58, 0.6)),
-        plate("tribal_earth", "Tribal Earth", "mountain.2.fill", "makeup_tribal_earth.png", warmth: 0.3, lip: (0.55, 0.36, 0.3), blush: (0.8, 0.5, 0.38)),
+             stack: [.init(fx: "face_fx", faceLook: "egirl")]),
+
         // ── Beauty (full-frame skin shaders — no tracking) ───────────────────────────────────────────────────────────
         Look(id: "porcelain", name: "Porcelain", icon: "sparkles",
              categories: [.forYou, .beauty],
@@ -287,7 +181,7 @@ enum FilterLooks {
     /// set_live_fx entries for a look at a given intensity: catalog defaults
     /// overlaid with the look's overrides; `amount` (wet/dry) rides intensity.
     /// face_fx entries take intensity as `face_amount` (look strength) and
-    /// carry their makeup texture name alongside the params.
+    /// carry their look id as `face_look`.
     static func liveStack(for look: Look, intensity: Double) -> [[String: Any]] {
         look.stack.map { entry in
             var params: [String: Double] = [:]
@@ -298,7 +192,7 @@ enum FilterLooks {
             var e: [String: Any] = ["fx_type": entry.fx]
             if entry.fx == "face_fx" {
                 params["face_amount"] = (entry.params["face_amount"] ?? 1.0) * intensity
-                if let tex = entry.makeupTex { e["face_makeup_tex"] = tex }
+                if let id = entry.faceLook { e["face_look"] = id }
             } else {
                 // A look-authored amount is a per-entry ceiling; intensity scales it.
                 params["amount"] = (entry.params["amount"] ?? 1.0) * intensity

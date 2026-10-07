@@ -35,12 +35,6 @@ struct RecordView: View {
     // set = colour key sampled by tapping the preview. Double-tap resets.
     @State private var keyOverride: (r: Double, g: Double, b: Double)?
     @State private var keyHint: String?
-    // Makeup Studio: a non-nil spec overrides the active look's face entry
-    // (live-editable); saved specs join the rail as custom looks.
-    @State private var showStudio = false
-    @State private var studioSpec = MakeupSpec()
-    @State private var studioActive = false
-    @State private var customLooks: [SavedLook] = CustomLookStore.load()
 
     // Multi-segment recording state. All state is main-queue; no actor.
     @State private var nextSegmentIndex: Int = 0
@@ -57,10 +51,6 @@ struct RecordView: View {
     @State private var flashEnabled = false
     @State private var flashOpacity = 0.0
     @State private var debugOverlay = false
-    // Dev: force the ONNX face pipeline (AVFoundation + engine worker) instead
-    // of the ARKit TrueDepth pipeline on supported front cameras, to A/B the
-    // two trackers live. Persisted so the choice survives relaunches.
-    @State private var forceONNX = UserDefaults.standard.bool(forKey: "dev.forceONNXFacePipeline")
 
     private let ticker = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
@@ -74,16 +64,20 @@ struct RecordView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .onTapGesture(count: 3) {
-                        // Debug: landmark overlay (engine-drawn, exact render
-                        // coordinates) — alignment QA for the ARKit bridge.
+                        // Debug: engine face overlay + a real-face fixture
+                        // (10 s of frames + geometry) for the Mac replay harness.
                         debugOverlay.toggle()
                         engine.send("face_overlay", ["on": debugOverlay])
-                        if debugOverlay {
-                            // also record a ~6s geometry fixture for the Mac
-                            // replay harness (ARKIT_NATIVE_PLAN Phase 0)
-                            (camera as? ARKitCameraCapture)?.startFixtureCapture()
+                        guard debugOverlay else { keyHint = "Face overlay off"; return }
+                        if let arkit = camera as? ARKitCameraCapture {
+                            arkit.startFixtureCapture { dir, frames in
+                                keyHint = "Fixture saved: \(dir.lastPathComponent) (\(frames) frames)"
+                                haptic()
+                            }
+                            keyHint = "Capturing face fixture — hold still, then move (10 s)"
+                        } else {
+                            keyHint = "Face overlay on"
                         }
-                        keyHint = debugOverlay ? "Landmark overlay ON (capturing fixture)" : "Landmark overlay off"
                     }
                     .onTapGesture(count: 2) {
                         guard lookHasChroma else { return }
@@ -149,23 +143,11 @@ struct RecordView: View {
         }
         .onChange(of: look) { _, _ in
             keyOverride = nil
-            studioActive = false
-            if let e = look.stack.first(where: { $0.fx == "face_fx" }) {
-                studioSpec = MakeupSpec(fromLookEntry: e.params, makeupTex: e.makeupTex)
-            }
             if lookHasChroma { keyHint = "Background reacts around you — tap a color to key it instead" }
             pushLive(); haptic()
+            noteMakeupCamera()
         }
         .onChange(of: intensity) { _, _ in pushLive() }
-        .sheet(isPresented: $showStudio) {
-            MakeupStudioSheet(spec: $studioSpec,
-                              onChange: { studioActive = true; pushLive() },
-                              onSave: { name, spec in
-                                  let saved = CustomLookStore.add(name: name, spec: spec)
-                                  customLooks = CustomLookStore.load()
-                                  look = saved.asLook
-                              })
-        }
     }
 
     // MARK: chrome
@@ -214,24 +196,6 @@ struct RecordView: View {
                     .background(Circle().fill(.black.opacity(0.35)))
             }
             .disabled(recording || finalizing)   // flip disabled mid-take
-            // Dev: A/B the face pipelines on TrueDepth front cameras.
-            if position == .front && ARKitCameraCapture.isSupported {
-                Button {
-                    forceONNX.toggle()
-                    UserDefaults.standard.set(forceONNX, forKey: "dev.forceONNXFacePipeline")
-                    camera?.stop(); camera = nil
-                    startCamera()
-                    keyHint = forceONNX ? "Face pipeline: ONNX (engine worker)" : "Face pipeline: ARKit (TrueDepth)"
-                    haptic()
-                } label: {
-                    Text(forceONNX ? "ONNX" : "ARKit")
-                        .font(.label(10)).tracking(0.5)
-                        .foregroundStyle(forceONNX ? Theme.accent : .white)
-                        .padding(.horizontal, 10).padding(.vertical, 8)
-                        .background(Capsule().fill(.black.opacity(0.35)))
-                }
-                .disabled(recording || finalizing)   // no pipeline swap mid-take
-            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 6)
@@ -243,16 +207,6 @@ struct RecordView: View {
             Slider(value: $intensity, in: 0.05...2.0).tint(Theme.accent)
             Text("\(Int(intensity * 100))%").font(.num(11)).foregroundStyle(.white.opacity(0.8))
                 .frame(width: 40, alignment: .trailing)
-            if lookUsesFace {
-                // Makeup Studio: edit this look's morphs/makeup live, save yours.
-                Button { showStudio = true; haptic() } label: {
-                    Image(systemName: "slider.horizontal.2.square.on.square")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(studioActive ? Theme.accent : .white)
-                        .padding(8)
-                        .background(Circle().fill(.black.opacity(0.35)))
-                }
-            }
         }
         .padding(.horizontal, 22)
         .padding(.bottom, 6)
@@ -279,7 +233,7 @@ struct RecordView: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
-                    ForEach(railLooks) { l in
+                    ForEach(FilterLooks.looks(in: category)) { l in
                         lookBubble(l)
                     }
                 }
@@ -288,15 +242,6 @@ struct RecordView: View {
             }
         }
         .padding(.bottom, 4)
-    }
-
-    /// Preset looks for the category + the user's saved Studio looks (Makeup).
-    private var railLooks: [Look] {
-        var looks = FilterLooks.looks(in: category)
-        if category == .makeup || category == .forYou {
-            looks += customLooks.map(\.asLook)
-        }
-        return looks
     }
 
     private func lookBubble(_ l: Look) -> some View {
@@ -432,7 +377,7 @@ struct RecordView: View {
                 errorText = e.errorDescription
             case .success:
                 let c: CameraCaptureProtocol
-                let useARKit = self.position == .front && ARKitCameraCapture.isSupported && !self.forceONNX
+                let useARKit = self.position == .front && ARKitCameraCapture.isSupported
                 if useARKit {
                     c = ARKitCameraCapture(engine: engine)
                 } else {
@@ -444,6 +389,7 @@ struct RecordView: View {
                                 orientation: self.captureOrientation(for: self.model.format))
                     self.camera = c
                     self.pushLive()
+                    self.noteMakeupCamera()
                 } catch {
                     self.errorText = error.localizedDescription
                 }
@@ -473,9 +419,15 @@ struct RecordView: View {
         look.stack.contains { $0.fx == "face_fx" }
     }
 
+    /// Makeup renders on ARKit's TrueDepth face mesh — front camera only.
+    private func noteMakeupCamera() {
+        guard lookUsesFace, !(camera is ARKitCameraCapture) else { return }
+        keyHint = ARKitCameraCapture.isSupported ? "Makeup uses the front camera"
+                                                 : "Makeup needs a TrueDepth front camera"
+    }
+
     /// Record-scoped live stack: no start/end → always on for the camera
-    /// frame. A tap-picked key overrides the chroma entries' matte mode; an
-    /// active Studio spec overrides the look's face entry wholesale.
+    /// frame. A tap-picked key overrides the chroma entries' matte mode.
     private func pushLive() {
         guard engine.isReady else { return }
         var stack = FilterLooks.liveStack(for: look, intensity: intensity)
@@ -488,26 +440,7 @@ struct RecordView: View {
                 var e = e; e["params"] = p; return e
             }
         }
-        if studioActive, lookUsesFace {
-            stack = stack.map { e in
-                guard (e["fx_type"] as? String) == "face_fx" else { return e }
-                var p = studioSpec.params
-                p["face_amount"] = intensity
-                var e: [String: Any] = ["fx_type": "face_fx", "params": p]
-                if let tex = studioSpec.makeupTex { e["face_makeup_tex"] = tex }
-                return e
-            }
-        }
         engine.send("set_live_fx", ["fx": stack])
-        // Tier 1: TrueDepth front camera uses ARKit face tracking (no engine worker).
-        // Tier 2: rear camera uses CoreML EP synchronous tracking on the render thread.
-        // Tier 3: non-TrueDepth front camera uses the existing async ONNX worker.
-        if camera is ARKitCameraCapture {
-            engine.send("face_track_enable", ["on": false, "max_faces": 4])
-        } else {
-            engine.send("face_track_enable",
-                        ["on": lookUsesFace, "sync": position == .back, "max_faces": 4])
-        }
         camera?.matteEnabled = lookUsesMatte
     }
 
@@ -685,7 +618,6 @@ struct RecordView: View {
         }
         camera?.stop()
         camera = nil
-        engine.send("face_track_enable", ["on": false])
         withAnimation { showPreview = true }
         finalizing = false
     }
@@ -798,7 +730,6 @@ struct RecordView: View {
         }
         camera?.stop()
         camera = nil
-        engine.send("face_track_enable", ["on": false])
         // Hand the frame path back to the timeline: resume the feeder, restore
         // the timeline-derived stack, and nudge a seek so layers re-feed.
         model.liveFXSuspended = false

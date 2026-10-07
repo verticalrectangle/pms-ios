@@ -278,59 +278,40 @@ final class EngineStore: ObservableObject {
 #endif
     }
 
-    /// Submit ARKit face anchor data (front camera, TrueDepth). Up to 4 faces.
-    /// `vertices` is a flat [n_faces * 1220 * 2] Float array of 2D pixel coords.
-    /// `uvs` is a flat [n_faces * 1220 * 2] Float array of ARKit textureCoordinates
-    ///   (constant per topology — same every frame). May be nil if unavailable.
-    /// `blendshapes` is a flat [n_faces * 52] Float array of blendshape coeffs.
-    func submitARKitFace(vertices: UnsafePointer<Float>, uvs: UnsafePointer<Float>?,
-                         blendshapes: UnsafePointer<Float>,
-                         count: Int, width: Int, height: Int) {
-        guard let e = engine else { return }
-        #if !ENGINE_MOCK
-        pms_submit_arkit_face(e, vertices, uvs, blendshapes, Int32(count), Int32(width), Int32(height))
-        #endif
-    }
-
-    /// Drop the ARKit face slot (face lost / untracked): the engine falls
-    /// back to its other tiers or hides makeup instead of painting with
-    /// frozen landmarks.
+    /// Drop the ARKit face slot (face lost / untracked): the engine hides
+    /// makeup instead of painting with frozen geometry.
     func clearARKitFaces() {
         guard let e = engine else { return }
         #if !ENGINE_MOCK
-        pms_submit_arkit_face(e, nil, nil, nil, 0, 0, 0)
-        pms_submit_arkit_face_3d(e, nil, nil, nil, nil, nil, nil, nil, 0, 0, 0)
+        pms_submit_arkit_face_3d(e, nil, nil, nil, nil, nil, nil, 0, 0, 0)
         #endif
     }
 
-    /// Native tier-1 submission (docs/ARKIT_NATIVE_PLAN.md): full 3D ARKit
-    /// face state; the engine renders the mesh itself with these matrices.
+    /// One ARFrame's face state for the engine's makeup renderer: anchor-space
+    /// mesh, transform chain, blendshapes and the frame's light estimate. The
+    /// engine draws ARKit's own mesh with these matrices.
     func submitARKitFace3D(vertices packed: [Float],
                            model: simd_float4x4, view: simd_float4x4,
                            proj: simd_float4x4,
-                           eyeL: simd_float4x4, eyeR: simd_float4x4,
                            blendshapes: [Float],
+                           light: pms_arkit_light,
                            width: Int, height: Int) {
         guard let e = engine else { return }
         #if !ENGINE_MOCK
-        var m = model, v = view, p = proj, el = eyeL, er = eyeR
+        var m = model, v = view, p = proj, l = light
         packed.withUnsafeBufferPointer { vp in
             blendshapes.withUnsafeBufferPointer { bp in
                 withUnsafeBytes(of: &m) { mb in
                 withUnsafeBytes(of: &v) { vb in
                 withUnsafeBytes(of: &p) { pb in
-                withUnsafeBytes(of: &el) { elb in
-                withUnsafeBytes(of: &er) { erb in
                     pms_submit_arkit_face_3d(
                         e, vp.baseAddress,
                         mb.baseAddress?.assumingMemoryBound(to: Float.self),
                         vb.baseAddress?.assumingMemoryBound(to: Float.self),
                         pb.baseAddress?.assumingMemoryBound(to: Float.self),
-                        elb.baseAddress?.assumingMemoryBound(to: Float.self),
-                        erb.baseAddress?.assumingMemoryBound(to: Float.self),
-                        bp.baseAddress,
+                        bp.baseAddress, &l,
                         1, Int32(width), Int32(height))
-                }}}}}
+                }}}
             }
         }
         #endif
