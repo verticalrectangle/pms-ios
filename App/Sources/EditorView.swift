@@ -168,7 +168,9 @@ struct EditorView: View {
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear {
-            model.save()                                               // persist on leave
+            // Await the poster: Home's pop-triggered rescan must see the
+            // complete dir, or the card keeps the film-icon placeholder.
+            Task { await model.saveAndWaitForPoster() }
             model.layers?.stop()                                       // release overlay decoders
         }
         .onChange(of: scenePhase) { _, p in if p != .active { model.save() } }  // + on background

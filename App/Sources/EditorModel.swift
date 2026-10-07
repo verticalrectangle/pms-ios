@@ -1398,11 +1398,25 @@ final class EditorModel: ObservableObject {
     // MARK: - Persistence
 
     /// Persist through the engine's binary .pms + the poster sidecar.
+    /// The poster stays fire-and-forget here (background + scene-phase saves);
+    /// back-navigation uses saveAndWaitForPoster() so Home's pop-triggered
+    /// rescan sees the complete project dir.
     func save() {
         guard !lastSnapshot.isEmpty || ProjectStore.exists(project.id) else { return }
         do {
             try ProjectStore.save(engine: engine, id: project.id, name: project.name)
             Task { await writePoster() }
+        } catch { /* published to lastError */ }
+    }
+
+    /// Synchronous variant for back-navigation: persists AND waits for the
+    /// poster, so the Home rescan (triggered by the pop) sees the complete
+    /// project dir. Called from EditorView.onDisappear.
+    func saveAndWaitForPoster() async {
+        guard !lastSnapshot.isEmpty || ProjectStore.exists(project.id) else { return }
+        do {
+            try ProjectStore.save(engine: engine, id: project.id, name: project.name)
+            await writePoster()
         } catch { /* published to lastError */ }
     }
 
