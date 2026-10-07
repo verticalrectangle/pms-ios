@@ -50,19 +50,7 @@ enum FilterLooks {
              categories: [.forYou, .makeup],
              stack: [.init(fx: "face_fx", faceLook: "egirl")]),
 
-        // ── Beauty (full-frame skin shaders — no tracking) ───────────────────────────────────────────────────────────
-        Look(id: "porcelain", name: "Porcelain", icon: "sparkles",
-             categories: [.forYou, .beauty],
-             stack: [.init(fx: "porcelain_skin")]),
-        Look(id: "blush_doll", name: "Blush Doll", icon: "heart.fill",
-             categories: [.forYou, .beauty],
-             stack: [.init(fx: "blush_doll")]),
-        Look(id: "honey", name: "Honey Glow", icon: "sun.max.fill",
-             categories: [.forYou, .beauty],
-             stack: [.init(fx: "honey_glow")]),
-        Look(id: "glam", name: "Soft Glam", icon: "moon.stars.fill",
-             categories: [.beauty],
-             stack: [.init(fx: "soft_glam")]),
+        // ── Beauty (full-frame skin filters — no tracking; makeup lives above) ────────────
         Look(id: "glass_skin", name: "Glass Skin", icon: "drop.fill",
              categories: [.beauty],
              stack: [.init(fx: "glass_skin")]),

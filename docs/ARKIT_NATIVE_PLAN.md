@@ -22,8 +22,9 @@ record screen says so); there is no MediaPipe makeup tier on iOS any more.
 
    | Pass | Resolution | What |
    |---|---|---|
-   | prep | half, mesh | linear camera color × skin mask × facing, premultiplied |
+   | prep | half, mesh, 2 targets | linear camera color × skin mask × facing, premultiplied; lip core → 1×1 mip = mean lip color |
    | blur | half, 2× separable | mask-normalized bilateral → local skin color; 1×1 mip = face-mean skin |
+   | lipev | half, mesh | lip evidence: redness of a ~6 px averaged color over the local skin |
    | face | full, mesh, depth | skin finish, pigment layers, lips, 3D liner, gloss/highlighter |
    | lashes | full, depth-tested | strand ribbons, premultiplied over |
 
@@ -33,30 +34,45 @@ record screen says so); there is no MediaPipe makeup tier on iOS any more.
 
 ## Pigment model
 
-Every color in a look is authored as *how it reads on the look's reference
-skin* (sampled from the reference photo). A layer is the per-channel
-transmittance `T = lin(color) / lin(reference_skin)` applied Beer–Lambert
-style in linear light: `c *= T^(coverage · amount)`. The camera's own
-lighting, pores and shading survive because pigment only filters the light
-that is already there, and every skin tone keeps its own depth. Lip cream
-and liner ink use the same ratio over the local skin color (opaque); gloss
-and highlighter add light — GGX specular from ARKit's primary light on the
-mesh normals, scaled by the local skin irradiance.
+Every translucent color in a look is authored as *how it reads on the look's
+reference skin* (sampled from the reference photo). A layer is the
+per-channel transmittance `T = lin(color) / lin(reference_skin)` applied
+Beer–Lambert style in linear light: `c *= T^(coverage · amount)`. The
+camera's own lighting, pores and shading survive because pigment only filters
+the light that is already there, and every skin tone keeps its own depth.
+Liner ink uses the same ratio over the local skin color (opaque). Gloss and
+highlighter add light: GGX specular from ARKit's primary light plus a soft
+frontal key above the camera (selfie shine mirrors the screen and the room in
+front), scaled by the local skin irradiance.
 
 - **Skin**: smoothing radius is in millimetres on the face (`smooth_mm`),
   converted to pixels from the projection each frame; the skin mask excludes
   eyes, brows, lips and fades at the mesh boundary.
-- **Liner**: no texture. Per fragment, the true 3D distance to the live
-  upper-rim polyline (12 vertices, outer → inner) plus a tapered wing stroke
-  projected onto the outer corner's tangent plane; widths in millimetres,
-  antialiased by the fragment's footprint.
+- **Lips**: the canonical mouth loops are not every wearer's lips (on a real
+  capture the vermilion border sat a loop and more inside ARKit's), so the
+  mesh only bounds the region (canonical border + 3 mm) and marks the deep
+  lip core; where the lips are comes from the camera — lip tissue is redder
+  than the surrounding skin. The evidence is dilated by `overline_mm`, and the
+  core always counts so low-contrast lips still get color. Lipstick is opaque
+  and absolute: the product color, its brightness pulled toward the wearer's
+  mean lip brightness by `1 − match`, re-lit by the lips' own shading
+  relative to that mean (volume, creases, real highlights survive; overlined
+  skin gets flat product color). Gloss rides the same coverage, broken up by
+  the lips' texture. The mouth hole has no mesh, so teeth and tongue are
+  never painted.
+- **Liner**: no texture. One centerline per eye: the live upper rim from the
+  inner corner to just short of the outer corner, lifted half a stroke onto
+  the lid (the ink's lower edge sits on the lash line), continued by a
+  quadratic wing that leaves in the lash line's direction — one stroke, so
+  band and wing never cross. Per fragment: signed distance to the
+  variable-width stroke (3D on the lid, the outer corner's tangent plane for
+  the wing); widths in millimetres, antialiased by the fragment's footprint.
 - **Lashes**: 6-segment strands generated per frame from the rim polylines
   and their surface frame (normal, along-lid direction): lift, curl toward
   the lid, outer flare, wispy clumps; drawn ≥1 px wide with coverage = true
   width, so sub-pixel strands darken by exactly their area.
-- **Brows**: hair-aware — darkens pixels clearly darker than the surrounding
-  skin inside a generous brow region (painted brow shapes never match real
-  brows), plus a faint fill.
+- **Brows** stay the wearer's own: a region painted on the canonical head
+  never matches real brows (it read as drawn-on blocks on a real face).
 
 ## A look is data
 
@@ -68,9 +84,8 @@ mesh normals, scaled by the local skin irradiance.
 | `reference_skin` | `#rrggbb` the colors were matched on |
 | `skin` | `smooth`, `smooth_mm`, `even`, `lift` |
 | `blush`, `shadow`, `freckles` | `color`, `amount` |
-| `brows` | `color`, `amount`, `fill` |
 | `inner_light` | amount |
-| `lips` | `color`, `cover`, `overline_mm`, `edge_mm`, `gloss`, `roughness` |
+| `lips` | `color` (absolute, as on the reference face), `cover`, `overline_mm`, `match` (0–1, product vs. own lip brightness), `gloss`, `roughness` |
 | `highlight` | `amount`, `roughness`, `sheen` |
 | `liner` | `color`, `amount`, `inner_mm`, `outer_mm`, `wing_mm`, `wing_lift_deg`, `offset_mm` |
 | `lashes` | `color`, `amount`, `upper` / `lower`: `count`, `clumps`, `len_inner_mm`, `len_outer_mm`, `root_mm`, `lift_deg`, `curl_deg`, `flare`, `wisp`, `clump`, `offset_mm`, `t0`, `t1`, `blink_close` |
@@ -79,16 +94,16 @@ Masks (ARKit UV; texel row = v · size):
 
 | Atlas | Size | r | g | b | a |
 |---|---|---|---|---|---|
-| `_a` | 1024² | skin (smoothing) | blush | eyeshadow | brow region |
-| `_b` | 2048² | lip SDF `0.5 + d/16` (mm, − inside) | freckles | gloss / highlighter | inner-corner light |
+| `_a` | 1024² | skin (smoothing) | blush | eyeshadow | — |
+| `_b` | 2048² | lip SDF `0.5 + d/16` (mm to the canonical border, − inside) | freckles | gloss / highlighter | inner-corner light |
 
 Masks are geometry only, baked by engine `tools/gen_arkit_makeup.py` on the
 canonical ARKit head in millimetres and padded past their UV islands for
 mipmapping. Topology facts it relies on: the eye-hole rims are the lash
 lines (upper rims 1101→1090 and 1069→1080); the 36-vertex loops around the
-mouth hole are the lip anatomy — loop 3 traces the vermilion border and its
-upper half carries the cupid's bow. Colors and amounts retune live in the
-JSON without rebaking.
+mouth hole bound the lips — loop 3 is the canonical head's vermilion border
+(the SDF's zero), real lips are read from the camera inside it. Colors and
+amounts retune live in the JSON without rebaking.
 
 ## QA
 
